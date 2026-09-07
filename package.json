@@ -1,0 +1,195 @@
+{
+  "name": "apifox-helper-vscode",
+  "displayName": "Apifox Helper (Community)",
+  "description": "解析 Spring Boot 源码,自动生成接口文档并同步到 Apifox。Parse Spring Boot code into OpenAPI and sync to Apifox.",
+  "version": "0.2.1",
+  "publisher": "duyiliu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duyiliu/apifox-helper-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "apifox",
+    "spring",
+    "spring boot",
+    "openapi",
+    "swagger",
+    "api doc"
+  ],
+  "activationEvents": [
+    "onLanguage:java"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "apifoxHelper.setToken",
+        "title": "Apifox Helper: 设置访问令牌 (Access Token)"
+      },
+      {
+        "command": "apifoxHelper.selectProject",
+        "title": "Apifox Helper: 选择 Apifox 项目 (Select Project)"
+      },
+      {
+        "command": "apifoxHelper.syncWorkspace",
+        "title": "Apifox Helper: 同步整个项目到 Apifox (Sync Workspace)"
+      },
+      {
+        "command": "apifoxHelper.syncFile",
+        "title": "Apifox Helper: 同步当前文件到 Apifox (Sync This File)"
+      },
+      {
+        "command": "apifoxHelper.syncMethod",
+        "title": "Apifox Helper: 同步光标处接口到 Apifox (Sync This Endpoint)"
+      },
+      {
+        "command": "apifoxHelper.exportOpenapi",
+        "title": "Apifox Helper: 导出 OpenAPI 预览文件 (Export openapi.gen.json)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "apifoxHelper.syncFile",
+          "when": "resourceLangId == java",
+          "group": "apifox@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "apifoxHelper.syncFile",
+          "when": "resourceLangId == java",
+          "group": "apifox@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Apifox Helper",
+      "properties": {
+        "apifoxHelper.projectId": {
+          "type": "number",
+          "default": 0,
+          "description": "Apifox 项目 ID(可用命令「选择 Apifox 项目」自动获取)。项目设置页可查看。"
+        },
+        "apifoxHelper.apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.apifox.com",
+          "description": "Apifox 开放 API 地址,私有化部署时可替换。"
+        },
+        "apifoxHelper.endpointConflictBehavior": {
+          "type": "string",
+          "enum": [
+            "OVERWRITE_EXISTING",
+            "AUTO_MERGE",
+            "KEEP_EXISTING",
+            "CREATE_NEW"
+          ],
+          "default": "OVERWRITE_EXISTING",
+          "enumDescriptions": [
+            "覆盖已有接口",
+            "自动合并",
+            "保留现有(跳过)",
+            "创建新接口"
+          ],
+          "description": "同步时接口(Endpoint)冲突处理方式。"
+        },
+        "apifoxHelper.schemaConflictBehavior": {
+          "type": "string",
+          "enum": [
+            "OVERWRITE_EXISTING",
+            "AUTO_MERGE",
+            "KEEP_EXISTING",
+            "CREATE_NEW"
+          ],
+          "default": "OVERWRITE_EXISTING",
+          "enumDescriptions": [
+            "覆盖已有数据模型",
+            "自动合并",
+            "保留现有(跳过)",
+            "创建新数据模型"
+          ],
+          "description": "同步时数据模型(Schema)冲突处理方式。"
+        },
+        "apifoxHelper.include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/src/main/java/**/*.java"
+          ],
+          "description": "扫描的 Java 文件 glob。"
+        },
+        "apifoxHelper.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/target/**",
+            "**/build/**",
+            "**/src/test/**"
+          ],
+          "description": "排除的 glob。"
+        },
+        "apifoxHelper.exportPath": {
+          "type": "string",
+          "default": "openapi.gen.json",
+          "description": "「导出 OpenAPI 预览」输出文件(相对工作区根目录)。"
+        },
+        "apifoxHelper.pageTypeStyle": {
+          "type": "string",
+          "enum": ["mybatis-plus", "spring-data"],
+          "default": "mybatis-plus",
+          "enumDescriptions": [
+            "MyBatis-Plus 形态(records/total/size/current/pages),适用于 Page/IPage",
+            "Spring Data 形态(content/totalElements/totalPages/number/size),适用于 Page/PageImpl/Slice"
+          ],
+          "description": "简单名为 Page 的分页包装按哪个库的形态展开;PageInfo 恒为 PageHelper 形态。"
+        },
+        "apifoxHelper.folderNameSource": {
+          "type": "string",
+          "enum": ["tag", "controller"],
+          "default": "tag",
+          "description": "接口目录命名来源:@Tag 注解值(缺省类名)或 Controller 类名。"
+        },
+        "apifoxHelper.rootFolderName": {
+          "type": "string",
+          "default": "",
+          "description": "可选。所有接口目录放到该父目录下(不存在则自动创建),留空则直接放在项目根。"
+        },
+        "apifoxHelper.schemaFolderName": {
+          "type": "string",
+          "default": "",
+          "description": "可选。数据模型导入到该目录(不存在则自动创建),留空则放在模型根目录。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "typecheck": "tsc --noEmit",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js",
+    "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix",
+    "watch": "node esbuild.js --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "java-parser": "^2.1.1"
+  }
+}

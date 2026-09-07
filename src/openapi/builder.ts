@@ -1,0 +1,187 @@
+import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
+import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry } from "../java/schemaResolver";
+
+export interface BuildOptions {
+  /** OpenAPI info.title,一般用工作区名 */
+  title: string;
+  description?: string;
+  /** 简单名为 Page 的分页包装展开风格(默认 mybatis-plus) */
+  pageStyle?: "spring-data" | "mybatis-plus";
+}
+
+export interface OpenApiSpec {
+  openapi: string;
+  info: { title: string; description?: string; version: string };
+  tags?: { name: string; description?: string }[];
+  paths: Record<string, Record<string, unknown>>;
+  components?: { schemas: Record<string, JsonSchema> };
+}
+
+export interface BuildOutput {
+  spec: OpenApiSpec;
+  warnings: string[];
+}
+
+/** 把解析结果构建为 OpenAPI 3.0 文档 */
+export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: BuildOptions): BuildOutput {
+  const registry = new SchemaRegistry();
+  const ctx: ResolveContext = { index, registry, options: { pageStyle: options.pageStyle } };
+  const paths: Record<string, Record<string, unknown>> = {};
+  const tags = new Map<string, string | undefined>();
+  const usedOperationIds = new Map<string, number>();
+  const opFlavors = new Map<string, string>();
+
+  for (const ep of parse.endpoints) {
+    tags.set(ep.tag, tags.get(ep.tag) ?? undefined);
+    const pathItem = (paths[ep.path] ??= {});
+    const verbKey = ep.method.toLowerCase();
+    const existing = pathItem[verbKey];
+    if (existing) {
+      // 同 method+path 冲突:Spring MVC Controller 优先于 Feign/JAX-RS(它是文档的 source of truth)
+      const existingFlavor = opFlavors.get(`${ep.path} ${verbKey}`);
+      if (existingFlavor === "spring-mvc" || ep.flavor !== "spring-mvc") {
+        parse.warnings.push(`接口重复,已跳过: ${ep.method} ${ep.path} (${ep.controller}.${ep.operationId})`);
+        continue;
+      }
+    }
+    const count = usedOperationIds.get(ep.operationId) ?? 0;
+    usedOperationIds.set(ep.operationId, count + 1);
+    opFlavors.set(`${ep.path} ${verbKey}`, ep.flavor);
+    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId);
+  }
+
+  const spec: OpenApiSpec = {
+    openapi: "3.0.3",
+    info: {
+      title: options.title,
+      description: options.description,
+      version: "1.0.0",
+    },
+    tags: [...tags.keys()].map((name) => ({ name })),
+    paths,
+  };
+  if (Object.keys(registry.schemas).length) {
+    spec.components = { schemas: registry.schemas };
+  }
+  return { spec, warnings: parse.warnings };
+}
+
+function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: string): Record<string, unknown> {
+  const op: Record<string, unknown> = {
+    tags: [ep.tag],
+    summary: ep.summary,
+    description: ep.description,
+    operationId,
+  };
+  if (ep.deprecated) {
+    op.deprecated = true;
+  }
+
+  const parameters = ep.parameters.map((p) => {
+    const schema = resolveTypeText(p.typeText, ctx);
+    applyParamConstraints(p, schema);
+    const param: Record<string, unknown> = {
+      name: p.name,
+      in: p.in,
+      required: p.in === "path" ? true : p.required,
+      schema,
+    };
+    if (p.description) {
+      param.description = p.description;
+    }
+    if (p.example !== undefined) {
+      param.example = p.example;
+    }
+    if (p.defaultValue !== undefined) {
+      param.schema = { ...(param.schema as JsonSchema), default: p.defaultValue };
+    }
+    return param;
+  });
+  if (parameters.length) {
+    op.parameters = parameters;
+  }
+
+  if (ep.requestBody) {
+    const rb = ep.requestBody;
+    if (rb.formFields) {
+      // 文件上传(multipart/form-data)
+      const properties: Record<string, JsonSchema> = {};
+      const required: string[] = [];
+      for (const f of rb.formFields) {
+        const schema = f.typeText.includes("MultipartFile")
+          ? ({ type: "string", format: "binary", description: f.description } as JsonSchema)
+          : (() => {
+              const s = resolveTypeText(f.typeText, ctx);
+              applyParamConstraints(f, s);
+              return s;
+            })();
+        properties[f.name] = schema;
+        if (f.required) {
+          required.push(f.name);
+        }
+      }
+      const schema: JsonSchema = { type: "object", properties };
+      if (required.length) {
+        schema.required = required;
+      }
+      op.requestBody = {
+        required: rb.required,
+        content: { [ep.consumes?.[0] ?? "multipart/form-data"]: { schema } },
+      };
+    } else if (rb.typeText !== "__multipart__") {
+      const schema = resolveTypeText(rb.typeText, ctx);
+      const jsonBody: Record<string, unknown> = { schema };
+      if (rb.description) {
+        jsonBody.description = rb.description;
+      }
+      op.requestBody = {
+        required: rb.required,
+        content: { [ep.consumes?.[0] ?? "application/json"]: jsonBody },
+      };
+    }
+  }
+
+  const responses: Record<string, unknown> = {};
+  const responseContentType = ep.produces?.[0] ?? "*/*";
+  const okResponse: Record<string, unknown> = { description: ep.responseDescription || "OK" };
+  const innerReturn = responseInnerType(ep.returnType);
+  if (innerReturn) {
+    okResponse.content = { [responseContentType]: { schema: resolveTypeText(innerReturn, ctx) } };
+  }
+  responses["200"] = okResponse;
+
+  // @ApiResponse/@ResponseStatus 声明的额外状态码
+  for (const extra of ep.extraResponses ?? []) {
+    const resp: Record<string, unknown> = { description: extra.description || "" };
+    if (extra.schemaText) {
+      resp.content = { [responseContentType]: { schema: resolveTypeText(extra.schemaText, ctx) } };
+    }
+    responses[extra.code] = resp;
+  }
+  op.responses = responses;
+
+  return op;
+}
+
+/** 参数上的 Bean Validation 注解 -> schema 约束 */
+function applyParamConstraints(p: { annotations?: AnnotationInfo[] }, schema: JsonSchema): void {
+  if (p.annotations?.length) {
+    applyConstraints(p.annotations, schema);
+  }
+}
+
+/** 解开 ResponseEntity<T>/Mono<T> 外壳;void/Void 返回 undefined 表示无响应体 */
+function responseInnerType(typeText?: string): string | undefined {
+  if (!typeText) {
+    return undefined;
+  }
+  let t = typeText.trim();
+  const m = /^(?:ResponseEntity|Mono|HttpEntity)\s*<(.*)>$/.exec(t);
+  if (m) {
+    t = m[1].trim();
+  }
+  if (t === "void" || t === "Void") {
+    return undefined;
+  }
+  return t;
+}

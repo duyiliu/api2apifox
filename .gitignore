@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+*.vsix
+openapi.gen.json
+*.log
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
