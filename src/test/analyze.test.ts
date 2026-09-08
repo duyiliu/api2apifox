@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { analyze } from "../pipeline";
+import { analyze, analyzeSubset } from "../pipeline";
 import { SourceFile } from "../java/model";
 
 const SAMPLE_ROOT = path.join(__dirname, "..", "..", "sample");
@@ -122,3 +122,11 @@ test("缺注解的 JavaBean 参数产生告警且未生成接口体", () => {
   const op = spec.paths["/api/v1/users/{id}"].patch as Record<string, any>;
   assert.equal(op.requestBody, undefined);
 });
+
+test("analyzeSubset 只保留与所选接口相关的告警,未选控制器告警不泄露", () => {
+  const subset = analyzeSubset(loadSample(), { title: "demo" }, (ep) => ep.controller === "OrderController");
+  assert.ok(subset.endpoints.every((e) => e.controller === "OrderController"));
+  // UserController.patchUser 的 warning 不应出现在 OrderController 的子集同步结果中
+  assert.ok(!subset.warnings.some((w) => w.includes("patchUser")));
+});
+

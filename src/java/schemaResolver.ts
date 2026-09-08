@@ -1,6 +1,8 @@
 import { annBool, annStr, ClassInfo, FieldInfo, findAnn, TypeIndex } from "./model";
 import { parseTypeText, simpleName, TypeRef, typeToKeyText } from "./typeText";
 import { AnnotationInfo } from "./annotation";
+import { HelperProperties } from "../config/helperProperties";
+import { detectValueSyntax, evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 
 export interface JsonSchema {
   type?: string;
@@ -57,11 +59,17 @@ export interface ResolveContext {
   bindings?: Map<string, TypeRef>;
   /** 解析选项 */
   options?: ResolveOptions;
+  /** .apifox-helper.properties 的字段规则(可空) */
+  fieldRules?: HelperProperties | undefined;
+  /** 字段规则产生的告警(收集后随 warnings 输出) */
+  fieldWarnings?: string[];
 }
 
 export interface ResolveOptions {
   /** 简单名为 Page 的分页包装按哪个库的形态展开(默认 mybatis-plus) */
   pageStyle?: "spring-data" | "mybatis-plus";
+  /** 枚举字段自动在描述后追加「(枚举类:X)」(对应团队 groovy 规则意图,默认关) */
+  enumFieldDoc?: boolean;
 }
 
 /** 类型文本 -> OpenAPI schema。返回内联标量或 components $ref */
@@ -92,7 +100,14 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     return page;
   }
 
-  const info = ctx.index.types.get(name);
+  // 源码类型 → 依赖 jar 中的类型(按需解析 .class,结果回填缓存)
+  let info = ctx.index.types.get(name);
+  if (!info && ctx.index.jarLookup) {
+    info = ctx.index.jarLookup(name);
+    if (info) {
+      ctx.index.types.set(name, info);
+    }
+  }
   if (!info) {
     return { type: "object", description: `未识别的类型: ${t.name}` };
   }
@@ -152,6 +167,11 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
   }
 
   for (const field of fields) {
+    // 规则引擎:字段级 .apifox-helper.properties(field.*)
+    const rule = fieldRuleEngine(field, info, ctx);
+    if (rule.ignored) {
+      continue;
+    }
     if (findAnn(field.annotations, "JsonIgnore")) {
       continue;
     }
@@ -170,14 +190,16 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
     const gsonName = findAnn(field.annotations, "SerializedName");
     const fastName = findAnn(field.annotations, "JSONField");
     const propName =
-      (jsonProp ? annStr(jsonProp.args, "value", "name") : undefined) ??
-      (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
-      (fastName ? annStr(fastName.args, "name") : undefined) ??
-      field.name;
+      rule.fieldName ??
+      ((jsonProp ? annStr(jsonProp.args, "value", "name") : undefined) ??
+        (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
+        (fastName ? annStr(fastName.args, "name") : undefined) ??
+        field.name);
     const schema = resolveTypeText(field.typeText, ctx);
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
-    if (desc) {
-      schema.description = desc;
+    const finalDesc = rule.appendDesc(desc, field, ctx);
+    if (finalDesc) {
+      schema.description = finalDesc;
     }
     const example = schemaExample(field.annotations);
     if (example) {
@@ -186,9 +208,12 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
     applyConstraints(field.annotations, schema);
     properties[propName] = schema;
 
-    const isRequired =
+    let isRequired =
       annBool(jsonProp?.args ?? {}, "required") === true ||
       !!findAnn(field.annotations, "NotNull", "NotBlank", "NotEmpty");
+    if (rule.required !== undefined) {
+      isRequired = rule.required;
+    }
     if (isRequired && !required.includes(propName)) {
       required.push(propName);
     }
@@ -494,4 +519,181 @@ export function schemaExample(annotations: AnnotationInfo[]): string | undefined
   }
   const modelProp = findAnn(annotations, "ApiModelProperty");
   return modelProp ? annStr(modelProp.args, "example") : undefined;
+}
+
+/* ---------------- .apifox-helper.properties 字段级规则 ---------------- */
+
+/** 判断字段类型是否为本项目索引(或依赖 jar)中的枚举类型 */
+function isEnumFieldType(field: FieldInfo, ctx: ResolveContext): boolean {
+  const t = parseTypeText(field.typeText);
+  const name = simpleName(t.name);
+  let info = ctx.index.types.get(name);
+  if (!info && ctx.index.jarLookup) {
+    info = ctx.index.jarLookup(name);
+    if (info) {
+      ctx.index.types.set(name, info);
+    }
+  }
+  return !!info && info.kind === "enum";
+}
+
+interface FieldRuleEngineResult {
+  /** field.ignore 命中 → 忽略字段 */
+  ignored: boolean;
+  /** field.name 覆盖字段名 */
+  fieldName?: string;
+  /** field.required 覆盖 required */
+  required?: boolean;
+  /** 追加/设置 description 的规则结果 */
+  appendDesc: (currentDesc: string | undefined, field: FieldInfo, ctx: ResolveContext) => string | undefined;
+}
+
+/** 把 RuleContext 所需的字段元数据补齐到 ctx.fieldRules 对象 */
+function fieldRuleContext(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveContext): RuleContext {
+  const isEnum = isEnumFieldType(field, ctx);
+  const enumSimpleName = isEnum ? simpleName(parseTypeText(field.typeText).name) : undefined;
+  return {
+    annotations: field.annotations,
+    javadocRaw: rawJavadocOf(field),
+    subject: `${classInfo.simpleName}.${field.name}`,
+    fieldName: field.name,
+    isEnum,
+    enumSimpleName,
+  };
+}
+
+/** 返回字段 javadoc 原文(供 #tag 语法);无则 undefined */
+function rawJavadocOf(field: FieldInfo): string | undefined {
+  return field.javadocRaw;
+}
+
+/** 从 rules 中收集适用于某字段的全部 field.* 规则并求值 */
+function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveContext): FieldRuleEngineResult {
+  const result: FieldRuleEngineResult = {
+    ignored: false,
+    appendDesc: (_d, _f, _c) => _d,
+  };
+  // enumFieldDoc 开关不依赖 rules,单独处理
+  const enumDoc = ctx.options?.enumFieldDoc === true && isEnumFieldType(field, ctx);
+  if (enumDoc) {
+    const enumName = simpleName(parseTypeText(field.typeText).name);
+    result.appendDesc = (_currentDesc: string | undefined, _f, _c) =>
+      _currentDesc ? `${_currentDesc}\n(枚举类:${enumName})` : `(枚举类:${enumName})`;
+  }
+  const rules = ctx.fieldRules;
+  if (!rules) {
+    return result;
+  }
+  const rctx = fieldRuleContext(field, classInfo, ctx);
+  const warn = (msg: string) => {
+    ctx.fieldWarnings?.push(msg);
+  };
+
+  // field.ignore:任一命中 → 忽略
+  // 语义:#tag/@ann 命中即忽略;groovy 安全形态返回非空/true 才忽略;
+  // 字面量值视为“字段名等于该值”才忽略(对齐 demo 的 field.ignore=ignoreLog 用法)。
+  for (const e of rules.entries) {
+    if (e.key !== "field.ignore" && e.key !== "json.rule.field.ignore") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const syn = detectValueSyntax(e.value);
+    let ignoreNow = false;
+    if (syn.type === "literal") {
+      ignoreNow = syn.body === field.name;
+    } else {
+      const v = evalRuleValue(e.value, rctx, e.key, warn);
+      if (v.skipped && v.reason) {
+        warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+        continue;
+      }
+      ignoreNow = v.matched && v.value !== undefined && v.value !== "" && v.value !== "false";
+    }
+    if (ignoreNow) {
+      result.ignored = true;
+    }
+  }
+  if (result.ignored) {
+    return result;
+  }
+
+  // field.name:覆盖输出名(仅字面量/简单值;规则命中且值可用才生效)
+  for (const e of rules.entries) {
+    if (e.key !== "field.name") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported || !cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.matched && v.value !== undefined && v.value.trim()) {
+      result.fieldName = v.value;
+    }
+  }
+
+  // field.required:命中 true → required;false → 非 required
+  for (const e of rules.entries) {
+    if (e.key !== "field.required") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported || !cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.matched) {
+      result.required = v.value === "true" || v.value === "TRUE";
+    }
+  }
+
+  // field.doc / field.description:收集全部命中规则(追加)
+  const docRules: { text: string }[] = [];
+  for (const e of rules.entries) {
+    if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.skipped && v.reason) {
+      warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (v.matched && v.value !== undefined && v.value.trim()) {
+      docRules.push({ text: v.value });
+    }
+  }
+  if (docRules.length) {
+    const prevAppend = result.appendDesc;
+    result.appendDesc = (currentDesc, field, ctx) => {
+      let d = prevAppend(currentDesc, field, ctx);
+      for (const r of docRules) {
+        if (!d) {
+          d = r.text;
+        } else if (!d.includes(r.text)) {
+          d = d + "\n" + r.text;
+        }
+      }
+      return d;
+    };
+  }
+  return result;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
 }

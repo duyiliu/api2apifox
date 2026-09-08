@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 
 export interface ApifoxSettings {
   projectId: number;
+  projectName?: string;
+  teamName?: string;
   apiBaseUrl: string;
   endpointConflictBehavior: string;
   schemaConflictBehavior: string;
@@ -14,29 +16,52 @@ export interface ApifoxSettings {
   folderNameSource: "tag" | "controller";
   /** 可选:所有目录放到该父目录下(不存在则创建) */
   rootFolderName: string;
-  /** 可选:数据模型导入到该目录(不存在则创建) */
+  /** 可选:数据模型导入到该目录(数字 ID,Apifox 已不支持按名查找) */
+  schemaFolderId: number;
+  /** @deprecated 已废弃:Apifox 下线了目录查询接口,请改用 schemaFolderId */
   schemaFolderName: string;
+  /** 是否启用 .apifox-helper.properties(默认 true) */
+  helperProperties: boolean;
+  /** 枚举字段自动追加「(枚举类:X)」(默认 false,对应团队 groovy 规则意图) */
+  enumFieldDoc: boolean;
+  /** 额外的本地 Maven 仓库目录(自动发现 ~/.m2 之外再补充,如 D:/repository) */
+  dependencyRepos: string[];
+  /** 显式依赖 jar 路径(优先于仓库发现) */
+  dependencyJars: string[];
 }
 
 export function getSettings(): ApifoxSettings {
   const cfg = vscode.workspace.getConfiguration("apifoxHelper");
   return {
     projectId: cfg.get<number>("projectId", 0),
+    projectName: cfg.get<string>("projectName", ""),
+    teamName: cfg.get<string>("teamName", ""),
     apiBaseUrl: cfg.get<string>("apiBaseUrl", "https://api.apifox.com"),
     endpointConflictBehavior: cfg.get<string>("endpointConflictBehavior", "OVERWRITE_EXISTING"),
     schemaConflictBehavior: cfg.get<string>("schemaConflictBehavior", "OVERWRITE_EXISTING"),
     include: cfg.get<string[]>("include", ["**/src/main/java/**/*.java"]),
-    exclude: cfg.get<string[]>("exclude", ["**/target/**", "**/build/**", "**/src/test/**"]),
+    exclude: cfg.get<string[]>("exclude", ["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**"]),
     exportPath: cfg.get<string>("exportPath", "openapi.gen.json"),
     pageTypeStyle: cfg.get<"mybatis-plus" | "spring-data">("pageTypeStyle", "mybatis-plus"),
     folderNameSource: cfg.get<"tag" | "controller">("folderNameSource", "tag"),
     rootFolderName: cfg.get<string>("rootFolderName", ""),
+    schemaFolderId: cfg.get<number>("schemaFolderId", 0),
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
+    helperProperties: cfg.get<boolean>("helperProperties.enabled", true),
+    enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
+    dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
+    dependencyJars: cfg.get<string[]>("dependencyJars", []),
   };
 }
 
-export async function saveProjectId(projectId: number): Promise<void> {
+export async function saveProjectId(projectId: number, projectName?: string, teamName?: string): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("apifoxHelper");
   const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await cfg.update("projectId", projectId, target);
+  if (projectName !== undefined) {
+    await cfg.update("projectName", projectName, target);
+  }
+  if (teamName !== undefined) {
+    await cfg.update("teamName", teamName, target);
+  }
 }

@@ -58,14 +58,15 @@ function collectFields(classBody: CstNode | undefined, source: string): FieldInf
     }
     const typeNode = childNode(fd, "unannType");
     const typeText = typeNode ? nodeText(source, typeNode).trim() : "Object";
-    const javadoc = parseJavadoc(nodeJavadoc(bodyDecl));
+    const javadocRaw = nodeJavadoc(bodyDecl);
+    const javadoc = parseJavadoc(javadocRaw);
     const vdl = childNode(fd, "variableDeclaratorList");
     for (const vd of childNodes(vdl, "variableDeclarator")) {
       const name = tokenImage(childNode(vd, "variableDeclaratorId"), "Identifier");
       if (!name) {
         continue;
       }
-      fields.push({ name, typeText, annotations: collectAnnotations(mods, source), javadoc });
+      fields.push({ name, typeText, annotations: collectAnnotations(mods, source), javadoc, javadocRaw });
     }
   }
   return fields;

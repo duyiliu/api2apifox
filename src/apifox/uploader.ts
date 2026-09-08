@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ApifoxApiError, ApifoxClient, ImportResult } from "./client";
+import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, ImportResult } from "./client";
 import { getToken } from "../config/secret";
 import { getSettings, saveProjectId, ApifoxSettings } from "../config/settings";
 import { AnalyzeOutput } from "../pipeline";
@@ -38,32 +38,201 @@ export async function ensureToken(secrets: vscode.SecretStorage): Promise<string
   return token;
 }
 
-/** QuickPick 在线选择 Apifox 项目并写入配置 */
+interface TeamQuickPickItem extends vscode.QuickPickItem {
+  team?: ApifoxTeam;
+}
+
+interface ProjectQuickPickItem extends vscode.QuickPickItem {
+  project?: ApifoxProject;
+  isBackItem?: boolean;
+}
+
+/**
+ * 分步向导在线选择 Apifox 项目并写入配置:
+ *  - 步骤 1/2: 选择团队 (支持右上角刷新、输入搜索)
+ *  - 步骤 2/2: 选择项目 (支持左上角返回上级重新选团队、右上角刷新)
+ */
 export async function selectProject(client: ApifoxClient): Promise<boolean> {
-  let projects: { id: number; name: string }[];
-  try {
-    projects = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "Apifox Helper:获取项目列表..." },
-      () => client.listProjects()
-    );
-  } catch (err) {
-    vscode.window.showErrorMessage(`获取项目列表失败:${errorMessage(err)}`);
-    return false;
+  const refreshButton: vscode.QuickInputButton = {
+    iconPath: new vscode.ThemeIcon("refresh"),
+    tooltip: "刷新列表",
+  };
+
+  let cachedTeams: ApifoxTeam[] | undefined;
+
+  const pickTeam = (preselectedTeamId?: number): Promise<ApifoxTeam | undefined> => {
+    return new Promise<ApifoxTeam | undefined>((resolve) => {
+      const qp = vscode.window.createQuickPick<TeamQuickPickItem>();
+      qp.title = "选择 Apifox 项目 (1/2: 选择团队)";
+      qp.placeholder = "请选择所属团队 (支持输入过滤)";
+      qp.step = 1;
+      qp.totalSteps = 2;
+      qp.ignoreFocusOut = true;
+      qp.buttons = [refreshButton];
+
+      let isResolved = false;
+      const safeResolve = (val: ApifoxTeam | undefined) => {
+        if (!isResolved) {
+          isResolved = true;
+          qp.dispose();
+          resolve(val);
+        }
+      };
+
+      const loadTeams = async (force = false) => {
+        qp.busy = true;
+        try {
+          if (!cachedTeams || force) {
+            cachedTeams = await client.listTeams();
+          }
+          if (!cachedTeams.length) {
+            const version = vscode.extensions.getExtension("duyiliu.api2apifox")?.packageJSON.version ?? "?";
+            vscode.window.showWarningMessage(`当前访问令牌下未获取到任何可用团队(插件版本 ${version})`);
+            safeResolve(undefined);
+            return;
+          }
+          qp.items = cachedTeams.map((t) => ({
+            label: `$(organization) ${t.name}`,
+            description: `团队 ID: ${t.id}`,
+            team: t,
+          }));
+          if (preselectedTeamId) {
+            const found = qp.items.find((it) => it.team?.id === preselectedTeamId);
+            if (found) {
+              qp.activeItems = [found];
+            }
+          }
+        } catch (err) {
+          vscode.window.showErrorMessage(`获取团队列表失败:${errorMessage(err)}`);
+          safeResolve(undefined);
+        } finally {
+          qp.busy = false;
+        }
+      };
+
+      qp.onDidTriggerButton((btn) => {
+        if (btn === refreshButton) {
+          loadTeams(true);
+        }
+      });
+
+      qp.onDidAccept(() => {
+        const selected = qp.selectedItems[0];
+        if (selected?.team) {
+          safeResolve(selected.team);
+        }
+      });
+
+      qp.onDidHide(() => {
+        safeResolve(undefined);
+      });
+
+      qp.show();
+      loadTeams(false);
+    });
+  };
+
+  const pickProject = (
+    team: ApifoxTeam
+  ): Promise<{ action: "selected" | "back" | "cancel"; project?: ApifoxProject }> => {
+    return new Promise((resolve) => {
+      const qp = vscode.window.createQuickPick<ProjectQuickPickItem>();
+      qp.title = `选择 Apifox 项目 (2/2: ${team.name})`;
+      qp.placeholder = `请选择「${team.name}」下的项目 (支持输入过滤)`;
+      qp.step = 2;
+      qp.totalSteps = 2;
+      qp.ignoreFocusOut = true;
+      qp.buttons = [vscode.QuickInputButtons.Back, refreshButton];
+
+      let isResolved = false;
+      const safeResolve = (val: { action: "selected" | "back" | "cancel"; project?: ApifoxProject }) => {
+        if (!isResolved) {
+          isResolved = true;
+          qp.dispose();
+          resolve(val);
+        }
+      };
+
+      const loadProjects = async () => {
+        qp.busy = true;
+        qp.items = [];
+        try {
+          const projects = await client.listTeamProjects(team.id);
+          if (!projects.length) {
+            qp.items = [
+              {
+                label: `$(info) 该团队下暂无可用项目`,
+                description: "点击返回重新选择团队",
+                isBackItem: true,
+              },
+            ];
+            return;
+          }
+          qp.items = projects.map((p) => ({
+            label: `$(project) ${p.name}`,
+            description: `项目 ID: ${p.id}`,
+            detail: `所属团队: ${team.name}`,
+            project: { ...p, teamName: team.name },
+          }));
+        } catch (err) {
+          vscode.window.showErrorMessage(`获取团队「${team.name}」的项目列表失败:${errorMessage(err)}`);
+          safeResolve({ action: "back" });
+        } finally {
+          qp.busy = false;
+        }
+      };
+
+      qp.onDidTriggerButton((btn) => {
+        if (btn === vscode.QuickInputButtons.Back) {
+          safeResolve({ action: "back" });
+        } else if (btn === refreshButton) {
+          loadProjects();
+        }
+      });
+
+      qp.onDidAccept(() => {
+        const selected = qp.selectedItems[0];
+        if (!selected) {
+          return;
+        }
+        if (selected.isBackItem) {
+          safeResolve({ action: "back" });
+        } else if (selected.project) {
+          safeResolve({ action: "selected", project: selected.project });
+        }
+      });
+
+      qp.onDidHide(() => {
+        safeResolve({ action: "cancel" });
+      });
+
+      qp.show();
+      loadProjects();
+    });
+  };
+
+  let currentTeam: ApifoxTeam | undefined;
+  while (true) {
+    currentTeam = await pickTeam(currentTeam?.id);
+    if (!currentTeam) {
+      return false; // 用户在第一步取消
+    }
+
+    const result = await pickProject(currentTeam);
+    if (result.action === "back") {
+      continue; // 返回重新选择团队
+    }
+    if (result.action === "cancel") {
+      return false; // 用户在第二步取消
+    }
+    if (result.action === "selected" && result.project) {
+      await saveProjectId(result.project.id, result.project.name, currentTeam.name);
+      vscode.window.showInformationMessage(
+        `已选择 Apifox 项目「${result.project.name}」(ID: ${result.project.id} · 所属团队: ${currentTeam.name})`
+      );
+      return true;
+    }
   }
-  if (!projects.length) {
-    vscode.window.showWarningMessage("该令牌下没有可用项目");
-    return false;
-  }
-  const picked = await vscode.window.showQuickPick(
-    projects.map((p) => ({ label: p.name, description: `ID: ${p.id}`, id: p.id })),
-    { placeHolder: "选择要同步到的 Apifox 项目", ignoreFocusOut: true }
-  );
-  if (!picked) {
-    return false;
-  }
-  await saveProjectId(picked.id);
-  vscode.window.showInformationMessage(`已选择项目「${picked.label}」(${picked.id})`);
-  return true;
 }
 
 export interface SyncOutcome {
@@ -71,7 +240,15 @@ export interface SyncOutcome {
   message: string;
 }
 
-/** 执行同步:按 tag/类名分目录导入;目录接口不可用时回退为根目录整体导入 */
+/**
+ * 同步:依赖 Apifox 导入的官方目录机制。
+ * 官方导入 OpenAPI 时,operation 上的 x-apifox-folder(优先)或 tags[0] 会作为接口目录,
+ * 不存在时自动创建(计数 endpointFolderCreated)。目录值在生成 spec 时由 builder 按
+ * folderNameSource/rootFolderName 写入 x-apifox-folder,因此这里做一次全量导入即可,
+ * 不再调用 /endpoint-folders 等非开放 API 预建目录。
+ * schema 目录:导入仅支持单个 targetSchemaFolderId(数字 ID,可从 Apifox 客户端目录右键复制),
+ * 原「按名查找目录」接口 GET /v1/projects/{id}/schema-folders 已被 Apifox 下线。
+ */
 export async function syncToApifox(
   client: ApifoxClient,
   settings: ApifoxSettings,
@@ -89,99 +266,28 @@ export async function syncToApifox(
       cancellable: false,
     },
     async (progress) => {
-      // 目录命名来源
-      const folderKeyOf = (e: EndpointInfo) => (settings.folderNameSource === "controller" ? e.controller : e.tag);
-      const keys = [...new Set(endpoints.map(folderKeyOf).filter(Boolean))];
-      const folderIds = new Map<string, number>();
-      let folderMode = keys.length > 0;
-      if (folderMode) {
-        try {
-          progress.report({ message: "准备接口目录..." });
-          // 可选的根目录(所有分组挂在它下面)
-          let rootId = 0;
-          if (settings.rootFolderName.trim()) {
-            rootId = await ensureFolder(client, settings.projectId, settings.rootFolderName.trim(), 0);
-          }
-          const folders = await client.listEndpointFolders(settings.projectId);
-          for (const key of keys) {
-            const candidates = folders.filter((f) => f.name === key);
-            const matched = rootId ? candidates.find((f) => (f as { parentId?: number }).parentId === rootId) : candidates[0];
-            folderIds.set(key, matched ? matched.id : await client.createEndpointFolder(settings.projectId, key, rootId).then((f) => f.id));
-          }
-          // 记录 rootId 供后续分组导入时使用
-          (folderIds as Map<string, number> & { __rootId?: number }).__rootId = rootId;
-        } catch (err) {
-          folderMode = false;
-          warnings.push(`按目录分组失败,已回退为导入到根目录:${errorMessage(err)}`);
-        }
-      }
-
-      // 可选的数据模型目录
+      // 可选的数据模型目录:仅支持数字 ID 直配(Apifox 已下线目录列表接口,无法按名查找)
       let schemaFolderId: number | undefined;
-      if (settings.schemaFolderName.trim()) {
-        try {
-          schemaFolderId = await ensureFolder(client, settings.projectId, settings.schemaFolderName.trim(), 0);
-        } catch (err) {
-          warnings.push(`准备数据模型目录失败,模型将导入到根目录:${errorMessage(err)}`);
-        }
+      if (settings.schemaFolderId > 0) {
+        schemaFolderId = settings.schemaFolderId;
+      } else if (settings.schemaFolderName.trim()) {
+        warnings.push(
+          `schemaFolderName 已不被支持(Apifox 下线了目录查询接口),请在设置中改用 schemaFolderId(数字 ID);本次模型将导入根目录`
+        );
       }
 
-      const total: ImportResult = { counters: {}, errors: [] };
-      const groups: { key?: string; endpoints: EndpointInfo[] }[] = folderMode
-        ? keys.map((key) => ({ key, endpoints: endpoints.filter((e) => folderKeyOf(e) === key) }))
-        : [{ endpoints }];
-
-      for (let i = 0; i < groups.length; i++) {
-        const group = groups[i];
-        progress.report({ message: `导入 ${group.key ?? "全部接口"}(${i + 1}/${groups.length})...`, increment: (100 / groups.length) * 0.9 });
-        const subSpec = pickByEndpoints(spec, group.endpoints);
-        const rootId = (folderIds as Map<string, number> & { __rootId?: number }).__rootId ?? 0;
-        const res = await client.importOpenapi(settings.projectId, JSON.stringify(subSpec), {
-          targetEndpointFolderId: folderMode && group.key ? folderIds.get(group.key) : rootId || undefined,
-          targetSchemaFolderId: schemaFolderId,
-          endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
-          schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
-        });
-        mergeCounters(total.counters, res.counters);
-        total.errors.push(...res.errors);
-      }
-      return total;
+      progress.report({ message: "导入全部接口..." });
+      // x-apifox-folder 已在 spec 各 operation 中,Apifox 会自动建目录;此处只做一次全量导入
+      return client.importOpenapi(settings.projectId, JSON.stringify(spec), {
+        targetEndpointFolderId: undefined,
+        targetSchemaFolderId: schemaFolderId,
+        endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
+        schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
+      });
     }
   );
 
   return { ok: true, message: formatResult(result, warnings) };
-}
-
-/** 找同名目录,没有则创建 */
-async function ensureFolder(client: ApifoxClient, projectId: number, name: string, parentId: number, kind: "endpoint" | "schema" = "endpoint"): Promise<number> {
-  const folders = kind === "schema" ? await client.listSchemaFolders(projectId) : await client.listEndpointFolders(projectId);
-  const existing = folders.find((f) => f.name === name);
-  if (existing) {
-    return existing.id;
-  }
-  const created = kind === "schema" ? await client.createSchemaFolder(projectId, name, parentId) : await client.createEndpointFolder(projectId, name, parentId);
-  return created.id;
-}
-
-/** 从完整 spec 中摘取一组接口涉及的 paths(components 全量带上,Apifox 按名去重) */
-function pickByEndpoints(spec: AnalyzeOutput["spec"], endpoints: EndpointInfo[]): AnalyzeOutput["spec"] {
-  const wanted = new Set(endpoints.map((e) => `${e.method.toLowerCase()} ${e.path}`));
-  const paths: Record<string, Record<string, unknown>> = {};
-  for (const [path, item] of Object.entries(spec.paths)) {
-    const methods = Object.entries(item as Record<string, unknown>).filter(
-      ([verb, op]) => typeof op === "object" && op !== null && "operationId" in (op as object) && wanted.has(`${verb} ${path}`)
-    );
-    if (methods.length) {
-      paths[path] = Object.fromEntries(methods);
-    }
-  }
-  return { ...spec, paths, components: spec.components };
-}
-
-function mergeCounters(target: Record<string, number>, src: Record<string, number>): void {
-  for (const [k, v] of Object.entries(src)) {
-    target[k] = (target[k] ?? 0) + v;
-  }
 }
 
 export function formatResult(result: ImportResult, warnings: string[]): string {
@@ -204,6 +310,14 @@ export function formatResult(result: ImportResult, warnings: string[]): string {
   ].filter(Boolean);
   if (schemaPart.length) {
     parts.push(`数据模型(${schemaPart.join(", ")})`);
+  }
+  // 目录由 Apifox 导入时按 x-apifox-folder/tags 自动创建/更新
+  const folderPart = [
+    c.endpointFolderCreated ? `新建目录 ${c.endpointFolderCreated}` : "",
+    c.endpointFolderUpdated ? `更新目录 ${c.endpointFolderUpdated}` : "",
+  ].filter(Boolean);
+  if (folderPart.length) {
+    parts.push(folderPart.join(", "));
   }
   let msg = parts.length ? `同步完成:${parts.join(";")}` : "同步完成";
   for (const e of result.errors) {

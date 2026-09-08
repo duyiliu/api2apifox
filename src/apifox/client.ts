@@ -1,12 +1,14 @@
 /** Apifox 开放 API 客户端(纯 HTTP,不依赖 vscode) */
-export interface ApifoxProject {
+export interface ApifoxTeam {
   id: number;
   name: string;
 }
 
-export interface ApifoxFolder {
+export interface ApifoxProject {
   id: number;
   name: string;
+  /** 所属团队名(便于在同名项目间区分) */
+  teamName?: string;
 }
 
 export interface ImportOptions {
@@ -37,46 +39,40 @@ export class ApifoxClient {
     private readonly apiVersion: string = APIFOX_API_VERSION
   ) {}
 
-  /** 项目列表 */
-  async listProjects(): Promise<ApifoxProject[]> {
-    const body = await this.request<unknown>("GET", "/v1/projects");
+  /**
+   * 团队列表。GET /v1/teams(未在开放 API 文档中列出,但为官方客户端在用的有效端点;
+   * 旧版 GET /v1/projects 已被 Apifox 下线,命中不存在的路由会 302 跳转帮助页)。
+   */
+  async listTeams(): Promise<ApifoxTeam[]> {
+    const body = await this.request<unknown>("GET", "/v1/teams");
+    return extractList<ApifoxTeam>(body, (item) => typeof item?.id === "number" && typeof item?.name === "string");
+  }
+
+  /**
+   * 指定团队下的项目列表。GET /v1/teams/{teamId}/projects。
+   */
+  async listTeamProjects(teamId: number): Promise<ApifoxProject[]> {
+    const body = await this.request<unknown>("GET", `/v1/teams/${teamId}/projects`);
     return extractList<ApifoxProject>(body, (item) => typeof item?.id === "number" && typeof item?.name === "string");
   }
 
-  /** 接口目录列表 */
-  async listEndpointFolders(projectId: number): Promise<ApifoxFolder[]> {
-    const body = await this.request<unknown>("GET", `/v1/projects/${projectId}/endpoint-folders`);
-    return extractList<ApifoxFolder>(body, (item) => typeof item?.id === "number" && typeof item?.name === "string");
-  }
-
-  /** 新建接口目录 */
-  async createEndpointFolder(projectId: number, name: string, parentId = 0): Promise<ApifoxFolder> {
-    const body = await this.request<{ id?: number; name?: string }>("POST", `/v1/projects/${projectId}/endpoint-folders`, {
-      name,
-      parentId,
-    });
-    if (typeof body?.id === "number") {
-      return { id: body.id, name: body.name ?? name };
-    }
-    throw new ApifoxApiError(`创建接口目录「${name}」失败:响应缺少 id`, 500);
-  }
-
-  /** 数据模型目录列表 */
-  async listSchemaFolders(projectId: number): Promise<ApifoxFolder[]> {
-    const body = await this.request<unknown>("GET", `/v1/projects/${projectId}/schema-folders`);
-    return extractList<ApifoxFolder>(body, (item) => typeof item?.id === "number" && typeof item?.name === "string");
-  }
-
-  /** 新建数据模型目录 */
-  async createSchemaFolder(projectId: number, name: string, parentId = 0): Promise<ApifoxFolder> {
-    const body = await this.request<{ id?: number; name?: string }>("POST", `/v1/projects/${projectId}/schema-folders`, {
-      name,
-      parentId,
-    });
-    if (typeof body?.id === "number") {
-      return { id: body.id, name: body.name ?? name };
-    }
-    throw new ApifoxApiError(`创建数据模型目录「${name}」失败:响应缺少 id`, 500);
+  /**
+   * 当前令牌可见的全部项目:先取团队,再逐团队取项目合并。
+   * 单个团队拉取失败不影响其余团队(仅跳过并在结果中缺失)。
+   */
+  async listProjects(): Promise<ApifoxProject[]> {
+    const teams = await this.listTeams();
+    const results = await Promise.all(
+      teams.map(async (team) => {
+        try {
+          const projects = await this.listTeamProjects(team.id);
+          return projects.map((p) => ({ ...p, teamName: team.name }));
+        } catch {
+          return [] as ApifoxProject[];
+        }
+      })
+    );
+    return results.flat();
   }
 
   /**
@@ -113,6 +109,16 @@ export class ApifoxClient {
     }
 
     const text = await res.text();
+
+    // Apifox 网关对不存在的路由返回 302 跳转帮助页,fetch 跟随后是 200 HTML,会造成“假成功”;
+    // 显式识别重定向,给出可定位的错误而不是静默空结果。
+    if (res.redirected) {
+      throw new ApifoxApiError(
+        `请求被重定向到 ${res.url}(原路由可能已被 Apifox 下线或调整),请检查 apiBaseUrl 与插件版本`,
+        res.status
+      );
+    }
+
     let payload: { code?: number | string; message?: string; data?: unknown } | undefined;
     try {
       payload = text ? JSON.parse(text) : undefined;

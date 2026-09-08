@@ -1,9 +1,12 @@
 import { collectAnnotations, parseArgsText } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
+import { parseTypeText } from "./typeText";
+import { HelperProperties } from "../config/helperProperties";
+import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
   annArray, annBool, annStr, AnnotationInfo, EndpointFlavor, EndpointInfo, findAnn,
-  ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo,
+  ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
 import { schemaExample } from "./schemaResolver";
 import { ParsedFile } from "./typeIndex";
@@ -49,8 +52,9 @@ function toMimeType(raw: string): string {
 }
 
 /** 解析 REST 接口:Spring MVC Controller、OpenFeign 接口、JAX-RS 资源类、Actuator @Endpoint */
-export function parseControllers(files: ParsedFile[]): ParseResult {
+export function parseControllers(files: ParsedFile[], rules?: HelperProperties, index?: TypeIndex): ParseResult {
   const endpoints: EndpointInfo[] = [];
+  const ruleWarnings: string[] = [];
   const warnings: string[] = [];
 
   for (const pf of files) {
@@ -107,11 +111,68 @@ export function parseControllers(files: ParsedFile[]): ParseResult {
       // tag: @Tag(name) / @Api(tags[0]) / 类型名
       const tagAnn = findAnn(typeAnnotations, "Tag");
       const apiAnn = findAnn(typeAnnotations, "Api");
-      const tag =
+      let tag =
         (tagAnn && annStr(tagAnn.args, "name", "value")) ||
         (apiAnn && annArray(apiAnn.args, "tags", "value")[0]) ||
         typeName;
       const classJavadoc = parseJavadoc(nodeJavadoc(typeDecl));
+      // 类级 ignore 规则命中 → 整类不产接口
+      let typeIgnored = false;
+
+      // .apifox-helper.properties 类级规则(ignore / folder.name)
+      if (rules) {
+        const classCtx: RuleContext = {
+          annotations: typeAnnotations,
+          javadocRaw: nodeJavadoc(typeDecl),
+          subject: `类 ${typeName}`,
+        };
+        // ignore:命中则整类跳过
+        for (const e of rules.entries) {
+          if (e.key !== "ignore") {
+            continue;
+          }
+          const cond = evalCondition(e.cond, classCtx, e.key, (m) => ruleWarnings.push(m));
+          if (!cond.supported) {
+            ruleWarnings.push(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+            continue;
+          }
+          if (!cond.hit) {
+            continue;
+          }
+          const v = evalRuleValue(e.value, classCtx, e.key, (m) => ruleWarnings.push(m));
+          if (v.skipped && v.reason) {
+            ruleWarnings.push(`${v.reason}(文件 ${e.file}:${e.line})`);
+            continue;
+          }
+          if (v.matched && v.value !== undefined && v.value !== "") {
+            typeIgnored = true;
+            break;
+          }
+        }
+        // 类级 folder.name(官方文档 folder.name 以 method 为目标;此处兼容“整类统一目录”的常见用法,
+        // 值支持字面量/@注解#attr/#tag。方法级 folder.name(见方法处理)优先级更高,会覆盖此值)
+        for (const e of rules.entries) {
+          if (e.key !== "folder.name" || typeIgnored) {
+            continue;
+          }
+          const cond = evalCondition(e.cond, classCtx, e.key, (m) => ruleWarnings.push(m));
+          if (!cond.supported) {
+            ruleWarnings.push(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+            continue;
+          }
+          if (!cond.hit) {
+            continue;
+          }
+          const v = evalRuleValue(e.value, classCtx, e.key, (m) => ruleWarnings.push(m));
+          if (v.skipped && v.reason) {
+            ruleWarnings.push(`${v.reason}(文件 ${e.file}:${e.line})`);
+            continue;
+          }
+          if (v.matched && v.value !== undefined && v.value.trim()) {
+            tag = v.value;
+          }
+        }
+      }
 
       // JAX-RS 类级 @Consumes/@Produces 对所有方法生效(方法级优先)
       const classConsumes = annArray(findAnn(typeAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType);
@@ -153,6 +214,118 @@ export function parseControllers(files: ParsedFile[]): ParseResult {
           continue;
         }
 
+        // .apifox-helper.properties 方法级规则(ignore / api.name / method.description)
+        let methodIgnored = typeIgnored;
+        let ruleSummary: string | undefined;
+        let ruleDescAppend: string | undefined;
+        let ruleFolder: string | undefined;
+        if (rules && !methodIgnored) {
+          const methodRawJavadoc = nodeJavadoc(wrapper);
+          const mctx: RuleContext = {
+            annotations: methodAnnotations,
+            javadocRaw: methodRawJavadoc,
+            subject: `方法 ${typeName}.${methodName}`,
+            extraAnnotations: typeAnnotations,
+          };
+          const warn = (m: string) => ruleWarnings.push(m);
+          for (const e of rules.entries) {
+            if (e.key !== "ignore") {
+              continue;
+            }
+            const cond = evalCondition(e.cond, mctx, e.key, warn);
+            if (!cond.supported) {
+              warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+              continue;
+            }
+            if (!cond.hit) {
+              continue;
+            }
+            const v = evalRuleValue(e.value, mctx, e.key, warn);
+            if (v.skipped && v.reason) {
+              warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+              continue;
+            }
+            if (v.matched && v.value !== undefined && v.value !== "") {
+              methodIgnored = true;
+            }
+          }
+          // api.name
+          if (!methodIgnored) {
+            for (const e of rules.entries) {
+              if (e.key !== "folder.name") {
+                continue;
+              }
+              const cond = evalCondition(e.cond, mctx, e.key, warn);
+              if (!cond.supported) {
+                warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (!cond.hit) {
+                continue;
+              }
+              const v = evalRuleValue(e.value, mctx, e.key, warn);
+              if (v.skipped && v.reason) {
+                warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (v.matched && v.value !== undefined && v.value.trim()) {
+                ruleFolder = v.value;
+              }
+            }
+            // api.name
+            for (const e of rules.entries) {
+              if (e.key !== "api.name") {
+                continue;
+              }
+              const cond = evalCondition(e.cond, mctx, e.key, warn);
+              if (!cond.supported) {
+                warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (!cond.hit) {
+                continue;
+              }
+              const v = evalRuleValue(e.value, mctx, e.key, warn);
+              if (v.skipped && v.reason) {
+                warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (v.matched && v.value !== undefined && v.value.trim()) {
+                ruleSummary = v.value;
+              }
+            }
+            // method.description(追加,官方语义“额外注释”)
+            const appends: string[] = [];
+            for (const e of rules.entries) {
+              if (e.key !== "method.description" && e.key !== "method.doc") {
+                continue;
+              }
+              const cond = evalCondition(e.cond, mctx, e.key, warn);
+              if (!cond.supported) {
+                warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (!cond.hit) {
+                continue;
+              }
+              const v = evalRuleValue(e.value, mctx, e.key, warn);
+              if (v.skipped && v.reason) {
+                warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+                continue;
+              }
+              if (v.matched && v.value !== undefined && v.value.trim()) {
+                appends.push(v.value);
+              }
+            }
+            if (appends.length) {
+              ruleDescAppend = appends.join("\n");
+            }
+          }
+        }
+        if (methodIgnored) {
+          continue;
+        }
+
         const mappings = resolveMapping(methodAnnotations, flavor);
         if (!mappings.length) {
           continue;
@@ -163,29 +336,38 @@ export function parseControllers(files: ParsedFile[]): ParseResult {
         for (const m of mappings) {
           for (const mp of m.paths) {
             for (const bp of basePaths) {
-              endpoints.push(
-                buildEndpoint(pf, warnings, {
-                  flavor,
-                  verb: m.method,
-                  path: joinPath(bp, mp),
-                  tag,
-                  controller: typeName,
-                  methodName,
-                  methodAnnotations,
-                  method,
-                  wrapper,
-                  classJavadoc,
-                  consumes,
-                  produces,
-                })
-              );
+              const ep = buildEndpoint(pf, warnings, {
+                flavor,
+                verb: m.method,
+                path: joinPath(bp, mp),
+                tag: ruleFolder ?? tag,
+                controller: typeName,
+                methodName,
+                methodAnnotations,
+                method,
+                wrapper,
+                classJavadoc,
+                consumes,
+                produces,
+                ruleSummary,
+                ruleDescAppend,
+                index,
+              });
+              if (ep) {
+                endpoints.push(ep);
+              }
             }
           }
         }
       }
     }
   }
+  warnings.push(...ruleWarnings);
   return { endpoints, warnings };
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
 interface MethodMapping {
@@ -242,6 +424,12 @@ interface EndpointArgs {
   classJavadoc: ReturnType<typeof parseJavadoc>;
   consumes: string[];
   produces: string[];
+  /** api.name 规则覆盖(summary 用;swagger 注解仍优先) */
+  ruleSummary?: string;
+  /** method.description 规则追加到 description */
+  ruleDescAppend?: string;
+  /** 全项目类型索引(用于展开无注解的查询 Bean 参数) */
+  index?: TypeIndex;
 }
 
 function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): EndpointInfo {
@@ -249,15 +437,20 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
 
   const operationAnn = findAnn(a.methodAnnotations, "Operation");
   const apiOperation = findAnn(a.methodAnnotations, "ApiOperation");
+  // summary 优先级:@Operation/@ApiOperation > api.name 规则 > javadoc 首行 > 方法名
   const summary =
     (operationAnn && annStr(operationAnn.args, "summary", "value")) ||
     (apiOperation && annStr(apiOperation.args, "value")) ||
+    a.ruleSummary ||
     javadoc?.firstLine ||
     a.methodName;
-  const description =
+  let description =
     (operationAnn && annStr(operationAnn.args, "description")) ||
     (apiOperation && annStr(apiOperation.args, "notes")) ||
     (javadoc && javadoc.description && javadoc.description !== javadoc.firstLine ? javadoc.description : undefined);
+  if (a.ruleDescAppend) {
+    description = description ? `${description}\n${a.ruleDescAppend}` : a.ruleDescAppend;
+  }
 
   // ---- 参数 ----
   const header = childNode(a.method, "methodHeader") ?? a.method;
@@ -356,6 +549,18 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     } else if (a.flavor === "jaxrs") {
       // JAX-RS 无注解参数即请求体
       requestBody = { typeText, required: true, description };
+    } else if (a.index) {
+      // Spring 无注解的复杂 Bean:按 query 参数展开字段(如分页/条件查询对象 PatientQuery query)
+      const expanded = expandQueryBean(a.index, typeText, pf.source);
+      if (expanded.length) {
+        for (const f of expanded) {
+          if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
+            parameters.push({ ...f, description: f.description || docDescOf(paramDocs, f.name) });
+          }
+        }
+      } else {
+        warnings.push(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,且无法展开为查询参数,已忽略`);
+      }
     } else {
       warnings.push(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,已忽略`);
     }
@@ -578,6 +783,90 @@ function isHiddenParam(annotations: AnnotationInfo[]): boolean {
 function isPageableType(typeText: string): boolean {
   const t = typeText.trim();
   return t === "Pageable" || t === "org.springframework.data.domain.Pageable";
+}
+
+/** 参数级 @param 文档里查某字段说明(paramDocs 是方法 javadoc @param 的合并) */
+function docDescOf(paramDocs: Record<string, string>, fieldName: string): string | undefined {
+  return paramDocs[fieldName]?.trim() || undefined;
+}
+
+/**
+ * 展开无注解的“查询 Bean”为 query 参数列表。
+ * Spring 对 Controller 方法中无任何绑定注解的普通 JavaBean 参数,会将其字段按 query/form 绑定。
+ * 这里取 TypeIndex 中该类型的字段(含父类),逐字段生成 ParameterInfo;
+ * 嵌套对象字段保持为对象查询参数(名称用 字段名.子字段 形式会过度设计,这里遇到非标量子对象则跳过并提示)。
+ */
+function expandQueryBean(index: TypeIndex, typeText: string, _source: string): ParameterInfo[] {
+  const t = parseTypeText(typeText);
+  const simple = simpleNameOf(t.name);
+  let info = index.types.get(simple);
+  if (!info && index.jarLookup) {
+    info = index.jarLookup(simple);
+    if (info) {
+      index.types.set(simple, info);
+    }
+  }
+  if (!info || info.kind === "enum" || info.kind === "record") {
+    return [];
+  }
+  const out: ParameterInfo[] = [];
+  const seen = new Set<string>();
+  const walk = (ci: import("./model").ClassInfo, depth: number) => {
+    if (depth > 4) {
+      return;
+    }
+    const fields = ci.fields.length ? ci.fields : ci.recordComponents;
+    for (const f of fields) {
+      // 忽略静态/JsonIgnore 等已在类型索引里滤掉;这里按字段注解再滤一次
+      if (seen.has(f.name)) {
+        continue;
+      }
+      const fSimple = simpleNameOf(parseTypeText(f.typeText).name);
+      const sub = index.types.get(fSimple) ?? index.jarLookup?.(fSimple);
+      if (sub && sub.kind !== "enum" && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple)) {
+        // 子对象:Spring 会按 父字段名.子字段 绑定 query;为可读性这里扁平化为 子字段 会冲突,
+        // 故仅当子对象可再展开时递归,名称保留 字段名 前缀
+        continue; // 复杂嵌套在此版不展开,避免误导
+      }
+      seen.add(f.name);
+      const required = !!findAnn(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+      const desc = (f.javadoc && (f.javadoc.description || f.javadoc.firstLine)) || undefined;
+      out.push({
+        name: f.name,
+        in: "query",
+        typeText: f.typeText,
+        required,
+        description: desc,
+        annotations: f.annotations,
+      });
+    }
+    if (ci.superClass) {
+      const supSimple = simpleNameOf(parseTypeText(ci.superClass).name);
+      let sup = index.types.get(supSimple);
+      if (!sup && index.jarLookup) {
+        sup = index.jarLookup(supSimple);
+        if (sup) {
+          index.types.set(supSimple, sup);
+        }
+      }
+      if (sup && sup.kind === "class") {
+        walk(sup, depth + 1);
+      }
+    }
+  };
+  walk(info, 0);
+  return out;
+}
+
+function isPlainValueType(simple: string): boolean {
+  return /^(int|Integer|long|Long|short|Short|byte|Byte|float|Float|double|Double|boolean|Boolean|String|char|Character|BigDecimal|BigInteger|Date|LocalDate|LocalDateTime|LocalTime|Instant|ZonedDateTime|OffsetDateTime|Timestamp|UUID|Enum|List|Set|Map|String\[\])$/.test(
+    simple
+  );
+}
+
+function simpleNameOf(qualified: string): string {
+  const i = qualified.lastIndexOf(".");
+  return i >= 0 ? qualified.slice(i + 1) : qualified;
 }
 
 function extractReturnType(pf: ParsedFile, resultNode: CstNode): string | undefined {

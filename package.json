@@ -1,8 +1,8 @@
 {
-  "name": "apifox-helper-vscode",
-  "displayName": "Apifox Helper (Community)",
-  "description": "解析 Spring Boot 源码,自动生成接口文档并同步到 Apifox。Parse Spring Boot code into OpenAPI and sync to Apifox.",
-  "version": "0.2.1",
+  "name": "api2apifox",
+  "displayName": "Apifox Helper",
+  "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
+  "version": "0.2.10",
   "publisher": "duyiliu",
   "license": "MIT",
   "repository": {
@@ -31,12 +31,34 @@
   "contributes": {
     "commands": [
       {
+        "command": "apifoxHelper.openSettingsPanel",
+        "title": "Apifox Helper: 项目与账号设置中心 (Settings)",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "apifoxHelper.quickSetup",
+        "title": "Apifox Helper: 项目与账号设置中心 (Settings)",
+        "icon": "$(gear)"
+      },
+      {
         "command": "apifoxHelper.setToken",
-        "title": "Apifox Helper: 设置访问令牌 (Access Token)"
+        "title": "Apifox Helper: 设置访问令牌 (Access Token)",
+        "icon": "$(key)"
+      },
+      {
+        "command": "apifoxHelper.clearToken",
+        "title": "Apifox Helper: 清除访问令牌 (Clear Token)",
+        "icon": "$(trash)"
       },
       {
         "command": "apifoxHelper.selectProject",
-        "title": "Apifox Helper: 选择 Apifox 项目 (Select Project)"
+        "title": "Apifox Helper: 选择 Apifox 项目 (Select Project)",
+        "icon": "$(project)"
+      },
+      {
+        "command": "apifoxHelper.refreshConfigView",
+        "title": "Apifox Helper: 刷新项目与账号状态",
+        "icon": "$(refresh)"
       },
       {
         "command": "apifoxHelper.syncWorkspace",
@@ -53,9 +75,130 @@
       {
         "command": "apifoxHelper.exportOpenapi",
         "title": "Apifox Helper: 导出 OpenAPI 预览文件 (Export openapi.gen.json)"
+      },
+      {
+        "command": "apifoxHelper.refreshApiTree",
+        "title": "Apifox Helper: 刷新接口列表 (Refresh API List)",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "apifoxHelper.searchApi",
+        "title": "Apifox Helper: 搜索接口 (Search API)",
+        "icon": "$(search)"
+      },
+      {
+        "command": "apifoxHelper.checkAllApis",
+        "title": "Apifox Helper: 全选所有接口 (Check All)",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "apifoxHelper.uncheckAllApis",
+        "title": "Apifox Helper: 清空所有勾选 (Clear Checks)",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "apifoxHelper.syncFolderApis",
+        "title": "Apifox Helper: 同步此目录全部接口到 Apifox",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "apifoxHelper.checkFolderApis",
+        "title": "Apifox Helper: 勾选本目录全部接口",
+        "icon": "$(check)"
+      },
+      {
+        "command": "apifoxHelper.uncheckFolderApis",
+        "title": "Apifox Helper: 取消勾选本目录接口",
+        "icon": "$(close)"
+      },
+      {
+        "command": "apifoxHelper.syncCheckedApis",
+        "title": "Apifox Helper: 同步勾选的接口到 Apifox (Sync Checked APIs)",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "apifoxHelper.gotoEndpoint",
+        "title": "Apifox Helper: 跳转到接口定义 (Goto Definition)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "apifoxHelper",
+          "title": "Apifox Helper",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "apifoxHelper": [
+        {
+          "id": "apifoxHelper.apiTree",
+          "name": "接口列表"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "apifoxHelper.apiTree",
+        "contents": "尚未配置 Apifox 访问令牌或项目。\n[⚙ 打开设置中心](command:apifoxHelper.openSettingsPanel)\n\n若已配置，请确保工作区包含 Spring Boot Controller 源码，点击下方刷新接口：\n[🔄 刷新接口列表](command:apifoxHelper.refreshApiTree)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "apifoxHelper.openSettingsPanel",
+          "group": "navigation@0",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.syncCheckedApis",
+          "group": "navigation@1",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.checkAllApis",
+          "group": "navigation@2",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.uncheckAllApis",
+          "group": "navigation@3",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.searchApi",
+          "group": "navigation@4",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.refreshApiTree",
+          "group": "navigation@5",
+          "when": "view == apifoxHelper.apiTree"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "apifoxHelper.syncFolderApis",
+          "group": "inline",
+          "when": "view == apifoxHelper.apiTree && viewItem == folder"
+        },
+        {
+          "command": "apifoxHelper.syncFolderApis",
+          "group": "1_sync@1",
+          "when": "view == apifoxHelper.apiTree && viewItem == folder"
+        },
+        {
+          "command": "apifoxHelper.checkFolderApis",
+          "group": "2_check@1",
+          "when": "view == apifoxHelper.apiTree && viewItem == folder"
+        },
+        {
+          "command": "apifoxHelper.uncheckFolderApis",
+          "group": "2_check@2",
+          "when": "view == apifoxHelper.apiTree && viewItem == folder"
+        }
+      ],
       "explorer/context": [
         {
           "command": "apifoxHelper.syncFile",
@@ -78,6 +221,16 @@
           "type": "number",
           "default": 0,
           "description": "Apifox 项目 ID(可用命令「选择 Apifox 项目」自动获取)。项目设置页可查看。"
+        },
+        "apifoxHelper.projectName": {
+          "type": "string",
+          "default": "",
+          "description": "当前选择绑定的 Apifox 项目名称(选择项目时自动记录)。"
+        },
+        "apifoxHelper.teamName": {
+          "type": "string",
+          "default": "",
+          "description": "当前选择绑定的 Apifox 项目所属团队名称(选择项目时自动记录)。"
         },
         "apifoxHelper.apiBaseUrl": {
           "type": "string",
@@ -136,7 +289,8 @@
           "default": [
             "**/target/**",
             "**/build/**",
-            "**/src/test/**"
+            "**/src/test/**",
+            "**/sample/**"
           ],
           "description": "排除的 glob。"
         },
@@ -147,7 +301,10 @@
         },
         "apifoxHelper.pageTypeStyle": {
           "type": "string",
-          "enum": ["mybatis-plus", "spring-data"],
+          "enum": [
+            "mybatis-plus",
+            "spring-data"
+          ],
           "default": "mybatis-plus",
           "enumDescriptions": [
             "MyBatis-Plus 形态(records/total/size/current/pages),适用于 Page/IPage",
@@ -157,7 +314,10 @@
         },
         "apifoxHelper.folderNameSource": {
           "type": "string",
-          "enum": ["tag", "controller"],
+          "enum": [
+            "tag",
+            "controller"
+          ],
           "default": "tag",
           "description": "接口目录命名来源:@Tag 注解值(缺省类名)或 Controller 类名。"
         },
@@ -166,10 +326,41 @@
           "default": "",
           "description": "可选。所有接口目录放到该父目录下(不存在则自动创建),留空则直接放在项目根。"
         },
+        "apifoxHelper.schemaFolderId": {
+          "type": "number",
+          "default": 0,
+          "description": "可选。数据模型导入到该目录(填 Apifox 中目录的数字 ID,可在客户端目录右键复制),0 或留空则放在模型根目录。"
+        },
         "apifoxHelper.schemaFolderName": {
           "type": "string",
           "default": "",
-          "description": "可选。数据模型导入到该目录(不存在则自动创建),留空则放在模型根目录。"
+          "description": "已废弃(Apifox 开放 API 已下线目录查询接口,无法按名查找)。请改用 apifoxHelper.schemaFolderId。"
+        },
+        "apifoxHelper.helperProperties.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否识别工作区中的 .apifox-helper.properties(与 IDEA 版 Apifox Helper 兼容的规则子集)。"
+        },
+        "apifoxHelper.helperProperties.enumFieldDoc": {
+          "type": "boolean",
+          "default": false,
+          "description": "字段类型为枚举时,自动在字段描述后追加「(枚举类:类名)」。对应团队 groovy 规则意图,默认关。"
+        },
+        "apifoxHelper.dependencyRepos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "可选兜底:额外本地 Maven 仓库目录。默认已自动发现(JetBrains MAVEN_REPOSITORY 路径变量、IDEA Maven 索引、~/.m2/settings.xml、~/.m2/repository),仅当自动发现不到时才需要配置。"
+        },
+        "apifoxHelper.dependencyJars": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "显式依赖 jar 的绝对路径(优先于仓库发现),用于识别源码之外的类型。"
         }
       }
     }
@@ -178,7 +369,7 @@
     "compile": "node esbuild.js",
     "typecheck": "tsc --noEmit",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js",
+    "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js out/test/properties.test.js out/test/rules.test.js out/test/jar.test.js",
     "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix",
     "watch": "node esbuild.js --watch"
   },

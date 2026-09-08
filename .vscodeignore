@@ -7,6 +7,7 @@ esbuild.js
 tsconfig*.json
 **/*.map
 sample/**
+work/**
 probe/**
 *.log
 openapi.gen.json

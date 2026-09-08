@@ -18,6 +18,8 @@ export interface FieldInfo {
   typeText: string;
   annotations: AnnotationInfo[];
   javadoc?: JavadocInfo;
+  /** javadoc 原文(供 .apifox-helper.properties #tag 规则使用) */
+  javadocRaw?: string;
 }
 
 export interface ClassInfo {
@@ -42,6 +44,8 @@ export interface TypeIndex {
   types: Map<string, ClassInfo>;
   /** 文件路径 -> 该文件定义的类型简单名 */
   byFile: Map<string, string[]>;
+  /** 源码中未找到的类型,按需从依赖 jar 解析(class 字节码);无 jar 索引时缺省 */
+  jarLookup?: (simpleName: string) => ClassInfo | undefined;
 }
 
 /** 一个 REST 接口(OpenAPI Operation 的中间表示) */

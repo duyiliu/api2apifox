@@ -1,5 +1,6 @@
 import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
 import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry } from "../java/schemaResolver";
+import { HelperProperties } from "../config/helperProperties";
 
 export interface BuildOptions {
   /** OpenAPI info.title,一般用工作区名 */
@@ -7,6 +8,12 @@ export interface BuildOptions {
   description?: string;
   /** 简单名为 Page 的分页包装展开风格(默认 mybatis-plus) */
   pageStyle?: "spring-data" | "mybatis-plus";
+  /** .apifox-helper.properties 字段规则 */
+  rules?: HelperProperties;
+  /** 枚举字段自动追加「(枚举类:X)」 */
+  enumFieldDoc?: boolean;
+  /** 为每个 operation 计算 x-apifox-folder 目录(与 folderNameSource/rootFolderName 对应) */
+  folderOf?: (ep: EndpointInfo) => string;
 }
 
 export interface OpenApiSpec {
@@ -25,7 +32,14 @@ export interface BuildOutput {
 /** 把解析结果构建为 OpenAPI 3.0 文档 */
 export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: BuildOptions): BuildOutput {
   const registry = new SchemaRegistry();
-  const ctx: ResolveContext = { index, registry, options: { pageStyle: options.pageStyle } };
+  const fieldWarnings: string[] = [];
+  const ctx: ResolveContext = {
+    index,
+    registry,
+    options: { pageStyle: options.pageStyle, enumFieldDoc: options.enumFieldDoc },
+    fieldRules: options.rules,
+    fieldWarnings,
+  };
   const paths: Record<string, Record<string, unknown>> = {};
   const tags = new Map<string, string | undefined>();
   const usedOperationIds = new Map<string, number>();
@@ -47,7 +61,7 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
     const count = usedOperationIds.get(ep.operationId) ?? 0;
     usedOperationIds.set(ep.operationId, count + 1);
     opFlavors.set(`${ep.path} ${verbKey}`, ep.flavor);
-    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId);
+    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId, options.folderOf);
   }
 
   const spec: OpenApiSpec = {
@@ -63,10 +77,13 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
   if (Object.keys(registry.schemas).length) {
     spec.components = { schemas: registry.schemas };
   }
+  if (fieldWarnings.length) {
+    parse.warnings.push(...fieldWarnings);
+  }
   return { spec, warnings: parse.warnings };
 }
 
-function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: string): Record<string, unknown> {
+function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: string, folderOf?: (ep: EndpointInfo) => string): Record<string, unknown> {
   const op: Record<string, unknown> = {
     tags: [ep.tag],
     summary: ep.summary,
@@ -75,6 +92,13 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   };
   if (ep.deprecated) {
     op.deprecated = true;
+  }
+  // x-apifox-folder:Apifox 导入时优先按它建接口目录;缺省时用 tags[0]
+  if (folderOf) {
+    const folder = folderOf(ep);
+    if (folder) {
+      op["x-apifox-folder"] = folder;
+    }
   }
 
   const parameters = ep.parameters.map((p) => {

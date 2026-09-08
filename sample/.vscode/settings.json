@@ -1,0 +1,12 @@
+{
+  // Apifox Helper 测试工作区配置(打开本目录后生效)
+  // projectId 留 0,运行命令「Apifox Helper: 选择 Apifox 项目」会自动填入
+  "apifoxHelper.projectId": 0,
+  // 同步测试建议用覆盖,重复执行结果一致,便于验证
+  "apifoxHelper.endpointConflictBehavior": "OVERWRITE_EXISTING",
+  "apifoxHelper.schemaConflictBehavior": "OVERWRITE_EXISTING",
+  // sample 的 Controller 均带 @Tag,name 中文目录
+  "apifoxHelper.folderNameSource": "tag",
+  "apifoxHelper.pageTypeStyle": "mybatis-plus",
+  "apifoxHelper.exportPath": "openapi.gen.json"
+}
