@@ -179,6 +179,8 @@ public class PatientQuery {
   private Integer pageNo;
   /** 性别枚举 */
   private MyStatus status;
+  @ApiModelProperty("排除的就诊ID")
+  private Long excludeVisitId;
 }
 `;
   const res = analyze(
@@ -194,8 +196,12 @@ public class PatientQuery {
   assert.ok(names.includes("name"), "应展开 name: " + names);
   assert.ok(names.includes("pageNo"), "应展开 pageNo");
   assert.ok(names.includes("status"), "应展开 status");
+  assert.ok(names.includes("excludeVisitId"), "应展开 excludeVisitId");
   const name = op.parameters.find((p: any) => p.name === "name");
   assert.equal(name.description, "姓名");
+  // @ApiModelProperty 描述的字段(无字段 Javadoc)描述不应丢失
+  const exclude = op.parameters.find((p: any) => p.name === "excludeVisitId");
+  assert.equal(exclude.description, "排除的就诊ID");
   // 不再告警该参数被忽略
   assert.ok(!res.warnings.some((w) => w.includes("PatientQuery") && w.includes("已忽略")), res.warnings.join("|"));
 });

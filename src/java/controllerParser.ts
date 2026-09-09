@@ -8,7 +8,7 @@ import {
   annArray, annBool, annStr, AnnotationInfo, EndpointFlavor, EndpointInfo, findAnn,
   ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
-import { schemaExample } from "./schemaResolver";
+import { schemaExample, schemaDescription } from "./schemaResolver";
 import { ParsedFile } from "./typeIndex";
 
 const SPRING_MAPPINGS: Record<string, string[]> = {
@@ -830,7 +830,11 @@ function expandQueryBean(index: TypeIndex, typeText: string, _source: string): P
       }
       seen.add(f.name);
       const required = !!findAnn(f.annotations, "NotNull", "NotBlank", "NotEmpty");
-      const desc = (f.javadoc && (f.javadoc.description || f.javadoc.firstLine)) || undefined;
+      // 字段描述:@ApiModelProperty/@Schema 优先(此前只读 Javadoc,注解描述丢失),Javadoc 兜底
+      const desc = schemaDescription(
+        f.annotations,
+        (f.javadoc && (f.javadoc.description || f.javadoc.firstLine)) || undefined
+      );
       out.push({
         name: f.name,
         in: "query",
