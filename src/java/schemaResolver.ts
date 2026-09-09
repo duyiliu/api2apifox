@@ -132,12 +132,36 @@ function schemaKey(info: ClassInfo, t: TypeRef): string {
   return info.simpleName + "«" + t.args.map(typeToKeyText).join(",") + "»";
 }
 
+/**
+ * 类/枚举级描述(对应 Apifox 数据模型备注):
+ * @Schema(description) > @ApiModel(value/description) > 类 Javadoc(正文优先,单行取首行)。
+ * 注:@ApiModelProperty 仅用于字段级描述,类上不生效。
+ */
+export function classDescription(
+  annotations: AnnotationInfo[],
+  javadoc?: { description: string; firstLine: string }
+): string | undefined {
+  const schema = findAnn(annotations, "Schema");
+  const d1 = schema ? annStr(schema.args, "description", "value") : undefined;
+  if (d1) {
+    return d1;
+  }
+  // Swagger 2 类级 @ApiModel 是常见备注来源(IDEA 版插件同义),此前未识别导致备注永远同步不上去
+  const apiModel = findAnn(annotations, "ApiModel");
+  const d2 = apiModel ? annStr(apiModel.args, "value", "description") : undefined;
+  if (d2) {
+    return d2;
+  }
+  const text = javadoc?.description || javadoc?.firstLine;
+  return text && text.trim() ? text : undefined;
+}
+
 function enumSchema(info: ClassInfo): JsonSchema {
   const schema: JsonSchema = { type: "string", title: info.simpleName };
   if (info.enumConstants.length) {
     schema.enum = [...info.enumConstants];
   }
-  const desc = schemaDescription(info.annotations, info.javadoc?.description);
+  const desc = classDescription(info.annotations, info.javadoc);
   if (desc) {
     schema.description = desc;
   }
@@ -222,7 +246,7 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
   const schema: JsonSchema = {
     type: "object",
     title: info.simpleName,
-    description: schemaDescription(info.annotations, info.javadoc?.description),
+    description: classDescription(info.annotations, info.javadoc),
     properties,
   };
   if (required.length) {

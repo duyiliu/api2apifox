@@ -3,6 +3,34 @@ import { test } from "node:test";
 import { parseArgsText, splitTopLevel } from "../java/annotation";
 import { parseJavadoc } from "../java/javadoc";
 import { parseTypeText, typeToKeyText } from "../java/typeText";
+import { classDescription } from "../java/schemaResolver";
+import { AnnotationInfo } from "../java/annotation";
+
+const ann = (name: string, value: string): AnnotationInfo => ({ name, raw: `@${name}("${value}")`, args: { value } });
+
+test("classDescription:@ApiModel 值成为模型描述(此前缺口)", () => {
+  assert.equal(classDescription([ann("ApiModel", "患者历史体检记录响应模型")], undefined), "患者历史体检记录响应模型");
+});
+
+test("classDescription:@Schema description 优先于 @ApiModel", () => {
+  const annotations = [
+    { name: "Schema", raw: "@Schema(description = \"openapi 描述\")", args: { description: "openapi 描述" } } as AnnotationInfo,
+    ann("ApiModel", "swagger 描述"),
+  ];
+  assert.equal(classDescription(annotations, undefined), "openapi 描述");
+});
+
+test("classDescription:单行 javadoc 首行兜底为模型描述", () => {
+  const javadoc = parseJavadoc("/** 患者历史体检记录响应模型。 */");
+  assert.ok(javadoc);
+  assert.equal(classDescription([], javadoc), "患者历史体检记录响应模型。");
+});
+
+test("classDescription:无任何来源返回 undefined", () => {
+  assert.equal(classDescription([], parseJavadoc("/** */")), undefined);
+  assert.equal(classDescription([], undefined), undefined);
+});
+
 
 test("splitTopLevel 忽略括号/字符串内逗号", () => {
   assert.deepEqual(splitTopLevel('a, {b, c}, "x,y"'), ["a", " {b, c}", ' "x,y"']);
