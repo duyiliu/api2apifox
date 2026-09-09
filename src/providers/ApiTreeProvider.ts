@@ -14,6 +14,7 @@ import { getSettings } from "../config/settings";
 
 export type ApiTreeNode =
   | { kind: "banner"; projectId: number; projectName: string; teamName: string }
+  | { kind: "filterBar"; keyword: string; count: number; total: number }
   | { kind: "empty"; message: string }
   | { kind: "folder"; key: string; endpoints: EndpointInfo[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
@@ -193,6 +194,19 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       item.contextValue = "banner";
       return item;
     }
+    if (element.kind === "filterBar") {
+      // 过滤激活时常驻:关键字 + 命中数一目了然,点击改关键字,行内按钮一键清除
+      const item = new vscode.TreeItem(`🔍 "${element.keyword}" · ${element.count}/${element.total} 个接口`, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon("filter", new vscode.ThemeColor("charts.yellow"));
+      item.description = "点击改关键字 · ✕ 清除";
+      item.tooltip = `当前过滤: "${element.keyword}"\n匹配 ${element.count} / 共 ${element.total} 个接口\n点击重新输入关键字,行内 ✕ 一键清除`;
+      item.command = {
+        command: "apifoxHelper.filterApi",
+        title: "修改过滤关键字",
+      };
+      item.contextValue = "filterBar";
+      return item;
+    }
     if (element.kind === "empty") {
       const isFiltered = this.isFiltered();
       const item = new vscode.TreeItem(element.message, vscode.TreeItemCollapsibleState.None);
@@ -283,6 +297,16 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
       const nodes: ApiTreeNode[] = [bannerNode];
       const stats = this.getFilterStats();
+
+      // 过滤激活时在 banner 下常驻一行:关键字 + 命中数,附行内清除按钮
+      if (this.isFiltered()) {
+        nodes.push({
+          kind: "filterBar",
+          keyword: this.filterKeyword,
+          count: stats.count,
+          total: stats.total,
+        });
+      }
 
       if (this.isFiltered() && stats.count === 0) {
         nodes.push({
