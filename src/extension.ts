@@ -8,16 +8,36 @@ import { getSettings } from "./config/settings";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
-import { openQuickSetup } from "./config/quickSetup";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { analyze, analyzeSubset, AnalyzeCache, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 
 const cache = new AnalyzeCache();
 
+/**
+ * 依赖 jar 索引的会话级缓存:jar 文件集合与内容指纹未变时直接复用,
+ * 避免每次保存 Java 文件刷新树都同步重读一遍 jar(大仓下保存后会卡一下)。
+ * 显式 jar / 额外仓库目录配置变化、任一匹配 jar 的 mtime/size 变化即失效。
+ */
+let jarIndexCache: { key: string; index: JarClassIndex | undefined } | undefined;
+
+function jarIndexCacheKey(configSignature: string, jars: string[]): string {
+  const parts: string[] = [configSignature];
+  for (const j of jars) {
+    try {
+      const st = fs.statSync(j);
+      parts.push(`${j}|${st.size}|${st.mtimeMs}`);
+    } catch {
+      parts.push(`${j}|missing`);
+    }
+  }
+  return parts.join("\n");
+}
+
 /** 构建依赖 jar 的类索引(源码之外的类型按需从 .class 解析,如框架的 ResponseDto) */
 async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   const settings = getSettings();
+  const configSignature = [...settings.dependencyJars, ...settings.dependencyRepos].join("\n");
   const jars: string[] = [];
   // 1. 显式 jar 优先
   for (const j of settings.dependencyJars) {
@@ -46,11 +66,19 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
       jars.push(...resolved);
     }
   }
+  // jar 集合与文件指纹未变时复用会话缓存,大仓保存刷新不再同步重读
+  const key = jarIndexCacheKey(configSignature, jars);
+  if (jarIndexCache && jarIndexCache.key === key) {
+    return jarIndexCache.index;
+  }
   if (!jars.length) {
+    jarIndexCache = { key, index: undefined };
     return undefined;
   }
   const idx = JarClassIndex.build(jars);
-  return idx.size ? idx : undefined;
+  const result = idx.size ? idx : undefined;
+  jarIndexCache = { key, index: result };
+  return result;
 }
 
 /** 找到工作区内的 .apifox-helper.properties 并读取(整包同步/导出用) */
@@ -103,8 +131,8 @@ export function activate(context: vscode.ExtensionContext): void {
     return new ApifoxClient(settings.apiBaseUrl, token);
   };
 
-  /** 收集要分析的 Java 文件;singleFile 限定为一个文件 */
-  const collectFiles = async (singleFile?: vscode.Uri): Promise<SourceFile[] | undefined> => {
+  /** 收集要分析的 Java 文件;singleFile 限定为一个文件(token 取消即中断读文件循环) */
+  const collectFiles = async (singleFile?: vscode.Uri, token?: vscode.CancellationToken): Promise<SourceFile[] | undefined> => {
     const settings = getSettings();
     let uris: vscode.Uri[];
     if (singleFile) {
@@ -118,6 +146,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     const files: SourceFile[] = [];
     for (const uri of uris) {
+      if (token?.isCancellationRequested) {
+        return undefined;
+      }
       try {
         files.push({ fsPath: uri.fsPath, content: await fs.promises.readFile(uri.fsPath, "utf8") });
       } catch {
@@ -146,8 +177,11 @@ export function activate(context: vscode.ExtensionContext): void {
     };
   };
 
-  const analyzeWorkspace = async (singleFile?: vscode.Uri) => {
-    const files = await collectFiles(singleFile);
+  const analyzeWorkspace = async (singleFile?: vscode.Uri, token?: vscode.CancellationToken) => {
+    const files = await collectFiles(singleFile, token);
+    if (token?.isCancellationRequested) {
+      return undefined;
+    }
     if (!files) {
       vscode.window.showWarningMessage(singleFile ? "该文件不可读" : "没有扫描到任何 Java 源文件(检查 include/exclude 配置)");
       return undefined;
@@ -155,11 +189,14 @@ export function activate(context: vscode.ExtensionContext): void {
     return cache.analyze(files, await analyzeOptions());
   };
 
-  /** 同步一组接口(整包/单文件/单接口共用):先带进度完成解析,再上传 */
-  const doSync = async (emptyHint: string, prepare: () => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>) => {
+  /** 同步一组接口(整包/单文件/单接口共用):先带可取消进度完成解析,再上传 */
+  const doSync = async (emptyHint: string, prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>) => {
     const analyzed = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引..." },
-      () => prepare()
+      { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
+      (progress, token) => {
+        progress.report({ message: "扫描 Java 文件..." });
+        return prepare(token);
+      }
     );
     if (!analyzed) {
       return;
@@ -195,10 +232,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const updateStatusBar = () => {
     const s = getSettings();
     if (s.projectId > 0) {
-      statusBarItem.text = `$(project) Apifox: ${s.projectName || s.projectId}`;
-      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 Apifox 快捷操作盘`;
+      statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}`;
+      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 ApiGen 快捷操作盘`;
     } else {
-      statusBarItem.text = `$(warning) Apifox: 未绑定`;
+      statusBarItem.text = `$(warning) ApiGen: 未绑定`;
       statusBarItem.tooltip = "尚未绑定 Apifox 项目，点击进行设置";
     }
     statusBarItem.command = "apifoxHelper.showStatusBarMenu";
@@ -461,8 +498,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const wanted = new Set(endpoints.map((e) => `${e.method} ${e.path}`));
-      await doSync(`目录「${node.key}」下未发现可同步的接口`, async () => {
-        const allFiles = await collectFiles();
+      await doSync(`目录「${node.key}」下未发现可同步的接口`, async (token) => {
+        const allFiles = await collectFiles(undefined, token);
         if (!allFiles) {
           return undefined;
         }
@@ -477,8 +514,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // 全量上下文解析,只输出勾选接口(与单接口同步同机制)
       const wanted = new Set(checked.map((e) => `${e.method} ${e.path}`));
-      await doSync("勾选的接口未在当前解析结果中", async () => {
-        const allFiles = await collectFiles();
+      await doSync("勾选的接口未在当前解析结果中", async (token) => {
+        const allFiles = await collectFiles(undefined, token);
         if (!allFiles) {
           return undefined;
         }
@@ -490,8 +527,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const ep = node.endpoint;
-      await doSync(`接口 [${ep.method} ${ep.path}] 未在当前解析结果中`, async () => {
-        const allFiles = await collectFiles();
+      await doSync(`接口 [${ep.method} ${ep.path}] 未在当前解析结果中`, async (token) => {
+        const allFiles = await collectFiles(undefined, token);
         if (!allFiles) {
           return undefined;
         }
@@ -569,15 +606,14 @@ export function activate(context: vscode.ExtensionContext): void {
   treeProvider.refresh().catch(() => undefined);
 
   const openSettings = () => {
-    SettingsPanel.createOrShow(context.extensionUri, secrets, () => {
+    SettingsPanel.createOrShow(secrets, () => {
       treeProvider.refresh().catch(() => undefined);
     });
   };
 
   // 命令:打开 Webview 设置中心表单面板
   context.subscriptions.push(
-    vscode.commands.registerCommand("apifoxHelper.openSettingsPanel", openSettings),
-    vscode.commands.registerCommand("apifoxHelper.quickSetup", openSettings)
+    vscode.commands.registerCommand("apifoxHelper.openSettingsPanel", openSettings)
   );
 
   // 命令:设置令牌
@@ -616,7 +652,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令:同步整个项目
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.syncWorkspace", async () => {
-      await doSync("没有扫描到任何 Java 源文件", () => analyzeWorkspace());
+      await doSync("没有扫描到任何 Java 源文件", (token) => analyzeWorkspace(undefined, token));
     })
   );
 
@@ -629,8 +665,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 用全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
-      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async () => {
-        const allFiles = await collectFiles();
+      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async (token) => {
+        const allFiles = await collectFiles(undefined, token);
         if (!allFiles) {
           return undefined;
         }
@@ -667,8 +703,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 用全量上下文解析类型,只输出该接口
-      await doSync("未发现可同步的接口", async () => {
-        const allFiles = await collectFiles();
+      await doSync("未发现可同步的接口", async (token) => {
+        const allFiles = await collectFiles(undefined, token);
         const source = allFiles ?? files;
         return analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
       });

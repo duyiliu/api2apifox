@@ -2,7 +2,7 @@
   "name": "api2apifox",
   "displayName": "ApiGen for Apifox",
   "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "publisher": "duyiliu",
   "license": "MIT",
   "repository": {
@@ -32,11 +32,6 @@
     "commands": [
       {
         "command": "apifoxHelper.openSettingsPanel",
-        "title": "ApiGen for Apifox: 项目与账号设置中心 (Settings)",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "apifoxHelper.quickSetup",
         "title": "ApiGen for Apifox: 项目与账号设置中心 (Settings)",
         "icon": "$(gear)"
       },
@@ -456,7 +451,7 @@
     "compile": "node esbuild.js",
     "typecheck": "tsc --noEmit",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js out/test/properties.test.js out/test/rules.test.js out/test/jar.test.js",
+    "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js out/test/properties.test.js out/test/rules.test.js out/test/jar.test.js out/test/treeFilter.test.js",
     "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix",
     "watch": "node esbuild.js --watch"
   },

@@ -1,9 +1,8 @@
 import * as vscode from "vscode";
 import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, ImportResult } from "./client";
 import { getToken } from "../config/secret";
-import { getSettings, saveProjectId, ApifoxSettings } from "../config/settings";
+import { saveProjectId, ApifoxSettings } from "../config/settings";
 import { AnalyzeOutput } from "../pipeline";
-import { EndpointInfo } from "../java/model";
 
 export const TOKEN_HELP_URL = "https://apifox.com/help/settings/personal-access-token";
 

@@ -26,7 +26,8 @@ const METHOD_ICON: Record<string, { id: string; color: string }> = {
   DELETE: { id: "trash", color: "testing.iconFailed" },
 };
 
-function computeHighlights(text: string, tokens: string[]): [number, number][] {
+/** 关键字匹配高亮区间计算(纯函数,可单测) */
+export function computeHighlights(text: string, tokens: string[]): [number, number][] {
   if (!text || !tokens.length) {
     return [];
   }
@@ -59,7 +60,8 @@ function computeHighlights(text: string, tokens: string[]): [number, number][] {
   return merged;
 }
 
-function matchEndpoint(ep: EndpointInfo, folderKey: string, tokens: string[]): boolean {
+/** 接口是否匹配全部过滤词(纯函数,可单测) */
+export function matchEndpoint(ep: EndpointInfo, folderKey: string, tokens: string[]): boolean {
   if (!tokens.length) {
     return true;
   }
@@ -366,10 +368,6 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     return { count, total };
   }
 
-  getFilteredEndpoints(): EndpointInfo[] {
-    return this.filteredEndpoints;
-  }
-
   /** 单个接口勾选变化(TreeView checkbox) */
   setChecked(ep: EndpointInfo, checked: boolean): void {
     const key = `${ep.method} ${ep.path}`;
@@ -414,14 +412,6 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     this.persistChecked();
     this.fireChanged();
     return targets.length;
-  }
-
-  /** 根据节点或 key 查找所属目录下的所有接口 */
-  getEndpointsByFolderNode(node: ApiTreeNode): EndpointInfo[] {
-    if (node.kind === "folder") {
-      return node.endpoints;
-    }
-    return [];
   }
 
   /** 当前勾选的接口(全量上下文中匹配) */

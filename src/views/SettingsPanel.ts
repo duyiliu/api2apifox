@@ -1,8 +1,20 @@
 import * as vscode from "vscode";
 import { getToken, setToken } from "../config/secret";
-import { getSettings, ApifoxSettings } from "../config/settings";
-import { ApifoxClient, ApifoxTeam, ApifoxProject } from "../apifox/client";
+import { getSettings } from "../config/settings";
+import { ApifoxClient } from "../apifox/client";
 import { errorMessage, TOKEN_HELP_URL } from "../apifox/uploader";
+
+/** 生成 Webview CSP nonce(每次渲染随机,内联 script 携带后方可执行) */
+function getNonce(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let text = "";
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  for (const b of bytes) {
+    text += chars[b % chars.length];
+  }
+  return text;
+}
 
 export class SettingsPanel {
   public static currentPanel: SettingsPanel | undefined;
@@ -12,7 +24,6 @@ export class SettingsPanel {
   private readonly _onSettingsChanged?: () => void;
 
   public static createOrShow(
-    extensionUri: vscode.Uri,
     secrets: vscode.SecretStorage,
     onSettingsChanged?: () => void
   ): SettingsPanel {
@@ -36,13 +47,12 @@ export class SettingsPanel {
       }
     );
 
-    SettingsPanel.currentPanel = new SettingsPanel(panel, extensionUri, secrets, onSettingsChanged);
+    SettingsPanel.currentPanel = new SettingsPanel(panel, secrets, onSettingsChanged);
     return SettingsPanel.currentPanel;
   }
 
   private constructor(
     panel: vscode.WebviewPanel,
-    private readonly _extensionUri: vscode.Uri,
     secrets: vscode.SecretStorage,
     onSettingsChanged?: () => void
   ) {
@@ -215,12 +225,14 @@ export class SettingsPanel {
   }
 
   private _getHtmlForWebview(webview: vscode.Webview): string {
+    // 每次渲染生成随机 nonce,内联 <script> 携带后方可执行(替代宽松的 'unsafe-inline')
+    const nonce = getNonce();
     return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline'; img-src ${webview.cspSource} data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
   <title>ApiGen for Apifox 设置中心</title>
   <style>
     :root {
@@ -582,7 +594,7 @@ export class SettingsPanel {
     </div>
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
     // 状态与缓存
