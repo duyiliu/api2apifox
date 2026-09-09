@@ -187,7 +187,23 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree);
 
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  const updateStatusBar = () => {
+    const s = getSettings();
+    if (s.projectId > 0) {
+      statusBarItem.text = `$(project) Apifox: ${s.projectName || s.projectId}`;
+      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 Apifox 快捷操作盘`;
+    } else {
+      statusBarItem.text = `$(warning) Apifox: 未绑定`;
+      statusBarItem.tooltip = "尚未绑定 Apifox 项目，点击进行设置";
+    }
+    statusBarItem.command = "apifoxHelper.showStatusBarMenu";
+    statusBarItem.show();
+  };
+  updateStatusBar();
+
   context.subscriptions.push(
+    statusBarItem,
     vscode.commands.registerCommand("apifoxHelper.clearToken", async () => {
       const confirm = await vscode.window.showWarningMessage(
         "确定要清除当前保存的 Apifox 访问令牌吗？",
@@ -197,16 +213,19 @@ export function activate(context: vscode.ExtensionContext): void {
       if (confirm === "确定清除") {
         await setToken(secrets, undefined);
         vscode.window.showInformationMessage("已清除访问令牌");
+        updateStatusBar();
         treeProvider.refresh().catch(() => undefined);
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("apifoxHelper")) {
+        updateStatusBar();
         treeProvider.refresh().catch(() => undefined);
       }
     }),
     secrets.onDidChange((e) => {
       if (e.key === "apifoxHelper.token") {
+        updateStatusBar();
         treeProvider.refresh().catch(() => undefined);
       }
     })
@@ -217,8 +236,24 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
     canSelectMany: false,
   });
+  const updateTreeStatus = () => {
+    const isFiltered = treeProvider.isFiltered();
+    vscode.commands.executeCommand("setContext", "apifoxHelper.isFiltered", isFiltered);
+    if (isFiltered) {
+      const stats = treeProvider.getFilterStats();
+      treeView.description = `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total})`;
+    } else {
+      const total = treeProvider.allEndpoints().length;
+      treeView.description = total > 0 ? `${total} 个接口` : undefined;
+    }
+  };
+
   context.subscriptions.push(
     treeView,
+    treeProvider.onDidChangeTreeData(() => {
+      updateTreeStatus();
+      updateStatusBar();
+    }),
     treeView.onDidChangeCheckboxState((e) => {
       let changed = false;
       for (const [node, state] of e.items) {
@@ -247,6 +282,32 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("apifoxHelper.refreshApiTree", async () => {
       await vscode.window.withProgress({ location: { viewId: "apifoxHelper.apiTree" } }, () => treeProvider.refresh());
     }),
+    vscode.commands.registerCommand("apifoxHelper.filterApi", async () => {
+      const current = treeProvider.getFilterKeyword();
+      const val = await vscode.window.showInputBox({
+        prompt: "输入关键字过滤接口列表 (支持路径、描述、方法、控制器，留空清空)",
+        placeHolder: "例如: patient, /list, GET, 导出",
+        value: current,
+        valueSelection: current ? [0, current.length] : undefined,
+      });
+      if (val === undefined) {
+        return;
+      }
+      const trimmed = val.trim();
+      treeProvider.setFilter(trimmed);
+      if (trimmed) {
+        const stats = treeProvider.getFilterStats();
+        vscode.window.showInformationMessage(`接口过滤: 找到 ${stats.count} / ${stats.total} 个接口`);
+      } else if (current) {
+        vscode.window.showInformationMessage("已清除接口过滤");
+      }
+    }),
+    vscode.commands.registerCommand("apifoxHelper.clearFilter", () => {
+      if (treeProvider.isFiltered()) {
+        treeProvider.clearFilter();
+        vscode.window.showInformationMessage("已清除接口过滤");
+      }
+    }),
     vscode.commands.registerCommand("apifoxHelper.gotoEndpoint", async (ep: EndpointInfo) => {
       try {
         const doc = await vscode.workspace.openTextDocument(ep.fsPath);
@@ -266,26 +327,76 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showInformationMessage("接口列表为空,先执行「刷新接口列表」");
         return;
       }
-      const picked = await vscode.window.showQuickPick(
-        all.map((ep) => ({
-          label: `${ep.method}  ${ep.path}`,
-          description: ep.summary ?? "",
-          detail: `${ep.controller}.${ep.operationId}`,
-          ep,
-        })),
-        { placeHolder: "搜索接口(路径 / 方法 / 描述)", matchOnDescription: true, matchOnDetail: true }
-      );
-      if (picked) {
-        vscode.commands.executeCommand("apifoxHelper.gotoEndpoint", picked.ep);
-      }
+
+      type SearchQuickPickItem = vscode.QuickPickItem & { ep?: EndpointInfo; isFilterAction?: boolean };
+
+      const quickPick = vscode.window.createQuickPick<SearchQuickPickItem>();
+      quickPick.placeholder = "搜索接口(路径 / 方法 / 描述 / 控制器)，回车跳转或过滤";
+      quickPick.matchOnDescription = true;
+      quickPick.matchOnDetail = true;
+
+      const baseItems: SearchQuickPickItem[] = all.map((ep) => ({
+        label: `${ep.method}  ${ep.path}`,
+        description: ep.summary ?? "",
+        detail: `${ep.controller}.${ep.operationId}`,
+        ep,
+      }));
+
+      const updateItems = (filterText: string) => {
+        const trimmed = filterText.trim();
+        if (trimmed) {
+          const filterActionItem: SearchQuickPickItem = {
+            label: `$(filter) 在接口列表中过滤: "${trimmed}"`,
+            description: "仅在侧边栏接口列表中保留匹配项",
+            alwaysShow: true,
+            isFilterAction: true,
+          };
+          quickPick.items = [filterActionItem, ...baseItems];
+        } else {
+          quickPick.items = baseItems;
+        }
+      };
+
+      updateItems("");
+      quickPick.onDidChangeValue((value) => {
+        updateItems(value);
+      });
+
+      quickPick.onDidAccept(() => {
+        const selection = quickPick.selectedItems[0];
+        if (selection) {
+          if (selection.isFilterAction) {
+            treeProvider.setFilter(quickPick.value.trim());
+            const stats = treeProvider.getFilterStats();
+            vscode.window.showInformationMessage(`接口过滤: 找到 ${stats.count} / ${stats.total} 个接口`);
+          } else if (selection.ep) {
+            vscode.commands.executeCommand("apifoxHelper.gotoEndpoint", selection.ep);
+          }
+        }
+        quickPick.hide();
+      });
+
+      quickPick.onDidHide(() => {
+        quickPick.dispose();
+      });
+
+      quickPick.show();
     }),
     vscode.commands.registerCommand("apifoxHelper.checkAllApis", () => {
-      treeProvider.checkAll();
-      vscode.window.showInformationMessage(`已勾选全部 ${treeProvider.checkedCount} 个接口`);
+      const count = treeProvider.checkAll();
+      if (treeProvider.isFiltered()) {
+        vscode.window.showInformationMessage(`已勾选当前过滤出的全部 ${count} 个接口`);
+      } else {
+        vscode.window.showInformationMessage(`已勾选全部 ${count} 个接口`);
+      }
     }),
     vscode.commands.registerCommand("apifoxHelper.uncheckAllApis", () => {
-      treeProvider.uncheckAll();
-      vscode.window.showInformationMessage("已清空所有勾选的接口");
+      const count = treeProvider.uncheckAll();
+      if (treeProvider.isFiltered()) {
+        vscode.window.showInformationMessage(`已取消勾选当前过滤出的 ${count} 个接口`);
+      } else {
+        vscode.window.showInformationMessage("已清空所有勾选的接口");
+      }
     }),
     vscode.commands.registerCommand("apifoxHelper.checkFolderApis", (node?: ApiTreeNode) => {
       if (node && node.kind === "folder") {
@@ -332,6 +443,84 @@ export function activate(context: vscode.ExtensionContext): void {
       const wanted = new Set(checked.map((e) => `${e.method} ${e.path}`));
       const analyzed = analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
       await doSync(analyzed, "勾选的接口未在当前解析结果中");
+    }),
+    vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
+      if (!node || node.kind !== "endpoint") {
+        return;
+      }
+      const ep = node.endpoint;
+      const allFiles = await collectFiles();
+      if (!allFiles) {
+        return;
+      }
+      const analyzed = analyzeSubset(
+        allFiles,
+        await analyzeOptions(),
+        (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
+      );
+      await doSync(analyzed, `接口 [${ep.method} ${ep.path}] 未在当前解析结果中`);
+    }),
+    vscode.commands.registerCommand("apifoxHelper.copyEndpointPath", async (node?: ApiTreeNode) => {
+      if (!node || node.kind !== "endpoint") {
+        return;
+      }
+      await vscode.env.clipboard.writeText(node.endpoint.path);
+      vscode.window.showInformationMessage(`已复制接口路径: ${node.endpoint.path}`);
+    }),
+    vscode.commands.registerCommand("apifoxHelper.copyEndpointFull", async (node?: ApiTreeNode) => {
+      if (!node || node.kind !== "endpoint") {
+        return;
+      }
+      const text = `${node.endpoint.method} ${node.endpoint.path}`;
+      await vscode.env.clipboard.writeText(text);
+      vscode.window.showInformationMessage(`已复制: ${text}`);
+    }),
+    vscode.commands.registerCommand("apifoxHelper.showStatusBarMenu", async () => {
+      const settings = getSettings();
+      const items: (vscode.QuickPickItem & { action: () => void })[] = [
+        {
+          label: "$(cloud-upload) 同步当前文件接口",
+          description: "同步当前打开的 Java Controller 接口",
+          action: () => vscode.commands.executeCommand("apifoxHelper.syncFile"),
+        },
+        {
+          label: "$(repo-sync) 同步工作区全部接口",
+          description: "全量扫描并同步到 Apifox",
+          action: () => vscode.commands.executeCommand("apifoxHelper.syncWorkspace"),
+        },
+        {
+          label: "$(check-all) 同步勾选的接口",
+          description: "同步侧边栏已勾选的接口",
+          action: () => vscode.commands.executeCommand("apifoxHelper.syncCheckedApis"),
+        },
+        {
+          label: "$(search) 搜索接口",
+          description: "全局搜索接口并快速跳转或过滤",
+          action: () => vscode.commands.executeCommand("apifoxHelper.searchApi"),
+        },
+        {
+          label: "$(project) 切换 Apifox 项目",
+          description: `当前: ${settings.projectName || settings.projectId || "未绑定"}`,
+          action: () => vscode.commands.executeCommand("apifoxHelper.selectProject"),
+        },
+        {
+          label: "$(file-code) 导出 OpenAPI 预览",
+          description: "生成 openapi.gen.json 规范文件",
+          action: () => vscode.commands.executeCommand("apifoxHelper.exportOpenapi"),
+        },
+        {
+          label: "$(gear) 打开设置中心",
+          description: "配置访问令牌、团队、目录规则等",
+          action: () => vscode.commands.executeCommand("apifoxHelper.openSettingsPanel"),
+        },
+      ];
+
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: `Apifox Helper: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+      });
+      if (picked) {
+        picked.action();
+      }
     })
   );
   // 初始加载(树视图首次可见时即有数据)
@@ -474,6 +663,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerCodeLensProvider({ language: "java" }, {
       provideCodeLenses(document) {
         const settings = getSettings();
+        if (!settings.enableCodeLens) {
+          return [];
+        }
         const rel = document.uri.fsPath.replace(/\\/g, "/");
         // include/exclude 粗过滤,避免在无关文件上解析
         const inScope = settings.include.some((g) => matchGlobLoose(g, rel)) && !settings.exclude.some((g) => matchGlobLoose(g, rel));
@@ -493,7 +685,7 @@ export function activate(context: vscode.ExtensionContext): void {
             return new vscode.CodeLens(
               new vscode.Range(line, 0, line, 0),
               {
-                title: "▲ 同步此接口到 Apifox",
+                title: "$(cloud-upload) 同步此接口到 Apifox",
                 command: "apifoxHelper.syncMethod",
                 arguments: [document.uri, e.methodRange!.startOffset],
               }
@@ -519,16 +711,45 @@ function matchGlobLoose(glob: string, relPath: string): boolean {
   return re.test(relPath);
 }
 
+let helperOutputChannel: vscode.OutputChannel | undefined;
+
+function getHelperOutputChannel(): vscode.OutputChannel {
+  if (!helperOutputChannel) {
+    helperOutputChannel = vscode.window.createOutputChannel("Apifox Helper");
+  }
+  return helperOutputChannel;
+}
+
 function showResult(message: string): void {
-  if (message.includes("\n")) {
-    // 多行结果用输出通道展示
-    const channel = vscode.window.createOutputChannel("Apifox Helper");
+  const lines = message.split("\n").map((s) => s.trim()).filter(Boolean);
+  const summary = lines[0] || "同步完成";
+  const hasDetails = lines.length > 1;
+  const hasWarningsOrErrors = lines.slice(1).some((l) => l.startsWith("⚠") || l.includes("失败") || l.includes("错误"));
+
+  if (hasDetails) {
+    const channel = getHelperOutputChannel();
     channel.clear();
-    channel.appendLine(message);
-    channel.show(true);
-    vscode.window.showInformationMessage("同步完成,详情见输出面板(Apifox Helper)");
+    channel.appendLine(`[${new Date().toLocaleTimeString()}] Apifox 同步结果:`);
+    for (const l of lines) {
+      channel.appendLine(l);
+    }
+
+    const showLogBtn = "查看日志";
+    if (hasWarningsOrErrors) {
+      vscode.window.showWarningMessage(summary, showLogBtn).then((action) => {
+        if (action === showLogBtn) {
+          channel.show(true);
+        }
+      });
+    } else {
+      vscode.window.showInformationMessage(summary, showLogBtn).then((action) => {
+        if (action === showLogBtn) {
+          channel.show(true);
+        }
+      });
+    }
   } else {
-    vscode.window.showInformationMessage(message);
+    vscode.window.showInformationMessage(summary);
   }
 }
 

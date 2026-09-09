@@ -46,13 +46,17 @@ VS Code 版支持 IDEA 版 Apifox Helper(easyyapi 规则引擎)的**声明式规
 ## 使用
 
 1. **安装**:VS Code 命令 `Extensions: Install from VSIX...` 选择本仓库打包出的 `apifox-helper-vscode.vsix`
-2. **侧边栏「项目与账号」视图**:
-   - 点击活动栏中的 Apifox Helper 图标，在**「项目与账号」**视图中可一目了然看到当前绑定的项目、所属团队、Token 状态及 API 地址。
-   - **选择/修改项目**: 点击视图中的项目行，或点击标题栏的 `$(project)` 图标，即可弹出分步向导（先选团队，再选项目）。
-   - **设置/修改 Token**: 点击视图中的访问令牌行，或点击标题栏的 `$(key)` 图标，随时修改或清除 Token。
-3. **选择项目(命令方式)**: 也可在命令面板执行 `Apifox Helper: 选择 Apifox 项目`
-4. **同步**:
+2. **侧边栏「接口列表」视图与搜索过滤**:
+   - 点击活动栏中的 Apifox Helper 图标，在**「接口列表」**视图中可浏览当前工作区解析出的所有接口（按模块/控制器分组）。
+   - **快速过滤 (`$(filter)`)**: 点击标题栏漏斗图标或输入框输入关键词（支持 URL 路径、中文描述、HTTP 方法、Controller 类名等），支持多词组合（空格分隔），实时保留匹配项，高亮显示关键字并自动展开目录。
+   - **清除过滤 (`$(filter-remove)`)**: 过滤激活时标题栏会动态出现清除图标，树顶部也提供状态条目，点击即可一键恢复完整列表。
+   - **搜索并跳转 (`$(search)`)**: 点击放大镜图标弹出 QuickPick，模糊匹配接口，回车可直接跳转到源码定义，或点击第一项将关键词应用到接口树过滤。
+   - **批量勾选同步**: 在过滤状态下点击「全选 (Check All)」会智能仅勾选当前过滤出的接口，方便按模块快速批量同步（点击「同步勾选的接口」）。
+3. **设置中心**: 点击接口列表顶部的项目横幅或标题栏设置齿轮 (`$(gear)`) 打开配置面板，可视化配置项目与 Token。
+4. **选择项目(命令方式)**: 也可在命令面板执行 `Apifox Helper: 选择 Apifox 项目`
+5. **同步**:
    - `Apifox Helper: 同步整个项目到 Apifox` — 扫描全部源码并同步
+   - `Apifox Helper: 同步勾选的接口到 Apifox` — 同步在列表中勾选的接口
    - `Apifox Helper: 同步当前文件到 Apifox` — 右键 Java 文件(资源管理器/编辑器)或命令面板
    - `Apifox Helper: 同步光标处接口到 Apifox` — 光标停在接口方法内执行,或直接点方法上方的 CodeLens「▲ 同步此接口到 Apifox」
    - `Apifox Helper: 导出 OpenAPI 预览文件` — 本地验证
@@ -73,6 +77,7 @@ VS Code 版支持 IDEA 版 Apifox Helper(easyyapi 规则引擎)的**声明式规
 | `apifoxHelper.helperProperties.enabled` | `true` | 是否识别工作区 `.apifox-helper.properties` 规则 |
 | `apifoxHelper.helperProperties.enumFieldDoc` | `false` | 枚举字段自动在描述后追加「(枚举类:类名)」(对应团队 groovy 规则意图) |
 | `apifoxHelper.dependencyRepos` | `[]` | 可选兜底:额外本地 Maven 仓库目录(默认已自动发现 JetBrains MAVEN_REPOSITORY/IDEA 索引/`~/.m2`) |
+| `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |

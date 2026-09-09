@@ -1,8 +1,8 @@
 {
   "name": "api2apifox",
-  "displayName": "Apifox Helper",
+  "displayName": "ApiGen for Apifox",
   "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
-  "version": "0.2.10",
+  "version": "0.2.12",
   "publisher": "duyiliu",
   "license": "MIT",
   "repository": {
@@ -82,6 +82,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "apifoxHelper.filterApi",
+        "title": "Apifox Helper: 过滤接口列表 (Filter API List)",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "apifoxHelper.clearFilter",
+        "title": "Apifox Helper: 清除接口过滤 (Clear API Filter)",
+        "icon": "$(filter-remove)"
+      },
+      {
         "command": "apifoxHelper.searchApi",
         "title": "Apifox Helper: 搜索接口 (Search API)",
         "icon": "$(search)"
@@ -119,6 +129,25 @@
       {
         "command": "apifoxHelper.gotoEndpoint",
         "title": "Apifox Helper: 跳转到接口定义 (Goto Definition)"
+      },
+      {
+        "command": "apifoxHelper.syncEndpoint",
+        "title": "Apifox Helper: 同步此接口到 Apifox",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "apifoxHelper.copyEndpointPath",
+        "title": "Apifox Helper: 复制接口路径 (Copy Path)",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "apifoxHelper.copyEndpointFull",
+        "title": "Apifox Helper: 复制完整接口 (Copy Method & Path)",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "apifoxHelper.showStatusBarMenu",
+        "title": "Apifox Helper: 快捷操作菜单 (Status Bar Menu)"
       }
     ],
     "viewsContainers": {
@@ -167,17 +196,42 @@
           "when": "view == apifoxHelper.apiTree"
         },
         {
-          "command": "apifoxHelper.searchApi",
+          "command": "apifoxHelper.filterApi",
           "group": "navigation@4",
           "when": "view == apifoxHelper.apiTree"
         },
         {
-          "command": "apifoxHelper.refreshApiTree",
+          "command": "apifoxHelper.clearFilter",
+          "group": "navigation@4.1",
+          "when": "view == apifoxHelper.apiTree && apifoxHelper.isFiltered"
+        },
+        {
+          "command": "apifoxHelper.searchApi",
           "group": "navigation@5",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.refreshApiTree",
+          "group": "navigation@6",
           "when": "view == apifoxHelper.apiTree"
         }
       ],
       "view/item/context": [
+        {
+          "command": "apifoxHelper.clearFilter",
+          "group": "inline",
+          "when": "view == apifoxHelper.apiTree && viewItem == searchBarFiltered"
+        },
+        {
+          "command": "apifoxHelper.filterApi",
+          "group": "1_filter@1",
+          "when": "view == apifoxHelper.apiTree && (viewItem == searchBar || viewItem == searchBarFiltered)"
+        },
+        {
+          "command": "apifoxHelper.clearFilter",
+          "group": "1_filter@2",
+          "when": "view == apifoxHelper.apiTree && viewItem == searchBarFiltered"
+        },
         {
           "command": "apifoxHelper.syncFolderApis",
           "group": "inline",
@@ -197,6 +251,38 @@
           "command": "apifoxHelper.uncheckFolderApis",
           "group": "2_check@2",
           "when": "view == apifoxHelper.apiTree && viewItem == folder"
+        },
+        {
+          "command": "apifoxHelper.syncEndpoint",
+          "group": "inline",
+          "when": "view == apifoxHelper.apiTree && viewItem == endpoint"
+        },
+        {
+          "command": "apifoxHelper.syncEndpoint",
+          "group": "1_sync@1",
+          "when": "view == apifoxHelper.apiTree && viewItem == endpoint"
+        },
+        {
+          "command": "apifoxHelper.gotoEndpoint",
+          "group": "1_sync@2",
+          "when": "view == apifoxHelper.apiTree && viewItem == endpoint"
+        },
+        {
+          "command": "apifoxHelper.copyEndpointPath",
+          "group": "2_copy@1",
+          "when": "view == apifoxHelper.apiTree && viewItem == endpoint"
+        },
+        {
+          "command": "apifoxHelper.copyEndpointFull",
+          "group": "2_copy@2",
+          "when": "view == apifoxHelper.apiTree && viewItem == endpoint"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "apifoxHelper.syncFile",
+          "when": "resourceLangId == java",
+          "group": "navigation@10"
         }
       ],
       "explorer/context": [
@@ -217,6 +303,11 @@
     "configuration": {
       "title": "Apifox Helper",
       "properties": {
+        "apifoxHelper.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在 Java Controller 方法上方显示「同步此接口」的 CodeLens 快捷按钮。"
+        },
         "apifoxHelper.projectId": {
           "type": "number",
           "default": 0,

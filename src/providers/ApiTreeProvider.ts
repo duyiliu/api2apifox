@@ -13,6 +13,8 @@ import { getSettings } from "../config/settings";
 
 export type ApiTreeNode =
   | { kind: "banner"; projectId: number; projectName: string; teamName: string }
+  | { kind: "searchBar"; keyword: string; count: number; total: number }
+  | { kind: "empty"; message: string }
   | { kind: "folder"; key: string; endpoints: EndpointInfo[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
 
@@ -24,6 +26,56 @@ const METHOD_ICON: Record<string, { id: string; color: string }> = {
   DELETE: { id: "trash", color: "testing.iconFailed" },
 };
 
+function computeHighlights(text: string, tokens: string[]): [number, number][] {
+  if (!text || !tokens.length) {
+    return [];
+  }
+  const lower = text.toLowerCase();
+  const ranges: [number, number][] = [];
+  for (const token of tokens) {
+    if (!token) {
+      continue;
+    }
+    let idx = 0;
+    while ((idx = lower.indexOf(token, idx)) !== -1) {
+      ranges.push([idx, idx + token.length]);
+      idx += token.length;
+    }
+  }
+  if (!ranges.length) {
+    return [];
+  }
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const merged: [number, number][] = [ranges[0]];
+  for (let i = 1; i < ranges.length; i++) {
+    const prev = merged[merged.length - 1];
+    const curr = ranges[i];
+    if (curr[0] <= prev[1]) {
+      prev[1] = Math.max(prev[1], curr[1]);
+    } else {
+      merged.push(curr);
+    }
+  }
+  return merged;
+}
+
+function matchEndpoint(ep: EndpointInfo, folderKey: string, tokens: string[]): boolean {
+  if (!tokens.length) {
+    return true;
+  }
+  const searchableText = [
+    ep.path,
+    ep.summary ?? "",
+    ep.method,
+    ep.controller,
+    ep.operationId,
+    folderKey,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return tokens.every((token) => searchableText.includes(token));
+}
+
 export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   private readonly _onDidChange = new vscode.EventEmitter<ApiTreeNode | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChange.event;
@@ -31,6 +83,8 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   private roots: ApiTreeNode[] = [];
   private checked = new Set<string>(); // `${method} ${path}`
   private analysis: { endpoints: EndpointInfo[] } | undefined;
+  private filterKeyword: string = "";
+  private filteredEndpoints: EndpointInfo[] = [];
 
   constructor(
     /** 重新解析工作区(与同步命令共用 analyzeOptions/collectFiles) */
@@ -46,11 +100,29 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     this._onDidChange.fire();
   }
 
+  /** 获取当前拆分后的过滤词 tokens */
+  get filterTokens(): string[] {
+    if (!this.filterKeyword) {
+      return [];
+    }
+    return this.filterKeyword.toLowerCase().split(/\s+/).filter(Boolean);
+  }
+
   /** 数据重建(纯逻辑,便于测试) */
   private rebuild(): void {
-    const endpoints = this.analysis?.endpoints ?? [];
+    const allEndpoints = this.analysis?.endpoints ?? [];
+    const tokens = this.filterTokens;
+
+    if (tokens.length > 0) {
+      this.filteredEndpoints = allEndpoints.filter((ep) =>
+        matchEndpoint(ep, this.folderKeyOf(ep) || "未分组", tokens)
+      );
+    } else {
+      this.filteredEndpoints = [...allEndpoints];
+    }
+
     const groups = new Map<string, EndpointInfo[]>();
-    for (const ep of endpoints) {
+    for (const ep of this.filteredEndpoints) {
       const key = this.folderKeyOf(ep) || "未分组";
       const arr = groups.get(key) ?? [];
       arr.push(ep);
@@ -63,8 +135,9 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         key,
         endpoints: list.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method)),
       }));
+
     // 清掉已消失接口的勾选
-    const alive = new Set(endpoints.map((e) => `${e.method} ${e.path}`));
+    const alive = new Set(allEndpoints.map((e) => `${e.method} ${e.path}`));
     for (const k of [...this.checked]) {
       if (!alive.has(k)) {
         this.checked.delete(k);
@@ -96,8 +169,49 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       item.contextValue = "banner";
       return item;
     }
+    if (element.kind === "searchBar") {
+      const isFiltered = Boolean(element.keyword);
+      const title = isFiltered
+        ? `过滤: "${element.keyword}" (${element.count}/${element.total})`
+        : "搜索/过滤接口 (点击输入)...";
+      const item = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
+      if (isFiltered) {
+        item.iconPath = new vscode.ThemeIcon("filter", new vscode.ThemeColor("charts.yellow"));
+        item.description = "点击修改 · 右侧清空";
+        item.tooltip = `当前已过滤关键字: "${element.keyword}"\n匹配到 ${element.count} 个接口 (共 ${element.total} 个)\n点击可重新修改关键字或清空过滤`;
+        item.contextValue = "searchBarFiltered";
+      } else {
+        item.iconPath = new vscode.ThemeIcon("search");
+        item.description = "路径 / 描述 / 方法";
+        item.tooltip = "点击输入关键字过滤接口列表\n支持按接口路径、中文描述、HTTP 方法、Controller 类名模糊匹配\n支持空格分隔多个关键词";
+        item.contextValue = "searchBar";
+      }
+      item.command = {
+        command: "apifoxHelper.filterApi",
+        title: "过滤接口",
+      };
+      return item;
+    }
+    if (element.kind === "empty") {
+      const isFiltered = this.isFiltered();
+      const item = new vscode.TreeItem(element.message, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon(isFiltered ? "info" : "search-stop");
+      item.description = isFiltered ? "点击清除过滤" : "点击检查设置";
+      item.tooltip = isFiltered
+        ? "没有找到匹配的接口，点击清除过滤以恢复完整列表"
+        : "未扫描到接口，请确保包含 Spring Boot Controller，或在设置中心检查扫描路径配置";
+      item.command = isFiltered
+        ? { command: "apifoxHelper.clearFilter", title: "清除过滤" }
+        : { command: "apifoxHelper.openSettingsPanel", title: "打开设置中心" };
+      item.contextValue = "empty";
+      return item;
+    }
     if (element.kind === "folder") {
-      const item = new vscode.TreeItem(element.key, vscode.TreeItemCollapsibleState.Expanded);
+      // 过滤模式下目录默认展开，方便查看匹配结果
+      const collapsible = this.isFiltered()
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Expanded;
+      const item = new vscode.TreeItem(element.key, collapsible);
       item.iconPath = new vscode.ThemeIcon("folder-library");
       const total = element.endpoints.length;
       let checkedInFolder = 0;
@@ -121,7 +235,17 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       return item;
     }
     const ep = element.endpoint;
-    const item = new vscode.TreeItem(`${ep.method}  ${ep.path}`, vscode.TreeItemCollapsibleState.None);
+    const labelText = `${ep.method}  ${ep.path}`;
+    const item = new vscode.TreeItem(labelText, vscode.TreeItemCollapsibleState.None);
+
+    // 关键字匹配高亮
+    if (this.isFiltered()) {
+      const highlights = computeHighlights(labelText, this.filterTokens);
+      if (highlights.length > 0) {
+        item.label = { label: labelText, highlights };
+      }
+    }
+
     const icon = METHOD_ICON[ep.method] ?? { id: "circle-filled", color: "charts.blue" };
     item.iconPath = new vscode.ThemeIcon(icon.id, new vscode.ThemeColor(icon.color));
     item.description = ep.summary ?? "";
@@ -152,12 +276,73 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         projectName: s.projectName || "",
         teamName: s.teamName || "",
       };
-      return [bannerNode, ...this.roots];
+
+      const nodes: ApiTreeNode[] = [bannerNode];
+      const stats = this.getFilterStats();
+      if (stats.total > 0 || this.isFiltered()) {
+        nodes.push({
+          kind: "searchBar",
+          keyword: this.filterKeyword,
+          count: stats.count,
+          total: stats.total,
+        });
+      }
+
+      if (this.isFiltered() && stats.count === 0) {
+        nodes.push({
+          kind: "empty",
+          message: `未找到与 "${this.filterKeyword}" 匹配的接口`,
+        });
+        return nodes;
+      }
+
+      if (!this.isFiltered() && this.analysis !== undefined && stats.total === 0) {
+        nodes.push({
+          kind: "empty",
+          message: "未扫描到接口 (点击检查配置或刷新)",
+        });
+        return nodes;
+      }
+      return [...nodes, ...this.roots];
     }
     if (element.kind === "folder") {
       return element.endpoints.map((endpoint) => ({ kind: "endpoint" as const, endpoint }));
     }
     return [];
+  }
+
+  /** 设置过滤关键字 */
+  setFilter(keyword: string): void {
+    this.filterKeyword = keyword.trim();
+    this.rebuild();
+    this.fireChanged();
+  }
+
+  /** 清除过滤 */
+  clearFilter(): void {
+    if (this.filterKeyword) {
+      this.filterKeyword = "";
+      this.rebuild();
+      this.fireChanged();
+    }
+  }
+
+  getFilterKeyword(): string {
+    return this.filterKeyword;
+  }
+
+  isFiltered(): boolean {
+    return this.filterKeyword.length > 0;
+  }
+
+  getFilterStats(): { count: number; total: number } {
+    const total = this.analysis?.endpoints.length ?? 0;
+    const count = this.filteredEndpoints.length;
+    return { count, total };
+  }
+
+  getFilteredEndpoints(): EndpointInfo[] {
+    return this.filteredEndpoints;
   }
 
   /** 单个接口勾选变化(TreeView checkbox) */
@@ -182,19 +367,24 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     }
   }
 
-  /** 全选所有接口 */
-  checkAll(): void {
-    const all = this.analysis?.endpoints ?? [];
-    for (const ep of all) {
+  /** 全选接口(在过滤状态下只勾选当前过滤出来的接口) */
+  checkAll(): number {
+    const targets = this.isFiltered() ? this.filteredEndpoints : (this.analysis?.endpoints ?? []);
+    for (const ep of targets) {
       this.checked.add(`${ep.method} ${ep.path}`);
     }
     this.fireChanged();
+    return targets.length;
   }
 
-  /** 清空所有勾选 */
-  uncheckAll(): void {
-    this.checked.clear();
+  /** 清空勾选(在过滤状态下只取消当前过滤出来的接口) */
+  uncheckAll(): number {
+    const targets = this.isFiltered() ? this.filteredEndpoints : (this.analysis?.endpoints ?? []);
+    for (const ep of targets) {
+      this.checked.delete(`${ep.method} ${ep.path}`);
+    }
     this.fireChanged();
+    return targets.length;
   }
 
   /** 根据节点或 key 查找所属目录下的所有接口 */

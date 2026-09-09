@@ -28,6 +28,8 @@ export interface ApifoxSettings {
   dependencyRepos: string[];
   /** 显式依赖 jar 路径(优先于仓库发现) */
   dependencyJars: string[];
+  /** 是否在 Java Controller 方法上方显示 CodeLens「同步此接口」(默认 true) */
+  enableCodeLens: boolean;
 }
 
 export function getSettings(): ApifoxSettings {
@@ -51,6 +53,7 @@ export function getSettings(): ApifoxSettings {
     enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
     dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
     dependencyJars: cfg.get<string[]>("dependencyJars", []),
+    enableCodeLens: cfg.get<boolean>("enableCodeLens", true),
   };
 }
 
