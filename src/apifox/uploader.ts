@@ -14,7 +14,7 @@ export async function ensureToken(secrets: vscode.SecretStorage): Promise<string
     return token;
   }
   const picked = await vscode.window.showInformationMessage(
-    "Apifox Helper:尚未配置 Apifox 访问令牌。可在 Apifox 客户端「头像 → 账号设置 → API 访问令牌」生成。",
+    "ApiGen for Apifox:尚未配置 Apifox 访问令牌。可在 Apifox 客户端「头像 → 账号设置 → API 访问令牌」生成。",
     "设置令牌",
     "查看帮助"
   );
@@ -262,7 +262,7 @@ export async function syncToApifox(
   const result = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: "Apifox Helper:同步中...",
+      title: "ApiGen for Apifox:同步中...",
       cancellable: false,
     },
     async (progress) => {

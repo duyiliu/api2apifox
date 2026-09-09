@@ -83,7 +83,7 @@ export async function openQuickSetup(
   ];
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: "Apifox Helper: 项目与账号设置中心",
+    title: "ApiGen for Apifox: 项目与账号设置中心",
     placeHolder: "请选择要查看或修改的配置项",
     ignoreFocusOut: true,
   });

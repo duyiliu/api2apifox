@@ -158,7 +158,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** 同步一组接口(整包/单文件/单接口共用):先带进度完成解析,再上传 */
   const doSync = async (emptyHint: string, prepare: () => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>) => {
     const analyzed = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "Apifox Helper: 解析 Java 源码与依赖索引..." },
+      { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引..." },
       () => prepare()
     );
     if (!analyzed) {
@@ -558,7 +558,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ];
 
       const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: `Apifox Helper: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+        placeHolder: `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
       });
       if (picked) {
         picked.action();
@@ -758,7 +758,7 @@ let helperOutputChannel: vscode.OutputChannel | undefined;
 
 function getHelperOutputChannel(): vscode.OutputChannel {
   if (!helperOutputChannel) {
-    helperOutputChannel = vscode.window.createOutputChannel("Apifox Helper");
+    helperOutputChannel = vscode.window.createOutputChannel("ApiGen for Apifox");
   }
   return helperOutputChannel;
 }
