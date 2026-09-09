@@ -56,17 +56,13 @@
         "icon": "$(project)"
       },
       {
-        "command": "apifoxHelper.refreshConfigView",
-        "title": "Apifox Helper: 刷新项目与账号状态",
-        "icon": "$(refresh)"
-      },
-      {
         "command": "apifoxHelper.syncWorkspace",
         "title": "Apifox Helper: 同步整个项目到 Apifox (Sync Workspace)"
       },
       {
         "command": "apifoxHelper.syncFile",
-        "title": "Apifox Helper: 同步当前文件到 Apifox (Sync This File)"
+        "title": "Apifox Helper: 同步当前文件到 Apifox (Sync This File)",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "apifoxHelper.syncMethod",

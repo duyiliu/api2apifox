@@ -155,8 +155,12 @@ export function activate(context: vscode.ExtensionContext): void {
     return cache.analyze(files, await analyzeOptions());
   };
 
-  /** 同步一组接口(整包/单文件/单接口共用) */
-  const doSync = async (analyzed: Awaited<ReturnType<typeof analyzeWorkspace>>, emptyHint: string) => {
+  /** 同步一组接口(整包/单文件/单接口共用):先带进度完成解析,再上传 */
+  const doSync = async (emptyHint: string, prepare: () => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>) => {
+    const analyzed = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Apifox Helper: 解析 Java 源码与依赖索引..." },
+      () => prepare()
+    );
     if (!analyzed) {
       return;
     }
@@ -185,7 +189,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return rootFolder ? `${rootFolder}/${key}` : key;
   };
 
-  const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree);
+  const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState);
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const updateStatusBar = () => {
@@ -239,17 +243,52 @@ export function activate(context: vscode.ExtensionContext): void {
   const updateTreeStatus = () => {
     const isFiltered = treeProvider.isFiltered();
     vscode.commands.executeCommand("setContext", "apifoxHelper.isFiltered", isFiltered);
+    const checked = treeProvider.checkedCount;
     if (isFiltered) {
       const stats = treeProvider.getFilterStats();
       treeView.description = `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total})`;
     } else {
       const total = treeProvider.allEndpoints().length;
-      treeView.description = total > 0 ? `${total} 个接口` : undefined;
+      if (total > 0) {
+        treeView.description = checked > 0 ? `${total} 个接口 · 已勾选 ${checked}` : `${total} 个接口`;
+      } else {
+        treeView.description = undefined;
+      }
+    }
+  };
+
+  // 目录展开/收起状态记录(刷新后保持用户折叠习惯)
+  const recordFolderExpand = (kind: "expand" | "collapse") => (e: vscode.TreeViewExpansionEvent<ApiTreeNode>) => {
+    const el = e.element;
+    if (el && el.kind === "folder") {
+      treeProvider.setFolderUserExpanded(el.key, kind === "expand");
+    }
+  };
+
+  let treeRefreshDirty = false;
+  /** 立即刷新并清除脏标记 */
+  const refreshApiTree = () => {
+    treeRefreshDirty = false;
+    treeProvider.refresh().catch(() => undefined);
+  };
+  /** 保存 Java 文件后延迟刷新:树不可见时只标记脏,避免大仓无谓解析 */
+  const refreshApiTreeIfVisible = () => {
+    if (treeView.visible) {
+      refreshApiTree();
+    } else {
+      treeRefreshDirty = true;
     }
   };
 
   context.subscriptions.push(
     treeView,
+    treeView.onDidExpandElement(recordFolderExpand("expand")),
+    treeView.onDidCollapseElement(recordFolderExpand("collapse")),
+    treeView.onDidChangeVisibility((e) => {
+      if (e.visible && treeRefreshDirty) {
+        refreshApiTree();
+      }
+    }),
     treeProvider.onDidChangeTreeData(() => {
       updateTreeStatus();
       updateStatusBar();
@@ -270,12 +309,12 @@ export function activate(context: vscode.ExtensionContext): void {
         treeProvider.fireChanged();
       }
     }),
-    // 保存 Java 文件后自动刷新(防抖 800ms)
+    // 保存 Java 文件后自动刷新(防抖 800ms;树不可见时延迟到下次可见再刷)
     vscode.workspace.onDidSaveTextDocument((doc) => {
       if (doc.languageId === "java") {
         clearTimeout(saveRefreshTimer);
         saveRefreshTimer = setTimeout(() => {
-          treeProvider.refresh().catch(() => undefined);
+          refreshApiTreeIfVisible();
         }, 800);
       }
     }),
@@ -421,13 +460,14 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("该目录下没有可同步的接口");
         return;
       }
-      const allFiles = await collectFiles();
-      if (!allFiles) {
-        return;
-      }
       const wanted = new Set(endpoints.map((e) => `${e.method} ${e.path}`));
-      const analyzed = analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      await doSync(analyzed, `目录「${node.key}」下未发现可同步的接口`);
+      await doSync(`目录「${node.key}」下未发现可同步的接口`, async () => {
+        const allFiles = await collectFiles();
+        if (!allFiles) {
+          return undefined;
+        }
+        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+      });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
       const checked = treeProvider.getCheckedEndpoints();
@@ -436,29 +476,31 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 全量上下文解析,只输出勾选接口(与单接口同步同机制)
-      const allFiles = await collectFiles();
-      if (!allFiles) {
-        return;
-      }
       const wanted = new Set(checked.map((e) => `${e.method} ${e.path}`));
-      const analyzed = analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      await doSync(analyzed, "勾选的接口未在当前解析结果中");
+      await doSync("勾选的接口未在当前解析结果中", async () => {
+        const allFiles = await collectFiles();
+        if (!allFiles) {
+          return undefined;
+        }
+        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+      });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
         return;
       }
       const ep = node.endpoint;
-      const allFiles = await collectFiles();
-      if (!allFiles) {
-        return;
-      }
-      const analyzed = analyzeSubset(
-        allFiles,
-        await analyzeOptions(),
-        (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
-      );
-      await doSync(analyzed, `接口 [${ep.method} ${ep.path}] 未在当前解析结果中`);
+      await doSync(`接口 [${ep.method} ${ep.path}] 未在当前解析结果中`, async () => {
+        const allFiles = await collectFiles();
+        if (!allFiles) {
+          return undefined;
+        }
+        return analyzeSubset(
+          allFiles,
+          await analyzeOptions(),
+          (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
+        );
+      });
     }),
     vscode.commands.registerCommand("apifoxHelper.copyEndpointPath", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -574,8 +616,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令:同步整个项目
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.syncWorkspace", async () => {
-      const analyzed = await analyzeWorkspace();
-      await doSync(analyzed, "没有扫描到任何 Java 源文件");
+      await doSync("没有扫描到任何 Java 源文件", () => analyzeWorkspace());
     })
   );
 
@@ -588,12 +629,13 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 用全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
-      const allFiles = await collectFiles();
-      if (!allFiles) {
-        return;
-      }
-      const analyzed = analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath);
-      await doSync(analyzed, "该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)");
+      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async () => {
+        const allFiles = await collectFiles();
+        if (!allFiles) {
+          return undefined;
+        }
+        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath);
+      });
     })
   );
 
@@ -625,10 +667,11 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 用全量上下文解析类型,只输出该接口
-      const allFiles = await collectFiles();
-      const source = allFiles ?? files;
-      const analyzed = analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
-      await doSync(analyzed, "未发现可同步的接口");
+      await doSync("未发现可同步的接口", async () => {
+        const allFiles = await collectFiles();
+        const source = allFiles ?? files;
+        return analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
+      });
     })
   );
 

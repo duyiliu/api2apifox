@@ -71,6 +71,9 @@ export class SettingsPanel {
           case "openHelp":
             await vscode.env.openExternal(vscode.Uri.parse(TOKEN_HELP_URL));
             break;
+          case "openAdvancedSettings":
+            await vscode.commands.executeCommand("workbench.action.openSettings", "apifoxHelper");
+            break;
         }
       },
       null,
@@ -217,6 +220,7 @@ export class SettingsPanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline'; img-src ${webview.cspSource} data:;">
   <title>Apifox Helper 设置中心</title>
   <style>
     :root {
@@ -568,7 +572,10 @@ export class SettingsPanel {
 
   <!-- 底部固定保存栏 -->
   <div class="footer-bar">
-    <div id="saveFeedback" style="font-size: 13px; font-weight: 500;"></div>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div id="saveFeedback" style="font-size: 13px; font-weight: 500;"></div>
+      <a class="link" id="btnAdvancedSettings" style="font-size: 12px; white-space: nowrap;">完整高级设置 (扫描范围 / 依赖 Jar / 规则)...</a>
+    </div>
     <div style="display: flex; gap: 10px;">
       <button class="btn btn-secondary" id="btnRestoreDefaults">重置默认策略</button>
       <button class="btn" id="btnSave">💾 保存配置</button>
@@ -607,6 +614,7 @@ export class SettingsPanel {
     const btnSave = document.getElementById('btnSave');
     const btnRestoreDefaults = document.getElementById('btnRestoreDefaults');
     const btnHelp = document.getElementById('btnHelp');
+    const btnAdvancedSettings = document.getElementById('btnAdvancedSettings');
     const saveFeedback = document.getElementById('saveFeedback');
 
     // 密码显隐
@@ -641,6 +649,11 @@ export class SettingsPanel {
     // 查看帮助
     btnHelp.addEventListener('click', () => {
       vscode.postMessage({ command: 'openHelp' });
+    });
+
+    // 完整高级设置(原生设置页)
+    btnAdvancedSettings.addEventListener('click', () => {
+      vscode.postMessage({ command: 'openAdvancedSettings' });
     });
 
     // 测试连接
@@ -771,6 +784,11 @@ export class SettingsPanel {
         enumFieldDoc: checkEnumDoc.checked,
       };
 
+      // 同步到本地缓存,便于保存后自动验证时按新选择预选团队/项目
+      if (currentConfig) {
+        currentConfig.settings = { ...currentConfig.settings, teamName, projectName, projectId };
+      }
+
       setLoading(btnSave, true, '正在保存...');
       vscode.postMessage({ command: 'save', data: formData });
     });
@@ -862,6 +880,15 @@ export class SettingsPanel {
             saveFeedback.style.color = '#49b36b';
             saveFeedback.textContent = '✅ ' + msg.message;
             setTimeout(() => { saveFeedback.textContent = ''; }, 4000);
+            // 令牌非空时保存后自动验证连接,并刷新团队/项目下拉(按新绑定预选)
+            if (inputToken.value.trim()) {
+              showStatus('testStatusBox', 'success', '已保存，正在自动验证连接...');
+              vscode.postMessage({
+                command: 'testConnection',
+                token: inputToken.value.trim(),
+                apiBaseUrl: inputBaseUrl.value.trim(),
+              });
+            }
           } else {
             saveFeedback.style.color = '#f14c4c';
             saveFeedback.textContent = '❌ ' + msg.message;

@@ -81,7 +81,9 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   readonly onDidChangeTreeData = this._onDidChange.event;
 
   private roots: ApiTreeNode[] = [];
-  private checked = new Set<string>(); // `${method} ${path}`
+  private checked: Set<string>; // `${method} ${path}`
+  /** 用户主动展开(true)/收起(false)过的目录,未操作过的目录跟随默认状态 */
+  private readonly folderUserExpanded = new Map<string, boolean>();
   private analysis: { endpoints: EndpointInfo[] } | undefined;
   private filterKeyword: string = "";
   private filteredEndpoints: EndpointInfo[] = [];
@@ -90,8 +92,13 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     /** 重新解析工作区(与同步命令共用 analyzeOptions/collectFiles) */
     private readonly analyzeAll: () => Promise<{ endpoints: EndpointInfo[] } | undefined>,
     /** 目录命名(与同步 folderOf 一致;返回目录 key) */
-    private readonly folderKeyOf: (ep: EndpointInfo) => string
-  ) {}
+    private readonly folderKeyOf: (ep: EndpointInfo) => string,
+    /** 工作区状态存储(勾选集合跨会话保持) */
+    private readonly workspaceState: vscode.Memento
+  ) {
+    const saved = workspaceState.get<string[]>("checkedEndpoints");
+    this.checked = new Set(Array.isArray(saved) ? saved : []);
+  }
 
   /** 重新解析并刷新树 */
   async refresh(): Promise<void> {
@@ -136,13 +143,28 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         endpoints: list.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method)),
       }));
 
-    // 清掉已消失接口的勾选
+    // 清掉已消失接口的勾选(跨会话保存)
     const alive = new Set(allEndpoints.map((e) => `${e.method} ${e.path}`));
+    let pruned = false;
     for (const k of [...this.checked]) {
       if (!alive.has(k)) {
         this.checked.delete(k);
+        pruned = true;
       }
     }
+    if (pruned) {
+      this.persistChecked();
+    }
+  }
+
+  /** 用户显式展开/收起某目录(刷新后保持,直到用户再次切换) */
+  setFolderUserExpanded(key: string, expanded: boolean): void {
+    this.folderUserExpanded.set(key, expanded);
+  }
+
+  /** 将勾选集合写入工作区状态(重启后恢复) */
+  private persistChecked(): void {
+    void this.workspaceState.update("checkedEndpoints", [...this.checked]);
   }
 
   getTreeItem(element: ApiTreeNode): vscode.TreeItem {
@@ -207,10 +229,13 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       return item;
     }
     if (element.kind === "folder") {
-      // 过滤模式下目录默认展开，方便查看匹配结果
-      const collapsible = this.isFiltered()
+      // 默认:过滤模式下展开,便于直接看到匹配结果;非过滤模式收起,保持树清爽。
+      // 用户手动展开/收起过的目录以用户状态为准(刷新/重建后保持)。
+      const userExpanded = this.folderUserExpanded.get(element.key);
+      const expanded = userExpanded !== undefined ? userExpanded : this.isFiltered();
+      const collapsible = expanded
         ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Expanded;
+        : vscode.TreeItemCollapsibleState.Collapsed;
       const item = new vscode.TreeItem(element.key, collapsible);
       item.iconPath = new vscode.ThemeIcon("folder-library");
       const total = element.endpoints.length;
@@ -353,6 +378,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     } else {
       this.checked.delete(key);
     }
+    this.persistChecked();
   }
 
   /** 目录勾选变化(联动该目录下所有接口) */
@@ -365,6 +391,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         this.checked.delete(key);
       }
     }
+    this.persistChecked();
   }
 
   /** 全选接口(在过滤状态下只勾选当前过滤出来的接口) */
@@ -373,6 +400,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     for (const ep of targets) {
       this.checked.add(`${ep.method} ${ep.path}`);
     }
+    this.persistChecked();
     this.fireChanged();
     return targets.length;
   }
@@ -383,6 +411,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     for (const ep of targets) {
       this.checked.delete(`${ep.method} ${ep.path}`);
     }
+    this.persistChecked();
     this.fireChanged();
     return targets.length;
   }
