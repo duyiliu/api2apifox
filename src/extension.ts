@@ -279,18 +279,18 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const updateTreeStatus = () => {
     const isFiltered = treeProvider.isFiltered();
-    vscode.commands.executeCommand("setContext", "apifoxHelper.isFiltered", isFiltered);
+    void vscode.commands.executeCommand("setContext", "apifoxHelper.isFiltered", isFiltered);
     const checked = treeProvider.checkedCount;
+    const total = treeProvider.allEndpoints().length;
     if (isFiltered) {
       const stats = treeProvider.getFilterStats();
-      treeView.description = `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total})`;
+      treeView.description = checked > 0
+        ? `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total}) · 已勾选 ${checked}`
+        : `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total})`;
+    } else if (total > 0) {
+      treeView.description = checked > 0 ? `${total} 个接口 · 已勾选 ${checked}` : `${total} 个接口`;
     } else {
-      const total = treeProvider.allEndpoints().length;
-      if (total > 0) {
-        treeView.description = checked > 0 ? `${total} 个接口 · 已勾选 ${checked}` : `${total} 个接口`;
-      } else {
-        treeView.description = undefined;
-      }
+      treeView.description = undefined;
     }
   };
 
@@ -371,12 +371,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const trimmed = val.trim();
       treeProvider.setFilter(trimmed);
-      if (trimmed) {
-        const stats = treeProvider.getFilterStats();
-        vscode.window.showInformationMessage(`接口过滤: 找到 ${stats.count} / ${stats.total} 个接口`);
-      } else if (current) {
+      if (!trimmed && current) {
         vscode.window.showInformationMessage("已清除接口过滤");
       }
+      // 命中数已实时显示在树标题 description,不再弹窗打扰
     }),
     vscode.commands.registerCommand("apifoxHelper.clearFilter", () => {
       if (treeProvider.isFiltered()) {
@@ -443,8 +441,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (selection) {
           if (selection.isFilterAction) {
             treeProvider.setFilter(quickPick.value.trim());
-            const stats = treeProvider.getFilterStats();
-            vscode.window.showInformationMessage(`接口过滤: 找到 ${stats.count} / ${stats.total} 个接口`);
+            // 命中数已实时显示在树标题 description,不再弹窗打扰
           } else if (selection.ep) {
             vscode.commands.executeCommand("apifoxHelper.gotoEndpoint", selection.ep);
           }

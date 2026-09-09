@@ -8,12 +8,12 @@ import { getSettings } from "../config/settings";
  * - 目录(按 folderKey/tag 分组)→ 接口(方法+路径)
  * - 点击接口跳转到源码定义
  * - 勾选接口后可用标题栏「同步勾选的接口」批量同步
+ * - 过滤入口在标题栏漏斗图标(命令面板/右键同名命令),过滤状态显示在树标题 description
  * - 数据来自与同步一致的解析管线(含规则/jar 识别),保证所见即所同步
  */
 
 export type ApiTreeNode =
   | { kind: "banner"; projectId: number; projectName: string; teamName: string }
-  | { kind: "searchBar"; keyword: string; count: number; total: number }
   | { kind: "empty"; message: string }
   | { kind: "folder"; key: string; endpoints: EndpointInfo[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
@@ -193,29 +193,6 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       item.contextValue = "banner";
       return item;
     }
-    if (element.kind === "searchBar") {
-      const isFiltered = Boolean(element.keyword);
-      const title = isFiltered
-        ? `过滤: "${element.keyword}" (${element.count}/${element.total})`
-        : "搜索/过滤接口 (点击输入)...";
-      const item = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
-      if (isFiltered) {
-        item.iconPath = new vscode.ThemeIcon("filter", new vscode.ThemeColor("charts.yellow"));
-        item.description = "点击修改 · 右侧清空";
-        item.tooltip = `当前已过滤关键字: "${element.keyword}"\n匹配到 ${element.count} 个接口 (共 ${element.total} 个)\n点击可重新修改关键字或清空过滤`;
-        item.contextValue = "searchBarFiltered";
-      } else {
-        item.iconPath = new vscode.ThemeIcon("search");
-        item.description = "路径 / 描述 / 方法";
-        item.tooltip = "点击输入关键字过滤接口列表\n支持按接口路径、中文描述、HTTP 方法、Controller 类名模糊匹配\n支持空格分隔多个关键词";
-        item.contextValue = "searchBar";
-      }
-      item.command = {
-        command: "apifoxHelper.filterApi",
-        title: "过滤接口",
-      };
-      return item;
-    }
     if (element.kind === "empty") {
       const isFiltered = this.isFiltered();
       const item = new vscode.TreeItem(element.message, vscode.TreeItemCollapsibleState.None);
@@ -306,14 +283,6 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
       const nodes: ApiTreeNode[] = [bannerNode];
       const stats = this.getFilterStats();
-      if (stats.total > 0 || this.isFiltered()) {
-        nodes.push({
-          kind: "searchBar",
-          keyword: this.filterKeyword,
-          count: stats.count,
-          total: stats.total,
-        });
-      }
 
       if (this.isFiltered() && stats.count === 0) {
         nodes.push({

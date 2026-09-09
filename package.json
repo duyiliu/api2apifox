@@ -2,7 +2,7 @@
   "name": "api2apifox",
   "displayName": "ApiGen for Apifox",
   "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "publisher": "duyiliu",
   "license": "MIT",
   "repository": {
@@ -208,21 +208,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "apifoxHelper.clearFilter",
-          "group": "inline",
-          "when": "view == apifoxHelper.apiTree && viewItem == searchBarFiltered"
-        },
-        {
-          "command": "apifoxHelper.filterApi",
-          "group": "1_filter@1",
-          "when": "view == apifoxHelper.apiTree && (viewItem == searchBar || viewItem == searchBarFiltered)"
-        },
-        {
-          "command": "apifoxHelper.clearFilter",
-          "group": "1_filter@2",
-          "when": "view == apifoxHelper.apiTree && viewItem == searchBarFiltered"
-        },
         {
           "command": "apifoxHelper.syncFolderApis",
           "group": "inline",
