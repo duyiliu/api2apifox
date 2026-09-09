@@ -453,6 +453,9 @@
     "build:test": "tsc -p tsconfig.test.json",
     "test": "npm run build:test && node --test out/test/utils.test.js out/test/analyze.test.js out/test/features.test.js out/test/properties.test.js out/test/rules.test.js out/test/jar.test.js out/test/treeFilter.test.js",
     "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix",
+    "release:patch": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major",
     "watch": "node esbuild.js --watch"
   },
   "devDependencies": {

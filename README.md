@@ -99,3 +99,22 @@ npm run package     # 打包 vsix
 - **依赖 jar 类型识别的边界**:仅解析工作区 `pom.xml` 声明的直接依赖(不含传递依赖的坐标推断;传递依赖类型可通过 `dependencyJars` 显式补充);Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型)
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
+
+## 发版(发布到 VS Code Marketplace)
+
+仓库配置了 GitHub Actions 工作流 .github/workflows/release.yml,推送 * tag 后自动完成:类型检查 → 单测 → 打包 vsix → 发布到 VS Code Marketplace → 创建 GitHub Release(附带 vsix)。
+
+首次需在仓库 Settings → Secrets and variables → Actions 添加 VSCE_PAT(在 marketplace.visualstudio.com 的管理页生成的 Azure DevOps PAT,scope 勾选 Marketplace Manage)。
+
+日常发版(Windows PowerShell):
+
+`powershell
+git add .
+git commit -m  chore: xxx
+npm run release:patch   # 自动 bump 版本号并生成 vX.Y.Z 的 commit + tag,release:minor/release:major 同理
+git push origin main
+git push origin --tags  # 触发自动发版
+`
+
+想先本地验收 vsix 再推送 tag,可直接 
+pm run package(与 CI 产物一致)。

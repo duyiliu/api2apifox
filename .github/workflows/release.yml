@@ -1,0 +1,63 @@
+name: Release to VS Code Marketplace
+
+# 触发方式:
+# 1. 推送形如 v0.2.19 的 tag(推荐,日常发版)
+# 2. 手动在 Actions 页面点 Run workflow(需要 package.json 版本高于市场已发布版本)
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build, Test & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PKG_VER="$(node -p "require('./package.json').version")"
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VER" != "$TAG_VER" ]; then
+            echo "::error::package.json version (${PKG_VER}) does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "Publishing version ${PKG_VER}"
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Bundle (esbuild)
+        run: npm run compile
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --packagePath apifox-helper-vscode.vsix --skip-duplicate -p "$VSCE_PAT"
+
+      - name: Create GitHub Release with VSIX asset
+        run: gh release create "$GITHUB_REF_NAME" apifox-helper-vscode.vsix --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
