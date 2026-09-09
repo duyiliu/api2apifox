@@ -31,7 +31,18 @@
 
 ## 🧩 功能总览
 
-### 接口识别
+| 能力 | 说明 |
+| --- | --- |
+| **接口识别** | Spring MVC、Spring Cloud OpenFeign、JAX-RS、Actuator 自定义端点 |
+| **参数解析** | 常用 Spring MVC 注解、`MultipartFile`、`Pageable`;无注解简单类型按 Spring 默认规则 |
+| **模型展开** | DTO 递归展开、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
+| **分页包装** | `PageInfo`、MyBatis-Plus `IPage`、Spring Data `Page`/`PageImpl`/`Slice` 自动展开 |
+| **注解支持** | OpenAPI 3 / Swagger 2 / Javadoc 文档注解、Bean Validation、Jackson / FASTJSON / GSON、响应声明 |
+| **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度 |
+| **依赖 jar 识别** | 自动发现本地 Maven 仓库,按需解析 `.class` 字节码,零配置还原框架类型 |
+
+<details>
+<summary><b>接口识别 — 支持的框架与冲突规则</b></summary>
 
 - **Spring MVC**:`@RestController`/`@Controller` + `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping/@RequestMapping`
 - **Spring Cloud OpenFeign**:`@FeignClient` 接口
@@ -39,6 +50,11 @@
 - **Actuator 自定义端点**:`@Endpoint` + `@ReadOperation/@WriteOperation/@DeleteOperation` + `@Selector`
 
 > 冲突规则:同 method+path 冲突时 Spring MVC Controller 优先于 Feign/JAX-RS 声明;同方法多路径时 operationId 自动加序号。
+
+</details>
+
+<details>
+<summary><b>参数解析 / 模型展开 / 分页包装 / 注解支持 — 解析细节</b></summary>
 
 ### 参数解析
 
@@ -67,6 +83,11 @@
 - **序列化注解**:Jackson `@JsonProperty/@JsonIgnore`、FASTJSON `@JSONField(name/serialize)`、GSON `@SerializedName`
 - **响应声明**:`@ApiResponses/@ApiResponse`(含 `@Schema(implementation=X.class)` 响应体)、`@ResponseStatus` → 额外状态码;`@Deprecated` → deprecated
 
+</details>
+
+<details>
+<summary><b>同步控制 / 依赖 jar 识别 — 细节</b></summary>
+
 ### 同步到 Apifox
 
 - 目录命名来源可配(`@Tag` 注解值或 Controller 类名),可选根目录与数据模型目录(自动创建)
@@ -76,6 +97,8 @@
 ### 依赖 jar 类型识别(零配置)
 
 自动发现本地 Maven 仓库(发现链:JetBrains `MAVEN_REPOSITORY` 路径变量 → IDEA Maven 索引 → `~/.m2/settings.xml` → 默认 `~/.m2/repository`;均未命中可用 `dependencyRepos` 兜底),结合工作区 `pom.xml` 依赖坐标定位 jar,**按需解析 .class 字节码**(zip + 常量池 + 泛型签名 + RUNTIME 注解),还原源码之外的类型——字段、泛型、`@ApiModelProperty` 描述均可带出。
+
+</details>
 
 ## 🖥 接口列表视图
 
