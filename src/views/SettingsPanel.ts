@@ -70,7 +70,7 @@ export class SettingsPanel {
             await this._sendInitData();
             break;
           case "testConnection":
-            await this._handleTestConnection(message.token, message.apiBaseUrl);
+            await this._handleTestConnection(message.token, message.apiBaseUrl, message.requestKey);
             break;
           case "fetchProjects":
             await this._handleFetchProjects(message.token, message.apiBaseUrl, message.teamId);
@@ -103,7 +103,7 @@ export class SettingsPanel {
     });
   }
 
-  private async _handleTestConnection(token: string, apiBaseUrl: string): Promise<void> {
+  private async _handleTestConnection(token: string, apiBaseUrl: string, requestKey?: string): Promise<void> {
     const cleanedToken = (token || "").trim();
     const cleanedUrl = (apiBaseUrl || "https://api.apifox.com").trim().replace(/\/+$/, "");
 
@@ -112,6 +112,7 @@ export class SettingsPanel {
         command: "testResult",
         ok: false,
         message: "请先输入 API 访问令牌 (Access Token)",
+        requestKey,
       });
       return;
     }
@@ -124,12 +125,14 @@ export class SettingsPanel {
         ok: true,
         message: `连接成功！已获取到 ${teams.length} 个团队`,
         teams,
+        requestKey,
       });
     } catch (err) {
       this._panel.webview.postMessage({
         command: "testResult",
         ok: false,
         message: errorMessage(err),
+        requestKey,
       });
     }
   }
@@ -174,8 +177,26 @@ export class SettingsPanel {
     enumFieldDoc: boolean;
   }): Promise<void> {
     try {
-      // 1. 保存 Token
       const cleanedToken = (formData.token || "").trim();
+      const projectId = Number(formData.projectId) || 0;
+      const cleanedBaseUrl = formData.apiBaseUrl?.trim() || "https://api.apifox.com";
+      if (!cleanedToken) {
+        throw new Error("请先填写并验证 Apifox API 访问令牌");
+      }
+      if (projectId <= 0) {
+        throw new Error("请选择要绑定的 Apifox 项目");
+      }
+      let parsedBaseUrl: URL;
+      try {
+        parsedBaseUrl = new URL(cleanedBaseUrl);
+      } catch {
+        throw new Error("Apifox API 服务地址格式无效");
+      }
+      if (!/^https?:$/.test(parsedBaseUrl.protocol)) {
+        throw new Error("Apifox API 服务地址必须使用 http 或 https");
+      }
+
+      // 1. 保存 Token
       await setToken(this._secrets, cleanedToken || undefined);
 
       // 2. 保存 VS Code 配置项
@@ -184,9 +205,9 @@ export class SettingsPanel {
         ? vscode.ConfigurationTarget.Workspace
         : vscode.ConfigurationTarget.Global;
 
-      await cfg.update("apiBaseUrl", formData.apiBaseUrl?.trim() || "https://api.apifox.com", target);
+      await cfg.update("apiBaseUrl", cleanedBaseUrl.replace(/\/+$/, ""), target);
       await cfg.update("teamName", formData.teamName || "", target);
-      await cfg.update("projectId", Number(formData.projectId) || 0, target);
+      await cfg.update("projectId", projectId, target);
       await cfg.update("projectName", formData.projectName || "", target);
       await cfg.update("endpointConflictBehavior", formData.endpointConflictBehavior, target);
       await cfg.update("schemaConflictBehavior", formData.schemaConflictBehavior, target);
@@ -251,6 +272,8 @@ export class SettingsPanel {
       --success-border: #49b36b;
       --error-bg: rgba(241, 76, 76, 0.15);
       --error-border: #f14c4c;
+      --info-bg: rgba(55, 148, 255, 0.12);
+      --info-border: var(--vscode-focusBorder, #3794ff);
       --info-color: var(--vscode-descriptionForeground);
     }
     * {
@@ -398,6 +421,11 @@ export class SettingsPanel {
     .status-error {
       background: var(--error-bg);
       border: 1px solid var(--error-border);
+      color: var(--vscode-foreground);
+    }
+    .status-info, .status-loading {
+      background: var(--info-bg);
+      border: 1px solid var(--info-border);
       color: var(--vscode-foreground);
     }
     .grid-2 {
@@ -601,6 +629,8 @@ export class SettingsPanel {
     let teamsCache = [];
     let projectsCache = new Map(); // teamId -> projects[]
     let currentConfig = null;
+    let verifiedConnectionKey = '';
+    let initialConnectionKey = '';
 
     // DOM 元素
     const inputToken = document.getElementById('inputToken');
@@ -656,7 +686,11 @@ export class SettingsPanel {
     // 重置 BaseUrl
     btnResetBaseUrl.addEventListener('click', () => {
       inputBaseUrl.value = 'https://api.apifox.com';
+      invalidateConnection();
     });
+
+    inputToken.addEventListener('input', invalidateConnection);
+    inputBaseUrl.addEventListener('input', invalidateConnection);
 
     // 查看帮助
     btnHelp.addEventListener('click', () => {
@@ -678,11 +712,14 @@ export class SettingsPanel {
         return;
       }
       setLoading(btnTestConn, true, '正在连接 Apifox...');
-      showStatus('testStatusBox', 'info', '正在连接 Apifox 开放 API...');
+      showStatus('testStatusBox', 'loading', '正在连接 Apifox 开放 API...');
+      projectsCache.clear();
+      const requestKey = connectionKey();
       vscode.postMessage({
         command: 'testConnection',
         token,
         apiBaseUrl: baseUrl,
+        requestKey,
       });
     });
 
@@ -768,12 +805,44 @@ export class SettingsPanel {
       updateBindingDesc();
     }
 
+    function connectionKey() {
+      return inputToken.value.trim() + '\n' + inputBaseUrl.value.trim().replace(/\/+$/, '');
+    }
+
+    function invalidateConnection() {
+      if (verifiedConnectionKey && verifiedConnectionKey !== connectionKey()) {
+        verifiedConnectionKey = '';
+      }
+      projectsCache.clear();
+      showStatus('testStatusBox', 'info', '令牌或 API 地址已修改，请重新测试连接');
+    }
+
+    function showSaveError(message, element) {
+      saveFeedback.style.color = '#f14c4c';
+      saveFeedback.textContent = '❌ ' + message;
+      if (element) {
+        element.focus();
+      }
+    }
+
     // 保存
     btnSave.addEventListener('click', () => {
+      if (!inputToken.value.trim()) {
+        showSaveError('请先填写 API 访问令牌', inputToken);
+        return;
+      }
+      if (verifiedConnectionKey !== connectionKey() && connectionKey() !== initialConnectionKey) {
+        showSaveError('令牌或 API 地址已修改，请先测试连接', btnTestConn);
+        return;
+      }
       const teamOpt = selectTeam.selectedOptions[0];
       const projOpt = selectProject.selectedOptions[0];
       const teamName = teamOpt && teamOpt.value ? teamOpt.textContent.replace(/ \\(ID: \\d+\\)$/, '') : (currentConfig?.settings?.teamName || '');
       const projectId = Number(selectProject.value) || 0;
+      if (projectId <= 0) {
+        showSaveError('请选择要绑定的 Apifox 项目', selectProject);
+        return;
+      }
       let projectName = '';
       if (projOpt && projectId > 0) {
         projectName = projOpt.textContent.replace(/ \\(ID: \\d+\\)$/, '');
@@ -819,8 +888,15 @@ export class SettingsPanel {
 
     function showStatus(boxId, type, msg) {
       const box = document.getElementById(boxId);
-      box.className = 'status-box show ' + (type === 'error' ? 'status-error' : 'status-success');
-      testStatusIcon.textContent = type === 'error' ? '❌' : '✅';
+      const classByType = {
+        error: 'status-error',
+        success: 'status-success',
+        loading: 'status-loading',
+        info: 'status-info',
+      };
+      const iconByType = { error: '❌', success: '✅', loading: '⏳', info: 'ℹ️' };
+      box.className = 'status-box show ' + (classByType[type] || 'status-info');
+      testStatusIcon.textContent = iconByType[type] || 'ℹ️';
       testStatusMsg.textContent = msg;
     }
 
@@ -842,6 +918,7 @@ export class SettingsPanel {
           const s = msg.data.settings || {};
           inputToken.value = msg.data.token || '';
           inputBaseUrl.value = s.apiBaseUrl || 'https://api.apifox.com';
+          initialConnectionKey = connectionKey();
           selectEndpointConflict.value = s.endpointConflictBehavior || 'OVERWRITE_EXISTING';
           selectSchemaConflict.value = s.schemaConflictBehavior || 'OVERWRITE_EXISTING';
           selectFolderSource.value = s.folderNameSource || 'tag';
@@ -858,22 +935,34 @@ export class SettingsPanel {
 
           // 如果已有 Token，自动静默测试连接并拉取团队
           if (msg.data.token) {
+            setLoading(btnTestConn, true, '正在验证现有连接...');
+            showStatus('testStatusBox', 'loading', '正在验证现有 Apifox 连接...');
+            const requestKey = connectionKey();
             vscode.postMessage({
               command: 'testConnection',
               token: msg.data.token,
               apiBaseUrl: s.apiBaseUrl || 'https://api.apifox.com',
+              requestKey,
             });
           }
           break;
         }
         case 'testResult': {
           setLoading(btnTestConn, false, '⚡ 测试连接与验证令牌');
+          if (msg.requestKey && msg.requestKey !== connectionKey()) {
+            showStatus('testStatusBox', 'info', '输入内容已变化，请重新测试连接');
+            break;
+          }
           if (msg.ok) {
+            verifiedConnectionKey = msg.requestKey || connectionKey();
             showStatus('testStatusBox', 'success', msg.message);
             if (msg.teams && msg.teams.length) {
               populateTeams(msg.teams, currentConfig?.settings?.teamName);
             }
           } else {
+            verifiedConnectionKey = '';
+            teamsCache = [];
+            projectsCache.clear();
             showStatus('testStatusBox', 'error', '连接失败: ' + msg.message);
           }
           break;
@@ -891,14 +980,17 @@ export class SettingsPanel {
           if (msg.ok) {
             saveFeedback.style.color = '#49b36b';
             saveFeedback.textContent = '✅ ' + msg.message;
+            initialConnectionKey = connectionKey();
             setTimeout(() => { saveFeedback.textContent = ''; }, 4000);
             // 令牌非空时保存后自动验证连接,并刷新团队/项目下拉(按新绑定预选)
             if (inputToken.value.trim()) {
-              showStatus('testStatusBox', 'success', '已保存，正在自动验证连接...');
+              setLoading(btnTestConn, true, '正在验证已保存连接...');
+              showStatus('testStatusBox', 'loading', '已保存，正在自动验证连接...');
               vscode.postMessage({
                 command: 'testConnection',
                 token: inputToken.value.trim(),
                 apiBaseUrl: inputBaseUrl.value.trim(),
+                requestKey: connectionKey(),
               });
             }
           } else {

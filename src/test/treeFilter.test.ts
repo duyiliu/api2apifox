@@ -20,3 +20,15 @@ test("computeHighlights 保持导出且合并重叠区间", () => {
   assert.match(src, /function computeHighlights/);
   assert.match(src, /curr\[0\] <= prev\[1\]/);
 });
+
+test("勾选状态按 Apifox 项目隔离", () => {
+  assert.match(src, /checkedEndpoints:\$\{projectId > 0 \? projectId : "unbound"\}/);
+  assert.match(src, /setProjectScope\(projectId/);
+});
+
+test("过滤状态区分可见与隐藏勾选", () => {
+  assert.match(src, /getSelectionStats\(\)/);
+  assert.match(src, /getCheckedEndpoints\(scope = "all"\)/);
+  assert.match(src, /visibleKeys\.has/);
+  assert.match(src, /hidden: allChecked\.length - visible/);
+});

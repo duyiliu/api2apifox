@@ -11,6 +11,7 @@ import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { analyze, analyzeSubset, AnalyzeCache, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
+import { buildSyncPreflightDetail } from "./ui/syncPreflight";
 
 const cache = new AnalyzeCache();
 
@@ -189,8 +190,23 @@ export function activate(context: vscode.ExtensionContext): void {
     return cache.analyze(files, await analyzeOptions());
   };
 
-  /** 同步一组接口(整包/单文件/单接口共用):先带可取消进度完成解析,再上传 */
-  const doSync = async (emptyHint: string, prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>) => {
+  type SyncOptions = {
+    scopeLabel: string;
+    confirm?: boolean;
+    selection?: { visible: number; hidden: number };
+  };
+
+  /** 同步一组接口(整包/单文件/单接口共用):先校验账号项目,再解析、确认并上传。 */
+  const doSync = async (
+    emptyHint: string,
+    prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>,
+    options: SyncOptions
+  ) => {
+    // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
+    const client = await makeClient();
+    if (!client) {
+      return;
+    }
     const analyzed = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
       (progress, token) => {
@@ -205,9 +221,29 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showWarningMessage(emptyHint);
       return;
     }
-    const client = await makeClient();
-    if (!client) {
-      return;
+    if (options.confirm) {
+      const settings = getSettings();
+      const picked = await vscode.window.showWarningMessage(
+        "确认批量同步到 Apifox？",
+        {
+          modal: true,
+          detail: buildSyncPreflightDetail({
+            teamName: settings.teamName ?? "",
+            projectName: settings.projectName ?? "",
+            projectId: settings.projectId,
+            scopeLabel: options.scopeLabel,
+            endpointCount: analyzed.endpoints.length,
+            endpointConflictBehavior: settings.endpointConflictBehavior,
+            schemaConflictBehavior: settings.schemaConflictBehavior,
+            visibleChecked: options.selection?.visible,
+            hiddenChecked: options.selection?.hidden,
+          }),
+        },
+        "开始同步"
+      );
+      if (picked !== "开始同步") {
+        return;
+      }
     }
     try {
       const outcome = await syncToApifox(client, getSettings(), analyzed);
@@ -228,11 +264,33 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState);
 
+  // 设置中心一次保存会连续更新多个配置项；仅合并真正影响解析结果的变化。
+  const treeAnalysisConfigKeys = [
+    "apifoxHelper.include",
+    "apifoxHelper.exclude",
+    "apifoxHelper.pageTypeStyle",
+    "apifoxHelper.folderNameSource",
+    "apifoxHelper.rootFolderName",
+    "apifoxHelper.helperProperties.enabled",
+    "apifoxHelper.helperProperties.enumFieldDoc",
+    "apifoxHelper.dependencyRepos",
+    "apifoxHelper.dependencyJars",
+  ];
+  let configRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleConfigRefresh = () => {
+    clearTimeout(configRefreshTimer);
+    configRefreshTimer = setTimeout(() => {
+      configRefreshTimer = undefined;
+      treeProvider.refresh().catch(() => undefined);
+    }, 500);
+  };
+
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const updateStatusBar = () => {
     const s = getSettings();
+    const checked = treeProvider.checkedCount;
     if (s.projectId > 0) {
-      statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}`;
+      statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}${checked > 0 ? ` · $(check) ${checked}` : ""}`;
       statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 ApiGen 快捷操作盘`;
     } else {
       statusBarItem.text = `$(warning) ApiGen: 未绑定`;
@@ -255,21 +313,26 @@ export function activate(context: vscode.ExtensionContext): void {
         await setToken(secrets, undefined);
         vscode.window.showInformationMessage("已清除访问令牌");
         updateStatusBar();
-        treeProvider.refresh().catch(() => undefined);
+        treeProvider.fireChanged();
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("apifoxHelper")) {
+        treeProvider.setProjectScope(getSettings().projectId);
         updateStatusBar();
-        treeProvider.refresh().catch(() => undefined);
+        treeProvider.fireChanged();
+        if (treeAnalysisConfigKeys.some((key) => e.affectsConfiguration(key))) {
+          scheduleConfigRefresh();
+        }
       }
     }),
     secrets.onDidChange((e) => {
       if (e.key === "apifoxHelper.token") {
         updateStatusBar();
-        treeProvider.refresh().catch(() => undefined);
+        treeProvider.fireChanged();
       }
-    })
+    }),
+    new vscode.Disposable(() => clearTimeout(configRefreshTimer))
   );
 
   const treeView = vscode.window.createTreeView("apifoxHelper.apiTree", {
@@ -280,12 +343,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const updateTreeStatus = () => {
     const isFiltered = treeProvider.isFiltered();
     void vscode.commands.executeCommand("setContext", "apifoxHelper.isFiltered", isFiltered);
-    const checked = treeProvider.checkedCount;
+    const selection = treeProvider.getSelectionStats();
+    const checked = selection.total;
     const total = treeProvider.allEndpoints().length;
     if (isFiltered) {
       const stats = treeProvider.getFilterStats();
       treeView.description = checked > 0
-        ? `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total}) · 已勾选 ${checked}`
+        ? `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total}) · 可见已选 ${selection.visible}${selection.hidden > 0 ? ` · 隐藏 ${selection.hidden}` : ""}`
         : `"${treeProvider.getFilterKeyword()}" (${stats.count}/${stats.total})`;
     } else if (total > 0) {
       treeView.description = checked > 0 ? `${total} 个接口 · 已勾选 ${checked}` : `${total} 个接口`;
@@ -489,7 +553,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node || node.kind !== "folder") {
         return;
       }
-      const endpoints = node.endpoints;
+      // 过滤状态下 folder 节点只包含可见接口；命令语义是“整个目录”，因此回到全量树取数。
+      const endpoints = treeProvider.allEndpoints().filter((ep) => folderKeyForTree(ep) === node.key);
       if (!endpoints.length) {
         vscode.window.showWarningMessage("该目录下没有可同步的接口");
         return;
@@ -501,10 +566,42 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      });
+      }, { scopeLabel: `目录「${node.key}」`, confirm: true });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
-      const checked = treeProvider.getCheckedEndpoints();
+      const stats = treeProvider.getSelectionStats();
+      let checked = treeProvider.getCheckedEndpoints();
+      let scopeLabel = "全部已选接口";
+      let selection = { visible: stats.visible, hidden: stats.hidden };
+
+      if (treeProvider.isFiltered() && stats.hidden > 0) {
+        type CheckedScopeItem = vscode.QuickPickItem & { scope: "visible" | "all" };
+        const items: CheckedScopeItem[] = [];
+        if (stats.visible > 0) {
+          items.push({
+            label: `$(filter) 仅同步当前过滤中已选的 ${stats.visible} 个接口`,
+            description: `不包含另外 ${stats.hidden} 个隐藏已选项（推荐）`,
+            scope: "visible",
+          });
+        }
+        items.push({
+          label: `$(check-all) 同步全部已选的 ${stats.total} 个接口`,
+          description: `包含当前过滤隐藏的 ${stats.hidden} 个接口`,
+          scope: "all",
+        });
+        const picked = await vscode.window.showQuickPick(items, {
+          title: "选择本次同步范围",
+          placeHolder: "过滤不会自动取消此前的勾选，请确认本次同步范围",
+        });
+        if (!picked) {
+          return;
+        }
+        if (picked.scope === "visible") {
+          checked = treeProvider.getCheckedEndpoints("visible");
+          scopeLabel = "当前过滤中已选接口";
+          selection = { visible: checked.length, hidden: 0 };
+        }
+      }
       if (!checked.length) {
         vscode.window.showInformationMessage("先在接口列表中勾选要同步的接口(接口行前或目录前的复选框)");
         return;
@@ -517,7 +614,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      });
+      }, { scopeLabel, confirm: true, selection });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -534,7 +631,7 @@ export function activate(context: vscode.ExtensionContext): void {
           await analyzeOptions(),
           (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
         );
-      });
+      }, { scopeLabel: `${ep.method} ${ep.path}` });
     }),
     vscode.commands.registerCommand("apifoxHelper.copyEndpointPath", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -604,7 +701,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openSettings = () => {
     SettingsPanel.createOrShow(secrets, () => {
-      treeProvider.refresh().catch(() => undefined);
+      treeProvider.setProjectScope(getSettings().projectId);
+      updateStatusBar();
+      treeProvider.fireChanged();
     });
   };
 
@@ -626,7 +725,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       await setToken(secrets, token || undefined);
-      treeProvider.refresh().catch(() => undefined);
+      treeProvider.fireChanged();
       vscode.window.showInformationMessage(token ? "访问令牌已保存(加密存储)" : "访问令牌已清除");
     })
   );
@@ -641,7 +740,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const ok = await selectProject(new ApifoxClient(settings.apiBaseUrl, token));
       if (ok) {
-        treeProvider.refresh().catch(() => undefined);
+        treeProvider.setProjectScope(getSettings().projectId);
+        updateStatusBar();
       }
     })
   );
@@ -649,7 +749,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令:同步整个项目
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.syncWorkspace", async () => {
-      await doSync("没有扫描到任何 Java 源文件", (token) => analyzeWorkspace(undefined, token));
+      await doSync(
+        "没有扫描到任何 Java 源文件",
+        (token) => analyzeWorkspace(undefined, token),
+        { scopeLabel: "整个工作区", confirm: true }
+      );
     })
   );
 
@@ -668,7 +772,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath);
-      });
+      }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
     })
   );
 
@@ -704,7 +808,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const allFiles = await collectFiles(undefined, token);
         const source = allFiles ?? files;
         return analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
-      });
+      }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
     })
   );
 

@@ -14,7 +14,14 @@ import { getSettings } from "../config/settings";
 
 export type ApiTreeNode =
   | { kind: "banner"; projectId: number; projectName: string; teamName: string }
-  | { kind: "filterBar"; keyword: string; count: number; total: number }
+  | {
+      kind: "filterBar";
+      keyword: string;
+      count: number;
+      total: number;
+      visibleChecked: number;
+      hiddenChecked: number;
+    }
   | { kind: "empty"; message: string }
   | { kind: "folder"; key: string; endpoints: EndpointInfo[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
@@ -90,6 +97,8 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   private analysis: { endpoints: EndpointInfo[] } | undefined;
   private filterKeyword: string = "";
   private filteredEndpoints: EndpointInfo[] = [];
+  private checkedProjectId: number;
+  private refreshGeneration = 0;
 
   constructor(
     /** 重新解析工作区(与同步命令共用 analyzeOptions/collectFiles) */
@@ -99,15 +108,47 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     /** 工作区状态存储(勾选集合跨会话保持) */
     private readonly workspaceState: vscode.Memento
   ) {
-    const saved = workspaceState.get<string[]>("checkedEndpoints");
+    this.checkedProjectId = getSettings().projectId;
+    const scopedKey = this.checkedStorageKey(this.checkedProjectId);
+    const scopedSaved = workspaceState.get<string[]>(scopedKey);
+    const migrationDone = workspaceState.get<boolean>("checkedEndpointsScopedV1", false);
+    const legacySaved = !migrationDone ? workspaceState.get<string[]>("checkedEndpoints") : undefined;
+    const saved = Array.isArray(scopedSaved) ? scopedSaved : legacySaved;
     this.checked = new Set(Array.isArray(saved) ? saved : []);
+    if (!migrationDone) {
+      void workspaceState.update(scopedKey, [...this.checked]);
+      void workspaceState.update("checkedEndpointsScopedV1", true);
+    }
   }
 
   /** 重新解析并刷新树 */
   async refresh(): Promise<void> {
-    this.analysis = await this.analyzeAll();
+    const generation = ++this.refreshGeneration;
+    const analysis = await this.analyzeAll();
+    // 多次刷新并发时只接纳最后一轮结果，避免旧扫描覆盖新配置/新源码。
+    if (generation !== this.refreshGeneration) {
+      return;
+    }
+    this.analysis = analysis;
     this.rebuild();
     this._onDidChange.fire();
+  }
+
+  /** Apifox 项目切换后加载该项目独立的勾选集合，避免跨项目误同步。 */
+  setProjectScope(projectId: number): void {
+    const normalized = Number(projectId) || 0;
+    if (normalized === this.checkedProjectId) {
+      return;
+    }
+    this.checkedProjectId = normalized;
+    const saved = this.workspaceState.get<string[]>(this.checkedStorageKey(normalized));
+    this.checked = new Set(Array.isArray(saved) ? saved : []);
+    this.rebuild();
+    this.fireChanged();
+  }
+
+  private checkedStorageKey(projectId: number): string {
+    return `checkedEndpoints:${projectId > 0 ? projectId : "unbound"}`;
   }
 
   /** 获取当前拆分后的过滤词 tokens */
@@ -146,17 +187,19 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         endpoints: list.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method)),
       }));
 
-    // 清掉已消失接口的勾选(跨会话保存)
-    const alive = new Set(allEndpoints.map((e) => `${e.method} ${e.path}`));
-    let pruned = false;
-    for (const k of [...this.checked]) {
-      if (!alive.has(k)) {
-        this.checked.delete(k);
-        pruned = true;
+    // 仅在确实完成过一次分析时清掉已消失接口；未扫描/扫描取消不能抹掉历史选择。
+    if (this.analysis !== undefined) {
+      const alive = new Set(allEndpoints.map((e) => `${e.method} ${e.path}`));
+      let pruned = false;
+      for (const k of [...this.checked]) {
+        if (!alive.has(k)) {
+          this.checked.delete(k);
+          pruned = true;
+        }
       }
-    }
-    if (pruned) {
-      this.persistChecked();
+      if (pruned) {
+        this.persistChecked();
+      }
     }
   }
 
@@ -167,7 +210,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
   /** 将勾选集合写入工作区状态(重启后恢复) */
   private persistChecked(): void {
-    void this.workspaceState.update("checkedEndpoints", [...this.checked]);
+    void this.workspaceState.update(this.checkedStorageKey(this.checkedProjectId), [...this.checked]);
   }
 
   getTreeItem(element: ApiTreeNode): vscode.TreeItem {
@@ -198,8 +241,13 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       // 过滤激活时常驻:关键字 + 命中数一目了然,点击改关键字,行内按钮一键清除
       const item = new vscode.TreeItem(`🔍 "${element.keyword}" · ${element.count}/${element.total} 个接口`, vscode.TreeItemCollapsibleState.None);
       item.iconPath = new vscode.ThemeIcon("filter", new vscode.ThemeColor("charts.yellow"));
-      item.description = "点击改关键字 · ✕ 清除";
-      item.tooltip = `当前过滤: "${element.keyword}"\n匹配 ${element.count} / 共 ${element.total} 个接口\n点击重新输入关键字,行内 ✕ 一键清除`;
+      item.description = element.hiddenChecked > 0
+        ? `可见已选 ${element.visibleChecked} · 隐藏已选 ${element.hiddenChecked}`
+        : `可见已选 ${element.visibleChecked} · 点击修改`;
+      item.tooltip =
+        `当前过滤: "${element.keyword}"\n匹配 ${element.count} / 共 ${element.total} 个接口` +
+        `\n当前可见已选: ${element.visibleChecked}\n过滤隐藏已选: ${element.hiddenChecked}` +
+        "\n点击重新输入关键字,行内 ✕ 一键清除";
       item.command = {
         command: "apifoxHelper.filterApi",
         title: "修改过滤关键字",
@@ -300,11 +348,14 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
       // 过滤激活时在 banner 下常驻一行:关键字 + 命中数,附行内清除按钮
       if (this.isFiltered()) {
+        const selection = this.getSelectionStats();
         nodes.push({
           kind: "filterBar",
           keyword: this.filterKeyword,
           count: stats.count,
           total: stats.total,
+          visibleChecked: selection.visible,
+          hiddenChecked: selection.hidden,
         });
       }
 
@@ -361,6 +412,17 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     return { count, total };
   }
 
+  /** 勾选统计；过滤时 visible/hidden 用于防止隐藏选择被误同步。 */
+  getSelectionStats(): { total: number; visible: number; hidden: number } {
+    const allChecked = this.getCheckedEndpoints("all");
+    if (!this.isFiltered()) {
+      return { total: allChecked.length, visible: allChecked.length, hidden: 0 };
+    }
+    const visibleKeys = new Set(this.filteredEndpoints.map((e) => `${e.method} ${e.path}`));
+    const visible = allChecked.filter((e) => visibleKeys.has(`${e.method} ${e.path}`)).length;
+    return { total: allChecked.length, visible, hidden: allChecked.length - visible };
+  }
+
   /** 单个接口勾选变化(TreeView checkbox) */
   setChecked(ep: EndpointInfo, checked: boolean): void {
     const key = `${ep.method} ${ep.path}`;
@@ -407,14 +469,19 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     return targets.length;
   }
 
-  /** 当前勾选的接口(全量上下文中匹配) */
-  getCheckedEndpoints(): EndpointInfo[] {
+  /** 当前勾选的接口；visible 仅返回当前过滤结果中的勾选项。 */
+  getCheckedEndpoints(scope: "all" | "visible" = "all"): EndpointInfo[] {
     const all = this.analysis?.endpoints ?? [];
-    return all.filter((e) => this.checked.has(`${e.method} ${e.path}`));
+    const checked = all.filter((e) => this.checked.has(`${e.method} ${e.path}`));
+    if (scope === "all" || !this.isFiltered()) {
+      return checked;
+    }
+    const visibleKeys = new Set(this.filteredEndpoints.map((e) => `${e.method} ${e.path}`));
+    return checked.filter((e) => visibleKeys.has(`${e.method} ${e.path}`));
   }
 
   get checkedCount(): number {
-    return this.checked.size;
+    return this.getSelectionStats().total;
   }
 
   /** 用于搜索的扁平列表 */
