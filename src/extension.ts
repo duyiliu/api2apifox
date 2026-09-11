@@ -55,7 +55,11 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   // 2. 仓库 + 工作区 pom 坐标
   const repos = discoverMavenRepos(settings.dependencyRepos);
   if (repos.length) {
-    const poms = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", 200);
+    const MAX_POMS = 200;
+    const poms = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
+    if (poms.length >= MAX_POMS) {
+      vscode.window.showWarningMessage(`pom.xml 数量达到上限 ${MAX_POMS},部分模块的依赖 jar 未纳入识别(可用 dependencyJars 显式补充)`);
+    }
     const coords: { groupId: string; artifactId: string }[] = [];
     for (const p of poms) {
       try {
@@ -107,8 +111,14 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
   }
   // 更深的路径视为更具体的模块,后加载(优先级高);同级按文件名
   contents.sort((a, b) => pathDepth(a.path) - pathDepth(b.path) || a.path.localeCompare(b.path));
-  const props = loadPropertiesFiles(contents);
-  // 收集 properties.additional 指向但未找到的后续文件会因 content="" 被跳过,这里不做二次读
+  // properties.additional 引用的文件(常与 .apifox-helper.properties 不同名)在此回填内容
+  const props = loadPropertiesFiles(contents, (p) => {
+    try {
+      return fs.readFileSync(p, "utf8");
+    } catch {
+      return undefined;
+    }
+  });
   return props;
 }
 
@@ -141,11 +151,16 @@ export function activate(context: vscode.ExtensionContext): void {
     if (singleFile) {
       uris = [singleFile];
     } else {
+      const MAX_FILES = 5000;
       uris = await vscode.workspace.findFiles(
         `{${settings.include.join(",")}}`,
         `{${settings.exclude.join(",")}}`,
-        5000
+        MAX_FILES
       );
+      // findFiles 命中数达到上限即静默截断;大仓被截断会丢接口,明确提示
+      if (uris.length >= MAX_FILES) {
+        vscode.window.showWarningMessage(`Java 源文件数达到扫描上限 ${MAX_FILES},超出部分未纳入解析(可用 include/exclude 收敛范围)`);
+      }
     }
     const files: SourceFile[] = [];
     for (const uri of uris) {
@@ -351,7 +366,10 @@ export function activate(context: vscode.ExtensionContext): void {
         treeProvider.fireChanged();
       }
     }),
-    new vscode.Disposable(() => clearTimeout(configRefreshTimer))
+    new vscode.Disposable(() => {
+      clearTimeout(configRefreshTimer);
+      clearTimeout(saveRefreshTimer);
+    })
   );
 
   const treeView = vscode.window.createTreeView("apifoxHelper.apiTree", {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseProperties, unescapeProp } from "../config/helperProperties";
+import { loadPropertiesFiles, parseProperties, unescapeProp } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, trySafeGroovy } from "../java/ruleEval";
 import { AnnotationInfo } from "../java/model";
 
@@ -116,4 +116,37 @@ test("safe groovy:三元条件为假→ matched false 且非 unsupported", () =>
 test("evalRuleValue:不可翻译的 groovy 返回 skipped", () => {
   const r = evalRuleValue('groovy: helper.resolveLink(it.doc("x"))', { annotations: [], javadocRaw: "/** @x y */", subject: "m" }, "method.return", NOOP);
   assert.equal(r.skipped, true);
+});
+
+/* ---------- properties.additional 链式加载(集成层此前断链) ---------- */
+
+test("loadPropertiesFiles:additional 引用的文件经 readFile 回填并生效", () => {
+  const files = [
+    { path: "D:/proj/.apifox-helper.properties", content: "properties.additional=api-doc.properties\nfield.ignore=ignoreLog" },
+  ];
+  const store = new Map<string, string>([
+    ["D:/proj/api-doc.properties", "field.doc=groovy: \"（框架字典：\" + it.ann(\"X\",\"value\") + \"）\""],
+  ]);
+  const r = loadPropertiesFiles(files, (p) => store.get(p));
+  const keys = r.entries.map((e) => e.key);
+  assert.ok(keys.includes("properties.additional"), keys.join(","));
+  assert.ok(keys.includes("field.ignore"), keys.join(","));
+  // 回填文件中的规则被解析出来,而不是 content="" 静默为空
+  assert.ok(keys.includes("field.doc"), "additional 引用文件的规则应生效: " + keys.join(","));
+});
+
+test("loadPropertiesFiles:additional 指向不存在文件时告警且不炸", () => {
+  const files = [{ path: "D:/proj/.apifox-helper.properties", content: "properties.additional=missing.properties" }];
+  const r = loadPropertiesFiles(files, () => undefined);
+  assert.ok(r.warnings.some((w) => w.includes("missing.properties")));
+  assert.equal(r.entries.length, 1); // 仅 properties.additional 自身
+});
+
+test("loadPropertiesFiles:循环引用不挂死", () => {
+  const store = new Map<string, string>([
+    ["D:/proj/a.properties", "properties.additional=b.properties"],
+    ["D:/proj/b.properties", "properties.additional=a.properties"],
+  ]);
+  const r = loadPropertiesFiles([{ path: "D:/proj/a.properties", content: store.get("D:/proj/a.properties")! }], (p) => store.get(p));
+  assert.deepEqual(r.files.sort(), ["D:/proj/a.properties", "D:/proj/b.properties"]);
 });

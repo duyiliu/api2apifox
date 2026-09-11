@@ -148,8 +148,16 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
   return { entries, warnings };
 }
 
-/** 多文件加载:按顺序追加,支持 properties.additional 相对引用 */
-export function loadPropertiesFiles(files: { path: string; content: string }[]): HelperProperties {
+/**
+ * 多文件加载:按顺序追加,支持 properties.additional 相对引用。
+ * @param readFile 读取 additional 引用文件的回调(路径已规范化为 / 分隔);
+ *   返回 undefined 表示文件不可读,跳过并告警。不传则无法回填引用文件内容,
+ *   引用条目会被跳过(与旧行为一致)。
+ */
+export function loadPropertiesFiles(
+  files: { path: string; content: string }[],
+  readFile?: (path: string) => string | undefined
+): HelperProperties {
   const entries: HelperPropEntry[] = [];
   const warnings: string[] = [];
   const visited = new Set<string>();
@@ -162,6 +170,14 @@ export function loadPropertiesFiles(files: { path: string; content: string }[]):
       continue;
     }
     visited.add(cur.path);
+    if (cur.content === "" && readFile && isPlausibleFile(cur.path)) {
+      const content = readFile(cur.path);
+      if (content === undefined) {
+        warnings.push(`properties.additional 引用的文件不可读,已跳过:${cur.path}`);
+        continue;
+      }
+      cur.content = content;
+    }
     loaded.push(cur.path);
     const r = parseProperties(cur.content, cur.path);
     entries.push(...r.entries);
@@ -171,13 +187,18 @@ export function loadPropertiesFiles(files: { path: string; content: string }[]):
       if (e.key === "properties.additional") {
         const p = resolveAdditionalPath(cur.path, e.value);
         if (p && !visited.has(p)) {
-          queue.push({ path: p, content: "" }); // 由调用方填充
+          queue.push({ path: p, content: "" });
         }
       }
     }
   }
 
   return { entries, warnings, files: loaded };
+}
+
+/** 路径像真实文件(非调用方为占位构造的空串路径)才尝试读取 */
+function isPlausibleFile(p: string): boolean {
+  return p.length > 0 && !p.endsWith("/");
 }
 
 function resolveAdditionalPath(baseFile: string, raw: string): string | undefined {
