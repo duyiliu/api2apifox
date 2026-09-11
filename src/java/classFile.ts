@@ -30,7 +30,6 @@ const CP_PACKAGE = 20;
 /* ---------- access flags ---------- */
 export const ACC_PUBLIC = 0x0001;
 const ACC_INTERFACE = 0x0200;
-const ACC_ABSTRACT = 0x0400;
 const ACC_SYNTHETIC = 0x1000;
 const ACC_ANNOTATION_TYPE = 0x2000;
 const ACC_ENUM = 0x4000;

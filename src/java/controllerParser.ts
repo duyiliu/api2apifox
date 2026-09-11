@@ -1,7 +1,7 @@
 import { collectAnnotations, parseArgsText } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
-import { parseTypeText } from "./typeText";
+import { parseTypeText, simpleName } from "./typeText";
 import { HelperProperties } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
@@ -9,7 +9,7 @@ import {
   ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
 import { schemaExample, schemaDescription } from "./schemaResolver";
-import { ParsedFile } from "./typeIndex";
+import { ParsedFile, resolveIndexedType } from "./typeIndex";
 
 const SPRING_MAPPINGS: Record<string, string[]> = {
   GetMapping: ["GET"],
@@ -798,14 +798,7 @@ function docDescOf(paramDocs: Record<string, string>, fieldName: string): string
  */
 function expandQueryBean(index: TypeIndex, typeText: string, _source: string): ParameterInfo[] {
   const t = parseTypeText(typeText);
-  const simple = simpleNameOf(t.name);
-  let info = index.types.get(simple);
-  if (!info && index.jarLookup) {
-    info = index.jarLookup(simple);
-    if (info) {
-      index.types.set(simple, info);
-    }
-  }
+  const info = resolveIndexedType(index, t.name);
   if (!info || info.kind === "enum" || info.kind === "record") {
     return [];
   }
@@ -821,8 +814,8 @@ function expandQueryBean(index: TypeIndex, typeText: string, _source: string): P
       if (seen.has(f.name)) {
         continue;
       }
-      const fSimple = simpleNameOf(parseTypeText(f.typeText).name);
-      const sub = index.types.get(fSimple) ?? index.jarLookup?.(fSimple);
+      const fSimple = simpleName(parseTypeText(f.typeText).name);
+      const sub = resolveIndexedType(index, fSimple);
       if (sub && sub.kind !== "enum" && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple)) {
         // 子对象:Spring 会按 父字段名.子字段 绑定 query;为可读性这里扁平化为 子字段 会冲突,
         // 故仅当子对象可再展开时递归,名称保留 字段名 前缀
@@ -845,14 +838,7 @@ function expandQueryBean(index: TypeIndex, typeText: string, _source: string): P
       });
     }
     if (ci.superClass) {
-      const supSimple = simpleNameOf(parseTypeText(ci.superClass).name);
-      let sup = index.types.get(supSimple);
-      if (!sup && index.jarLookup) {
-        sup = index.jarLookup(supSimple);
-        if (sup) {
-          index.types.set(supSimple, sup);
-        }
-      }
+      const sup = resolveIndexedType(index, parseTypeText(ci.superClass).name);
       if (sup && sup.kind === "class") {
         walk(sup, depth + 1);
       }
@@ -866,11 +852,6 @@ function isPlainValueType(simple: string): boolean {
   return /^(int|Integer|long|Long|short|Short|byte|Byte|float|Float|double|Double|boolean|Boolean|String|char|Character|BigDecimal|BigInteger|Date|LocalDate|LocalDateTime|LocalTime|Instant|ZonedDateTime|OffsetDateTime|Timestamp|UUID|Enum|List|Set|Map|String\[\])$/.test(
     simple
   );
-}
-
-function simpleNameOf(qualified: string): string {
-  const i = qualified.lastIndexOf(".");
-  return i >= 0 ? qualified.slice(i + 1) : qualified;
 }
 
 function extractReturnType(pf: ParsedFile, resultNode: CstNode): string | undefined {

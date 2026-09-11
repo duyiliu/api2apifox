@@ -61,8 +61,6 @@ function buildDemoClassExplicit(): Buffer {
   const iNameZh = utf8Idx("姓名");
   const iClassSig = utf8Idx("<T:Ljava/lang/Object;>Ljava/lang/Object;");
 
-  const u2 = (v: number) => [v & 0xff, (v >> 8) & 0xff];
-  const u4 = (v: number) => [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff];
   const be2 = (v: number) => [(v >> 8) & 0xff, v & 0xff];
   const be4 = (v: number) => [(v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
 

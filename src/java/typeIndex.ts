@@ -2,8 +2,8 @@ import { parse } from "java-parser";
 import { collectAnnotations } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
-import { ClassInfo, FieldInfo, SourceFile, TypeIndex, TypeKind } from "./model";
-import { parseTypeText } from "./typeText";
+import { ClassInfo, FieldInfo, TypeIndex, TypeKind } from "./model";
+import { parseTypeText, simpleName } from "./typeText";
 
 export interface ParsedFile {
   fsPath: string;
@@ -234,4 +234,22 @@ export function buildIndex(files: ParsedFile[]): TypeIndex {
     byFile.set(pf.fsPath, names);
   }
   return { types, byFile };
+}
+
+/**
+ * 按简单名查找类型:先查源码索引,未命中时从依赖 jar 的 .class 按需解析并回填缓存
+ * (未配置 Maven 仓库时 jarLookup 为 undefined,退化为纯源码索引查询)。
+ * 框架类(如自定义 ResponseDto、MyBatis-Plus 的 Page)依赖此回填避免重复解析同一 .class。
+ */
+export function resolveIndexedType(index: TypeIndex, name: string): ClassInfo | undefined {
+  const simple = simpleName(name);
+  const cached = index.types.get(simple);
+  if (cached) {
+    return cached;
+  }
+  const fromJar = index.jarLookup?.(simple);
+  if (fromJar) {
+    index.types.set(simple, fromJar);
+  }
+  return fromJar;
 }

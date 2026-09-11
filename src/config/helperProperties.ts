@@ -121,7 +121,6 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
     }
 
     // 续行:以奇数个 \ 结尾
-    let contLineNo = lineNo;
     while (endsWithOddBackslash(value)) {
       const raw2 = value;
       // 去掉末尾续行符
@@ -130,7 +129,6 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
       value = value.replace(/[ \t]+$/, "");
       if (i + 1 < lines.length) {
         i++;
-        contLineNo = lines[i].lineNo;
         // 续行的行首空白被忽略
         value += lines[i].text.replace(/^[ \t]+/, "");
       } else {

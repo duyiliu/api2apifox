@@ -71,7 +71,7 @@ export function evalRuleValue(
   raw: string,
   ctx: RuleContext,
   key: string,
-  onWarning: (msg: string) => void
+  _onWarning: (msg: string) => void
 ): RuleEvalResult {
   const syntax = detectValueSyntax(raw);
 
@@ -127,8 +127,8 @@ export function evalRuleValue(
 export function evalCondition(
   cond: string | undefined,
   ctx: RuleContext,
-  key: string,
-  onWarning: (msg: string) => void
+  _key: string,
+  _onWarning: (msg: string) => void
 ): { hit: boolean; supported: boolean } {
   if (!cond || !cond.trim()) {
     return { hit: true, supported: true };

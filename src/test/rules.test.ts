@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { analyze } from "../pipeline";
 import { SourceFile } from "../java/model";
-import { parseProperties, loadPropertiesFiles } from "../config/helperProperties";
+import { loadPropertiesFiles } from "../config/helperProperties";
 
 const DTO = `
 package com.example;

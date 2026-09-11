@@ -55,7 +55,6 @@ test("unescapeProp \\uXXXX 与 \\n", () => {
 /* ---------- 规则求值 ---------- */
 
 const DIC_ANN: AnnotationInfo = { name: "DataDic", raw: '@DataDic(value = "FMJG")', args: { value: "FMJG" } };
-const PLAIN_ANN: AnnotationInfo = { name: "ApiModelProperty", raw: '@ApiModelProperty("姓名")', args: { value: "姓名" } };
 const FQCN_ANN: AnnotationInfo = { name: "DataDic", raw: '@ext.plus.common.core.annotation.DataDic(value = "EXT_SEX")', args: { value: "EXT_SEX" } };
 
 test("值语法:#tag 读 javadoc", () => {

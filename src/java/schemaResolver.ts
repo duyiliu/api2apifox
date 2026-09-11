@@ -3,6 +3,7 @@ import { parseTypeText, simpleName, TypeRef, typeToKeyText } from "./typeText";
 import { AnnotationInfo } from "./annotation";
 import { HelperProperties } from "../config/helperProperties";
 import { detectValueSyntax, evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
+import { resolveIndexedType } from "./typeIndex";
 
 export interface JsonSchema {
   type?: string;
@@ -101,13 +102,7 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
   }
 
   // 源码类型 → 依赖 jar 中的类型(按需解析 .class,结果回填缓存)
-  let info = ctx.index.types.get(name);
-  if (!info && ctx.index.jarLookup) {
-    info = ctx.index.jarLookup(name);
-    if (info) {
-      ctx.index.types.set(name, info);
-    }
-  }
+  const info = resolveIndexedType(ctx.index, name);
   if (!info) {
     return { type: "object", description: `未识别的类型: ${t.name}` };
   }
@@ -547,19 +542,6 @@ export function schemaExample(annotations: AnnotationInfo[]): string | undefined
 
 /* ---------------- .apifox-helper.properties 字段级规则 ---------------- */
 
-/** 按简单名在源码索引 / 依赖 jar 中查找类型;命中 jar 时回填缓存 */
-function lookupType(name: string, ctx: ResolveContext): ClassInfo | undefined {
-  const simple = simpleName(name);
-  let info = ctx.index.types.get(simple);
-  if (!info && ctx.index.jarLookup) {
-    info = ctx.index.jarLookup(simple);
-    if (info) {
-      ctx.index.types.set(simple, info);
-    }
-  }
-  return info;
-}
-
 /**
  * 取字段的枚举类型名:字段本身是枚举,或数组/集合的元素类型是枚举(如 List<HighRiskFactorCode>、MyEnum[]),
  * 与 .apifox-helper.properties 中 helper.findClass(it.type()?.name())?.isEnum() 的判定意图对齐。
@@ -578,7 +560,7 @@ function enumTypeNameOf(field: FieldInfo, ctx: ResolveContext): string | undefin
       t = t.args[0];
       continue;
     }
-    const info = lookupType(name, ctx);
+    const info = resolveIndexedType(ctx.index, name);
     return info && info.kind === "enum" ? name : undefined;
   }
   return undefined;
