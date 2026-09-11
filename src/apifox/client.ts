@@ -36,7 +36,9 @@ export class ApifoxClient {
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
-    private readonly apiVersion: string = APIFOX_API_VERSION
+    private readonly apiVersion: string = APIFOX_API_VERSION,
+    /** 请求超时毫秒数;导入大文档可能偏慢,默认给足 60s */
+    private readonly timeoutMs: number = 60_000
   ) {}
 
   /**
@@ -103,8 +105,12 @@ export class ApifoxClient {
           "Content-Type": "application/json",
         },
         body: json === undefined ? undefined : JSON.stringify(json),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
+      if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+        throw new ApifoxApiError(`请求超时(${this.timeoutMs}ms):${url}`, 0);
+      }
       throw new ApifoxApiError(`网络请求失败(${url}):${err instanceof Error ? err.message : String(err)}`, 0);
     }
 
