@@ -35,7 +35,7 @@
 | --- | --- |
 | **接口识别** | Spring MVC、Spring Cloud OpenFeign、JAX-RS、Actuator 自定义端点 |
 | **参数解析** | 常用 Spring MVC 注解、`MultipartFile`、`Pageable`;无注解简单类型按 Spring 默认规则 |
-| **模型展开** | DTO 递归展开、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
+| **模型展开** | DTO 递归展开(含静态内部类)、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
 | **分页包装** | `PageInfo`、MyBatis-Plus `IPage`、Spring Data `Page`/`PageImpl`/`Slice` 自动展开 |
 | **注解支持** | OpenAPI 3 / Swagger 2 / Javadoc 文档注解、Bean Validation、Jackson / FASTJSON / GSON、响应声明 |
 | **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度;同步后出「同步结果」面板(计数表 + 接口清单,可排序 / 过滤 / 复制) |
@@ -67,6 +67,7 @@
 ### 模型展开
 
 - DTO 递归展开,泛型实例化(`ApiResult<List<UserVO>>` → `ApiResult«List«UserVO»»`)
+- 静态内部类展开为独立数据模型(如 `PatientSaveRequest.HealthProfileRequest`)
 - `ResponseEntity`/`Mono`/`Flux` 解包
 - 枚举、继承字段合并、循环引用(`$ref`)
 
@@ -177,7 +178,7 @@
 
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
 - **依赖 jar 类型识别的边界**:仅解析工作区 `pom.xml` 声明的直接依赖(不含传递依赖的坐标推断;传递依赖类型可通过 `dependencyJars` 显式补充);Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
-- 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型)
+- 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;静态内部类同样以简单名索引,与顶层类型重名时顶层优先)
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布

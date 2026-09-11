@@ -178,3 +178,12 @@
 - M3:schemaResolver 字段级接入 + 端到端断言
 - M4:controllerParser 类/方法级接入 + 端到端断言
 - M5:开关、扫描/优先级、warning、README、全量回归
+
+## 8. 修订记录
+
+### 2026-09-11(0.2.24)
+
+- 集合元素的枚举判定:`enumTypeNameOf` 逐层剥掉数组维度与集合包装后再判定,`List<HighRiskFactorCode>`、`Set<Enum>`、`Enum[]` 这类字段现在会追加「(枚举类:X)」;`field.doc` 的经典 groovy 形态由安全求值直接生效,`enumFieldDoc` 开关不再是唯一途径(原 3.4 节描述的是当时的备用方案)。
+- 嵌套静态类纳入类型索引:`buildIndex` 除顶层 `typeDeclaration` 外,同时索引类/接口体内的成员类型声明,`PatientSaveRequest.HealthProfileRequest` 一类请求模型不再解析成空 object(此前内部字段整块丢失)。
+- 类型查找收敛为 `resolveIndexedType(index, name)`,源码索引与依赖 jar 回填逻辑不再在 5 处重复。
+- 自动化测试 52 → 79 项;`tsconfig` 启用 `noUnusedLocals`/`noUnusedParameters`。
