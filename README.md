@@ -129,7 +129,7 @@
 | `apifoxHelper.endpointConflictBehavior` | `OVERWRITE_EXISTING` | 接口冲突:`OVERWRITE_EXISTING` / `AUTO_MERGE` / `KEEP_EXISTING` / `CREATE_NEW` |
 | `apifoxHelper.schemaConflictBehavior` | `OVERWRITE_EXISTING` | 数据模型冲突策略,取值同上 |
 | `apifoxHelper.include` | `["**/src/main/java/**/*.java"]` | 扫描 glob |
-| `apifoxHelper.exclude` | `["**/target/**", "**/build/**", "**/src/test/**"]` | 排除 glob |
+| `apifoxHelper.exclude` | `["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**"]` | 排除 glob |
 | `apifoxHelper.exportPath` | `openapi.gen.json` | 预览导出路径 |
 | `apifoxHelper.pageTypeStyle` | `mybatis-plus` | 简单名 `Page` 的展开形态:`mybatis-plus`(records/total/current)或 `spring-data`(content/totalElements/number) |
 | `apifoxHelper.folderNameSource` | `tag` | 接口目录命名来源:`tag`(@Tag 注解,缺省类名)或 `controller`(类名) |
@@ -178,7 +178,7 @@
 ## ⚠️ 已知边界
 
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
-- **依赖 jar 类型识别的边界**:仅解析工作区 `pom.xml` 声明的直接依赖(不含传递依赖的坐标推断;传递依赖类型可通过 `dependencyJars` 显式补充);Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
+- **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限 120,超出部分告警);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;静态内部类同样以简单名索引,与顶层类型重名时顶层优先)
 - 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
