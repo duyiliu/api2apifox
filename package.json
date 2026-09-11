@@ -2,7 +2,7 @@
   "name": "api2apifox",
   "displayName": "ApiGen for Apifox",
   "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
-  "version": "0.2.24",
+  "version": "0.2.25",
   "publisher": "duyiliu",
   "icon": "media/apifox-helper-icon-v1.png",
   "license": "MIT",
