@@ -367,6 +367,10 @@ export class SettingsPanel {
     input:focus, select:focus {
       border-color: var(--vscode-focusBorder);
     }
+    input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, .link:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -433,6 +437,42 @@ export class SettingsPanel {
       grid-template-columns: 1fr 1fr;
       gap: 16px;
     }
+    details.section {
+      padding: 0;
+    }
+    details.section > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    details.section > summary::-webkit-details-marker {
+      display: none;
+    }
+    details.section > summary::after {
+      content: '展开';
+      color: var(--info-color);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    details.section[open] > summary {
+      border-bottom: 1px solid var(--border-color);
+    }
+    details.section[open] > summary::after {
+      content: '收起';
+    }
+    .advanced-content {
+      padding: 20px 24px;
+    }
+    .advanced-summary {
+      color: var(--info-color);
+      font-size: 12px;
+      font-weight: 400;
+      margin-left: auto;
+    }
     .link {
       color: var(--vscode-textLink-foreground);
       text-decoration: none;
@@ -452,6 +492,17 @@ export class SettingsPanel {
       justify-content: space-between;
       margin-top: 24px;
       z-index: 10;
+    }
+    .footer-left, .footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .footer-left { gap: 14px; min-width: 0; }
+    .dirty-indicator {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      white-space: nowrap;
     }
     .checkbox-row {
       display: flex;
@@ -475,6 +526,27 @@ export class SettingsPanel {
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    @media (max-width: 680px) {
+      body { padding: 16px 16px 40px; }
+      .header { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .header-title { flex-wrap: wrap; }
+      .section { padding: 16px; }
+      .grid-2 { grid-template-columns: 1fr; gap: 0; }
+      .input-row { flex-wrap: wrap; }
+      .input-row input, .input-row select { flex: 1 1 240px; }
+      details.section { padding: 0; }
+      details.section > summary { padding: 16px; flex-wrap: wrap; }
+      .advanced-content { padding: 16px; }
+      .advanced-summary { flex-basis: 100%; margin-left: 0; }
+      .footer-bar { align-items: stretch; flex-direction: column; gap: 12px; }
+      .footer-left { align-items: flex-start; flex-direction: column; gap: 6px; }
+      .footer-actions { width: 100%; }
+      .footer-actions .btn { flex: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+      .spinner { animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -483,7 +555,7 @@ export class SettingsPanel {
       <span>🚀 ApiGen for Apifox 配置中心</span>
       <span class="header-tag">Spring Boot ⇄ Apifox</span>
     </div>
-    <button class="btn btn-secondary" id="btnHelp">📖 查看 Token 帮助</button>
+    <button type="button" class="btn btn-secondary" id="btnHelp">查看 Token 帮助</button>
   </div>
 
   <!-- 账号与网络服务 -->
@@ -491,11 +563,11 @@ export class SettingsPanel {
     <div class="section-title">🔑 账号凭据与 API 网关</div>
     
     <div class="form-group">
-      <label class="form-label">API 访问令牌 (Personal Access Token)</label>
+      <label class="form-label" for="inputToken">API 访问令牌</label>
       <div class="input-row">
         <input type="password" id="inputToken" placeholder="粘贴 APS-xxxxxxxxxxxx" autocomplete="off" />
-        <button class="btn btn-secondary btn-icon" id="btnToggleToken" title="显示/隐藏密文">👁</button>
-        <button class="btn btn-secondary" id="btnPasteToken">📋 粘贴</button>
+        <button type="button" class="btn btn-secondary btn-icon" id="btnToggleToken" title="显示访问令牌" aria-label="显示访问令牌">👁</button>
+        <button type="button" class="btn btn-secondary" id="btnPasteToken">粘贴</button>
       </div>
       <div class="form-desc">
         在 Apifox 客户端「头像 → 账号设置 → API 访问令牌」中生成（建议设置较长有效期）。
@@ -503,19 +575,19 @@ export class SettingsPanel {
     </div>
 
     <div class="form-group">
-      <label class="form-label">Apifox 开放 API 服务地址 (Base URL)</label>
+      <label class="form-label" for="inputBaseUrl">Apifox API 服务地址</label>
       <div class="input-row">
         <input type="text" id="inputBaseUrl" value="https://api.apifox.com" placeholder="https://api.apifox.com" />
-        <button class="btn btn-secondary" id="btnResetBaseUrl">恢复默认公网</button>
+        <button type="button" class="btn btn-secondary" id="btnResetBaseUrl">恢复默认公网</button>
       </div>
       <div class="form-desc">默认公网为 <code>https://api.apifox.com</code>；企业私有化部署请填写私有云 API 网关地址。</div>
     </div>
 
     <div style="margin-top: 14px;">
-      <button class="btn btn-secondary" id="btnTestConn">⚡ 测试连接与验证令牌</button>
+      <button type="button" class="btn btn-secondary" id="btnTestConn">测试连接</button>
     </div>
 
-    <div class="status-box" id="testStatusBox">
+    <div class="status-box" id="testStatusBox" role="status" aria-live="polite">
       <span id="testStatusIcon"></span>
       <span id="testStatusMsg"></span>
     </div>
@@ -527,17 +599,17 @@ export class SettingsPanel {
     
     <div class="grid-2">
       <div class="form-group">
-        <label class="form-label">所属团队 (Team)</label>
+        <label class="form-label" for="selectTeam">所属团队</label>
         <div class="input-row">
           <select id="selectTeam">
             <option value="">-- 请先点击测试连接或选择团队 --</option>
           </select>
-          <button class="btn btn-secondary btn-icon" id="btnRefreshTeams" title="拉取团队列表">🔄</button>
+          <button type="button" class="btn btn-secondary btn-icon" id="btnRefreshTeams" title="刷新团队列表" aria-label="刷新团队列表">↻</button>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">绑定项目 (Project)</label>
+        <label class="form-label" for="selectProject">绑定项目</label>
         <select id="selectProject">
           <option value="0">-- 请先选择团队 --</option>
         </select>
@@ -547,12 +619,16 @@ export class SettingsPanel {
   </div>
 
   <!-- 同步策略与规则 -->
-  <div class="section">
-    <div class="section-title">⚙ 同步策略与解析偏好</div>
+  <details class="section advanced-section" id="advancedSection">
+    <summary>
+      <span class="section-title" style="margin-bottom: 0;">同步策略与解析偏好</span>
+      <span class="advanced-summary" id="advancedSummary">覆盖已有内容 · 按注解目录</span>
+    </summary>
+    <div class="advanced-content">
 
     <div class="grid-2">
       <div class="form-group">
-        <label class="form-label">接口冲突处理 (Endpoint Overwrite)</label>
+        <label class="form-label" for="selectEndpointConflict">接口冲突策略</label>
         <select id="selectEndpointConflict">
           <option value="OVERWRITE_EXISTING">覆盖已有接口 (推荐)</option>
           <option value="AUTO_MERGE">自动合并</option>
@@ -562,7 +638,7 @@ export class SettingsPanel {
       </div>
 
       <div class="form-group">
-        <label class="form-label">数据模型冲突处理 (Schema Overwrite)</label>
+        <label class="form-label" for="selectSchemaConflict">数据模型冲突策略</label>
         <select id="selectSchemaConflict">
           <option value="OVERWRITE_EXISTING">覆盖已有数据模型 (推荐)</option>
           <option value="AUTO_MERGE">自动合并</option>
@@ -574,7 +650,7 @@ export class SettingsPanel {
 
     <div class="grid-2" style="margin-top: 14px;">
       <div class="form-group">
-        <label class="form-label">接口目录命名依据 (Folder Name Source)</label>
+        <label class="form-label" for="selectFolderSource">接口目录命名依据</label>
         <select id="selectFolderSource">
           <option value="tag">优先使用 @Tag / @Api 注解名称</option>
           <option value="controller">使用 Controller 类名</option>
@@ -582,7 +658,7 @@ export class SettingsPanel {
       </div>
 
       <div class="form-group">
-        <label class="form-label">分页模型展开风格 (Page Packaging)</label>
+        <label class="form-label" for="selectPageStyle">分页模型格式</label>
         <select id="selectPageStyle">
           <option value="mybatis-plus">MyBatis-Plus (records, total, size, current)</option>
           <option value="spring-data">Spring Data (content, totalElements, size)</option>
@@ -592,12 +668,12 @@ export class SettingsPanel {
 
     <div class="grid-2" style="margin-top: 14px;">
       <div class="form-group">
-        <label class="form-label">接口全局父目录 (可选)</label>
+        <label class="form-label" for="inputRootFolder">接口全局父目录（可选）</label>
         <input type="text" id="inputRootFolder" placeholder="例如：儿童青少年健康 / 儿保模块（留空则不加父目录）" />
       </div>
 
       <div class="form-group">
-        <label class="form-label">数据模型目标目录 ID (可选数字 ID)</label>
+        <label class="form-label" for="inputSchemaFolderId">数据模型目标目录 ID（可选）</label>
         <input type="number" id="inputSchemaFolderId" placeholder="可在 Apifox 客户端目录右键复制数字 ID" />
       </div>
     </div>
@@ -608,17 +684,19 @@ export class SettingsPanel {
         <span>自动在枚举字段描述后追加「(枚举类: 类名)」</span>
       </label>
     </div>
-  </div>
+    </div>
+  </details>
 
   <!-- 底部固定保存栏 -->
   <div class="footer-bar">
-    <div style="display: flex; align-items: center; gap: 14px;">
-      <div id="saveFeedback" style="font-size: 13px; font-weight: 500;"></div>
-      <a class="link" id="btnAdvancedSettings" style="font-size: 12px; white-space: nowrap;">完整高级设置 (扫描范围 / 依赖 Jar / 规则)...</a>
+    <div class="footer-left">
+      <div id="saveFeedback" role="status" aria-live="polite" style="font-size: 13px; font-weight: 500;"></div>
+      <span class="dirty-indicator" id="dirtyIndicator" hidden>● 有未保存的更改</span>
+      <button type="button" class="link" id="btnAdvancedSettings" style="font-size: 12px; white-space: nowrap; border: 0; background: transparent; padding: 0;">打开完整高级设置…</button>
     </div>
-    <div style="display: flex; gap: 10px;">
-      <button class="btn btn-secondary" id="btnRestoreDefaults">重置默认策略</button>
-      <button class="btn" id="btnSave">💾 保存配置</button>
+    <div class="footer-actions">
+      <button type="button" class="btn btn-secondary" id="btnRestoreDefaults">重置默认策略</button>
+      <button type="button" class="btn" id="btnSave" disabled>保存配置</button>
     </div>
   </div>
 
@@ -658,15 +736,58 @@ export class SettingsPanel {
     const btnHelp = document.getElementById('btnHelp');
     const btnAdvancedSettings = document.getElementById('btnAdvancedSettings');
     const saveFeedback = document.getElementById('saveFeedback');
+    const dirtyIndicator = document.getElementById('dirtyIndicator');
+    const advancedSummary = document.getElementById('advancedSummary');
+    let savedSignature = '';
+    let savePending = false;
+
+    function formSignature() {
+      return JSON.stringify({
+        token: inputToken.value.trim(),
+        apiBaseUrl: inputBaseUrl.value.trim().replace(/\/+$/, ''),
+        projectId: Number(selectProject.value) || 0,
+        endpointConflictBehavior: selectEndpointConflict.value,
+        schemaConflictBehavior: selectSchemaConflict.value,
+        folderNameSource: selectFolderSource.value,
+        pageTypeStyle: selectPageStyle.value,
+        rootFolderName: inputRootFolder.value.trim(),
+        schemaFolderId: Number(inputSchemaFolderId.value) || 0,
+        enumFieldDoc: checkEnumDoc.checked,
+      });
+    }
+
+    function updateAdvancedSummary() {
+      const conflict = selectEndpointConflict.selectedOptions[0]?.textContent?.replace(/ \(推荐\)$/, '') || '默认冲突策略';
+      const folder = selectFolderSource.value === 'controller' ? '按 Controller 建目录' : '按注解建目录';
+      advancedSummary.textContent = conflict + ' · ' + folder;
+    }
+
+    function updateDirtyState() {
+      const dirty = Boolean(savedSignature) && formSignature() !== savedSignature;
+      dirtyIndicator.hidden = !dirty;
+      btnSave.disabled = savePending || !dirty;
+      updateAdvancedSummary();
+    }
+
+    document.addEventListener('input', (event) => {
+      if (event.isTrusted) { updateDirtyState(); }
+    });
+    document.addEventListener('change', (event) => {
+      if (event.isTrusted) { updateDirtyState(); }
+    });
 
     // 密码显隐
     btnToggleToken.addEventListener('click', () => {
       if (inputToken.type === 'password') {
         inputToken.type = 'text';
         btnToggleToken.textContent = '🔒';
+        btnToggleToken.title = '隐藏访问令牌';
+        btnToggleToken.setAttribute('aria-label', '隐藏访问令牌');
       } else {
         inputToken.type = 'password';
         btnToggleToken.textContent = '👁';
+        btnToggleToken.title = '显示访问令牌';
+        btnToggleToken.setAttribute('aria-label', '显示访问令牌');
       }
     });
 
@@ -677,6 +798,8 @@ export class SettingsPanel {
         if (text) {
           inputToken.value = text.trim();
           showStatus('testStatusBox', 'info', '已从剪贴板粘贴令牌');
+          invalidateConnection();
+          updateDirtyState();
         }
       } catch {
         inputToken.focus();
@@ -687,6 +810,8 @@ export class SettingsPanel {
     btnResetBaseUrl.addEventListener('click', () => {
       inputBaseUrl.value = 'https://api.apifox.com';
       invalidateConnection();
+      updateDirtyState();
+      updateDirtyState();
     });
 
     inputToken.addEventListener('input', invalidateConnection);
@@ -762,7 +887,11 @@ export class SettingsPanel {
       const projName = projOpt && projId > 0 ? projOpt.textContent : '';
 
       if (projId > 0) {
-        currentBindingDesc.innerHTML = '✅ 当前已选: <strong>' + projName + '</strong> (ID: ' + projId + ') · 所属团队: ' + teamName;
+        const prefix = document.createTextNode('当前已选：');
+        const strong = document.createElement('strong');
+        strong.textContent = projName;
+        const suffix = document.createTextNode('（ID: ' + projId + '） · 所属团队：' + teamName);
+        currentBindingDesc.replaceChildren(prefix, strong, suffix);
       } else {
         currentBindingDesc.textContent = '当前未选择有效项目';
       }
@@ -803,6 +932,7 @@ export class SettingsPanel {
         selectProject.appendChild(opt);
       });
       updateBindingDesc();
+      updateDirtyState();
     }
 
     function connectionKey() {
@@ -870,6 +1000,7 @@ export class SettingsPanel {
         currentConfig.settings = { ...currentConfig.settings, teamName, projectName, projectId };
       }
 
+      savePending = true;
       setLoading(btnSave, true, '正在保存...');
       vscode.postMessage({ command: 'save', data: formData });
     });
@@ -884,6 +1015,7 @@ export class SettingsPanel {
       checkEnumDoc.checked = false;
       saveFeedback.style.color = 'var(--info-color)';
       saveFeedback.textContent = '策略选项已重置为默认值，点击「保存配置」后生效。';
+      updateDirtyState();
     });
 
     function showStatus(boxId, type, msg) {
@@ -896,6 +1028,7 @@ export class SettingsPanel {
       };
       const iconByType = { error: '❌', success: '✅', loading: '⏳', info: 'ℹ️' };
       box.className = 'status-box show ' + (classByType[type] || 'status-info');
+      box.setAttribute('role', type === 'error' ? 'alert' : 'status');
       testStatusIcon.textContent = iconByType[type] || 'ℹ️';
       testStatusMsg.textContent = msg;
     }
@@ -928,10 +1061,21 @@ export class SettingsPanel {
           checkEnumDoc.checked = Boolean(s.enumFieldDoc);
 
           if (s.teamName || s.projectId) {
-            selectTeam.innerHTML = '<option value="temp" selected>' + (s.teamName || '已选团队') + '</option>';
-            selectProject.innerHTML = '<option value="' + (s.projectId || 0) + '" selected>' + (s.projectName || ('项目 ' + s.projectId)) + (s.projectId ? ' (ID: ' + s.projectId + ')' : '') + '</option>';
+            const teamOption = document.createElement('option');
+            teamOption.value = 'temp';
+            teamOption.selected = true;
+            teamOption.textContent = s.teamName || '已选团队';
+            selectTeam.replaceChildren(teamOption);
+            const projectOption = document.createElement('option');
+            projectOption.value = String(s.projectId || 0);
+            projectOption.selected = true;
+            projectOption.textContent = (s.projectName || ('项目 ' + s.projectId)) + (s.projectId ? ' (ID: ' + s.projectId + ')' : '');
+            selectProject.replaceChildren(projectOption);
             updateBindingDesc();
           }
+
+          savedSignature = formSignature();
+          updateDirtyState();
 
           // 如果已有 Token，自动静默测试连接并拉取团队
           if (msg.data.token) {
@@ -948,7 +1092,7 @@ export class SettingsPanel {
           break;
         }
         case 'testResult': {
-          setLoading(btnTestConn, false, '⚡ 测试连接与验证令牌');
+          setLoading(btnTestConn, false, '测试连接');
           if (msg.requestKey && msg.requestKey !== connectionKey()) {
             showStatus('testStatusBox', 'info', '输入内容已变化，请重新测试连接');
             break;
@@ -971,16 +1115,24 @@ export class SettingsPanel {
           if (msg.ok) {
             populateProjects(msg.projects, currentConfig?.settings?.projectId);
           } else {
-            selectProject.innerHTML = '<option value="0">加载项目失败: ' + msg.message + '</option>';
+            const errorOption = document.createElement('option');
+            errorOption.value = '0';
+            errorOption.textContent = '加载项目失败：' + msg.message;
+            selectProject.replaceChildren(errorOption);
+            updateBindingDesc();
+            updateDirtyState();
           }
           break;
         }
         case 'saveResult': {
-          setLoading(btnSave, false, '💾 保存配置');
+          savePending = false;
+          setLoading(btnSave, false, '保存配置');
           if (msg.ok) {
             saveFeedback.style.color = '#49b36b';
             saveFeedback.textContent = '✅ ' + msg.message;
             initialConnectionKey = connectionKey();
+            savedSignature = formSignature();
+            updateDirtyState();
             setTimeout(() => { saveFeedback.textContent = ''; }, 4000);
             // 令牌非空时保存后自动验证连接,并刷新团队/项目下拉(按新绑定预选)
             if (inputToken.value.trim()) {
@@ -996,6 +1148,7 @@ export class SettingsPanel {
           } else {
             saveFeedback.style.color = '#f14c4c';
             saveFeedback.textContent = '❌ ' + msg.message;
+            updateDirtyState();
           }
           break;
         }

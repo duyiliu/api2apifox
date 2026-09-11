@@ -174,7 +174,7 @@
       "view/title": [
         {
           "command": "apifoxHelper.openSettingsPanel",
-          "group": "navigation@0",
+          "group": "1_config@1",
           "when": "view == apifoxHelper.apiTree"
         },
         {
@@ -184,32 +184,32 @@
         },
         {
           "command": "apifoxHelper.checkAllApis",
-          "group": "navigation@2",
+          "group": "2_selection@1",
           "when": "view == apifoxHelper.apiTree"
         },
         {
           "command": "apifoxHelper.uncheckAllApis",
-          "group": "navigation@3",
+          "group": "2_selection@2",
           "when": "view == apifoxHelper.apiTree"
         },
         {
           "command": "apifoxHelper.filterApi",
-          "group": "navigation@4",
+          "group": "3_filter@1",
           "when": "view == apifoxHelper.apiTree"
         },
         {
           "command": "apifoxHelper.clearFilter",
-          "group": "navigation@4.1",
+          "group": "3_filter@2",
           "when": "view == apifoxHelper.apiTree && apifoxHelper.isFiltered"
         },
         {
           "command": "apifoxHelper.searchApi",
-          "group": "navigation@5",
+          "group": "navigation@2",
           "when": "view == apifoxHelper.apiTree"
         },
         {
           "command": "apifoxHelper.refreshApiTree",
-          "group": "navigation@6",
+          "group": "navigation@3",
           "when": "view == apifoxHelper.apiTree"
         }
       ],

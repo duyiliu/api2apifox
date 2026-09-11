@@ -17,7 +17,13 @@ function endpoint(overrides: Partial<EndpointInfo> & { path: string; method: str
 
 const baseInput = {
   endpoints: [
-    endpoint({ path: "/api/patients", method: "GET", operationId: "pagePatients", summary: "分页查询患者" }),
+    endpoint({
+      path: "/api/patients",
+      method: "GET",
+      operationId: "pagePatients",
+      summary: "分页查询患者",
+      methodRange: { startOffset: 123, endOffset: 456, startLine: 8 },
+    }),
     endpoint({ path: "/api/patients", method: "POST", operationId: "savePatient", summary: "" }),
   ],
   target: "研发团队 / 儿保（ID: 42）",
@@ -71,6 +77,8 @@ test("接口清单：名称回退 operationId、目录按 folderOf、源文件�
     folder: "儿保后端/患者档案",
     controller: "PatientController",
     file: "src/main/java/PatientController.java",
+    fsPath: "d:/ws/cah-childhealth/src/main/java/PatientController.java",
+    startOffset: 123,
   });
   // summary 为空时用 operationId，避免清单出现空名称
   assert.equal(report.endpoints[1].name, "savePatient");

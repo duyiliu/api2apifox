@@ -30,6 +30,10 @@ export interface SyncEndpointRow {
   controller: string;
   /** 源文件（相对工作区根目录，取不到根目录时为绝对路径） */
   file: string;
+  /** 源文件绝对路径，仅用于结果面板跳转，不进入复制内容。 */
+  fsPath: string;
+  /** 方法起始偏移，缺失时打开文件但不定位。 */
+  startOffset?: number;
 }
 
 /** 一次同步的结果快照，用于结果面板/通知展示 */
@@ -126,6 +130,8 @@ export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
     folder: input.folderOf(ep),
     controller: ep.controller,
     file: relativePath(ep.fsPath, root),
+    fsPath: ep.fsPath,
+    startOffset: ep.methodRange?.startOffset,
   }));
 
   return {

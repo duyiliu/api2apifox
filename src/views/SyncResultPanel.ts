@@ -81,6 +81,25 @@ export class SyncResultPanel {
               await vscode.env.openExternal(vscode.Uri.parse(`https://app.apifox.com/project/${message.projectId}`));
             }
             break;
+          case "openSource": {
+            const fsPath = typeof message.fsPath === "string" ? message.fsPath : "";
+            if (!fsPath) {
+              break;
+            }
+            try {
+              const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fsPath));
+              const editor = await vscode.window.showTextDocument(doc, { preview: true });
+              const offset = Number(message.startOffset);
+              if (Number.isFinite(offset) && offset >= 0) {
+                const pos = doc.positionAt(offset);
+                editor.selection = new vscode.Selection(pos, pos);
+                editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+              }
+            } catch {
+              vscode.window.showWarningMessage(`无法打开源文件：${fsPath}`);
+            }
+            break;
+          }
         }
       },
       null,
@@ -156,6 +175,28 @@ export class SyncResultPanel {
     .header-title { font-size: 17px; font-weight: 600; }
     .meta { display: grid; grid-template-columns: auto auto; gap: 2px 10px; font-size: 12px; }
     .meta .label { color: var(--muted); }
+    .result-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border-color);
+      border-left: 4px solid var(--ok);
+      border-radius: 5px;
+      background: rgba(73, 179, 107, 0.08);
+    }
+    .result-banner.warning {
+      border-left-color: var(--warn);
+      background: rgba(215, 161, 44, 0.08);
+    }
+    .result-banner.error {
+      border-left-color: var(--error);
+      background: rgba(241, 76, 76, 0.08);
+    }
+    .result-title { font-size: 14px; font-weight: 600; }
+    .result-detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .section { margin-bottom: 22px; }
     .section-head {
       display: flex;
@@ -179,6 +220,10 @@ export class SyncResultPanel {
       font-family: inherit;
     }
     button:hover { background: var(--btn-sec-hover); }
+    button:focus-visible, input:focus-visible, th.sortable:focus-visible, .source-link:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
     input[type="search"] {
       background: var(--vscode-input-background);
       color: var(--vscode-input-foreground);
@@ -191,6 +236,7 @@ export class SyncResultPanel {
     }
     .copy-hint { color: var(--ok); font-size: 12px; opacity: 0; transition: opacity 0.2s; }
     .copy-hint.show { opacity: 1; }
+    .table-wrap { width: 100%; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
     th, td { padding: 6px 10px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; }
     thead th {
@@ -219,11 +265,34 @@ export class SyncResultPanel {
     .method-put { color: #d7a12c; }
     .method-delete { color: #f14c4c; }
     .method-patch { color: #b180d7; }
+    .source-link {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--vscode-textLink-foreground);
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
+      font: inherit;
+    }
+    .source-link:hover { text-decoration: underline; background: transparent; }
     ul.issues { list-style: none; }
     ul.issues li { padding: 5px 8px; border-left: 3px solid var(--warn); background: rgba(215, 161, 44, 0.08); margin-bottom: 6px; word-break: break-word; }
     ul.issues li.error { border-left-color: var(--error); background: rgba(241, 76, 76, 0.08); }
     .empty { color: var(--muted); padding: 10px 0; }
     .hidden { display: none; }
+    @media (max-width: 720px) {
+      body { padding: 16px 14px 36px; }
+      .header { flex-direction: column; }
+      .meta { grid-template-columns: auto 1fr; width: 100%; }
+      .result-banner { align-items: flex-start; flex-direction: column; }
+      input[type="search"] { min-width: 180px; width: 100%; }
+      .tools { width: 100%; }
+      #endpointTable th:nth-child(4), #endpointTable td:nth-child(4) { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -237,15 +306,23 @@ export class SyncResultPanel {
     </div>
   </div>
 
+  <div class="result-banner" id="resultBanner" role="status" aria-live="polite">
+    <div>
+      <div class="result-title" id="resultTitle">同步完成</div>
+      <div class="result-detail" id="resultDetail">正在读取同步结果…</div>
+    </div>
+  </div>
+
   <div class="section">
     <div class="section-head">
       <h2>导入计数</h2>
       <div class="tools">
-        <button id="btnOpenProject">在 Apifox 中打开项目</button>
-        <button id="btnCopySummary">复制汇总</button>
+        <button type="button" id="btnOpenProject">在 Apifox 中打开项目</button>
+        <button type="button" id="btnCopySummary">复制汇总</button>
+        <span class="copy-hint" id="summaryCopyHint" aria-live="polite">已复制</span>
       </div>
     </div>
-    <table id="summaryTable">
+    <div class="table-wrap"><table id="summaryTable">
       <thead>
         <tr>
           <th>分类</th>
@@ -257,8 +334,13 @@ export class SyncResultPanel {
         </tr>
       </thead>
       <tbody></tbody>
-    </table>
+    </table></div>
     <div class="empty hidden" id="summaryEmpty">Apifox 未返回计数。</div>
+  </div>
+
+  <div class="section hidden" id="issueSection">
+    <div class="section-head"><h2>需要关注<span class="count" id="issueCount"></span></h2></div>
+    <ul class="issues" id="issueList"></ul>
   </div>
 
   <div class="section">
@@ -266,30 +348,25 @@ export class SyncResultPanel {
       <h2>接口清单<span class="count" id="endpointCount"></span></h2>
       <div class="tools">
         <input id="filter" type="search" placeholder="过滤 名称/方法/路径/目录/文件">
-        <button id="btnCopyEndpoints">复制清单 (TSV)</button>
-        <button id="btnCopyMarkdown">复制 Markdown</button>
-        <span class="copy-hint" id="copyHint">已复制</span>
+        <button type="button" id="btnCopyEndpoints">复制清单 (TSV)</button>
+        <button type="button" id="btnCopyMarkdown">复制 Markdown</button>
+        <span class="copy-hint" id="endpointCopyHint" aria-live="polite">已复制</span>
       </div>
     </div>
-    <table id="endpointTable">
+    <div class="table-wrap"><table id="endpointTable">
       <thead>
         <tr>
-          <th class="sortable" data-key="name">接口名称</th>
-          <th class="sortable" data-key="method">方法</th>
-          <th class="sortable" data-key="path">路径</th>
-          <th class="sortable" data-key="folder">目录</th>
-          <th class="sortable" data-key="file">源文件</th>
+          <th class="sortable" data-key="name" tabindex="0" role="button">接口名称</th>
+          <th class="sortable" data-key="method" tabindex="0" role="button">方法</th>
+          <th class="sortable" data-key="path" tabindex="0" role="button">路径</th>
+          <th class="sortable" data-key="folder" tabindex="0" role="button">目录</th>
+          <th class="sortable" data-key="file" tabindex="0" role="button">源文件</th>
         </tr>
       </thead>
       <tbody></tbody>
-    </table>
+    </table></div>
     <div class="empty hidden" id="endpointEmpty">没有接口。</div>
     <div class="empty hidden" id="endpointFilteredEmpty">没有匹配的接口。</div>
-  </div>
-
-  <div class="section hidden" id="issueSection">
-    <div class="section-head"><h2>警告与错误</h2></div>
-    <ul class="issues" id="issueList"></ul>
   </div>
 
   <script nonce="${nonce}">
@@ -341,6 +418,24 @@ export class SyncResultPanel {
       }
     }
 
+    function renderResultBanner() {
+      const endpoint = ((report && report.summary) || []).find((row) => row.category === "接口") || {
+        created: 0, updated: 0, ignored: 0, failed: 0
+      };
+      const errorCount = (report.errors || []).length;
+      const warningCount = (report.warnings || []).length;
+      const failed = endpoint.failed + errorCount;
+      const banner = el("resultBanner");
+      banner.classList.toggle("error", failed > 0);
+      banner.classList.toggle("warning", failed === 0 && warningCount > 0);
+      setText("resultTitle", failed > 0 ? "同步完成，但存在失败项" : warningCount > 0 ? "同步完成，有需要关注的警告" : "同步完成");
+      const parts = ["接口新增 " + endpoint.created, "更新 " + endpoint.updated, "忽略 " + endpoint.ignored];
+      if (endpoint.failed > 0) { parts.push("失败 " + endpoint.failed); }
+      if (errorCount > 0) { parts.push("错误 " + errorCount); }
+      if (warningCount > 0) { parts.push("警告 " + warningCount); }
+      setText("resultDetail", parts.join(" · "));
+    }
+
     function visibleEndpoints() {
       const all = (report && report.endpoints) || [];
       const kw = keyword.trim().toLowerCase();
@@ -390,8 +485,17 @@ export class SyncResultPanel {
         tr.appendChild(folder);
 
         const file = document.createElement("td");
-        file.className = "muted";
-        file.textContent = row.file;
+        const source = document.createElement("button");
+        source.type = "button";
+        source.className = "source-link";
+        source.textContent = row.file;
+        source.title = "打开源文件";
+        source.addEventListener("click", () => vscode.postMessage({
+          command: "openSource",
+          fsPath: row.fsPath,
+          startOffset: row.startOffset,
+        }));
+        file.appendChild(source);
         tr.appendChild(file);
 
         tbody.appendChild(tr);
@@ -401,10 +505,13 @@ export class SyncResultPanel {
         const existing = th.querySelector(".arrow");
         if (existing) { existing.remove(); }
         if (th.dataset.key === sortKey) {
+          th.setAttribute("aria-sort", sortDir > 0 ? "ascending" : "descending");
           const arrow = document.createElement("span");
           arrow.className = "arrow";
           arrow.textContent = sortDir > 0 ? "▲" : "▼";
           th.appendChild(arrow);
+        } else {
+          th.setAttribute("aria-sort", "none");
         }
       }
     }
@@ -416,6 +523,7 @@ export class SyncResultPanel {
       for (const e of (report && report.errors) || []) { items.push({ text: e, error: true }); }
       for (const w of (report && report.warnings) || []) { items.push({ text: w, error: false }); }
       el("issueSection").classList.toggle("hidden", items.length === 0);
+      setText("issueCount", items.length ? " 共 " + items.length + " 项" : "");
       for (const item of items) {
         const li = document.createElement("li");
         li.className = item.error ? "error" : "";
@@ -431,6 +539,7 @@ export class SyncResultPanel {
       setText("metaTime", report.finishedAt);
       setText("metaConflict", report.conflict);
       el("btnOpenProject").classList.toggle("hidden", !(report.projectId > 0));
+      renderResultBanner();
       renderSummary();
       renderEndpoints();
       renderIssues();
@@ -453,6 +562,7 @@ export class SyncResultPanel {
     }
 
     function markdown() {
+      if (!report) { return ""; }
       const lines = ["## 同步结果", "", "- 目标：" + report.target, "- 范围：" + report.scope, "- 时间：" + report.finishedAt, "- 冲突策略：" + report.conflict, ""];
       lines.push("| 分类 | 新增 | 更新 | 忽略 | 失败 | 合计 |", "| --- | ---: | ---: | ---: | ---: | ---: |");
       for (const row of report.summary) {
@@ -478,8 +588,8 @@ export class SyncResultPanel {
       vscode.postMessage({ command: "copy", text: text, label: label });
     }
 
-    function showHint() {
-      const hint = el("copyHint");
+    function showHint(label) {
+      const hint = el(label === "汇总" ? "summaryCopyHint" : "endpointCopyHint");
       hint.classList.add("show");
       setTimeout(() => hint.classList.remove("show"), 1500);
     }
@@ -489,8 +599,8 @@ export class SyncResultPanel {
       renderEndpoints();
     });
 
-    document.querySelector("#endpointTable thead").addEventListener("click", (event) => {
-      const th = event.target.closest("th.sortable");
+    function applySort(target) {
+      const th = target.closest("th.sortable");
       if (!th) { return; }
       const key = th.dataset.key;
       if (sortKey === key) {
@@ -500,6 +610,16 @@ export class SyncResultPanel {
         sortDir = 1;
       }
       renderEndpoints();
+    }
+
+    document.querySelector("#endpointTable thead").addEventListener("click", (event) => {
+      applySort(event.target);
+    });
+    document.querySelector("#endpointTable thead").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        applySort(event.target);
+      }
     });
 
     el("btnCopySummary").addEventListener("click", () => copy(summaryTsv(), "汇总"));
@@ -513,7 +633,7 @@ export class SyncResultPanel {
         report = message.report;
         render();
       } else if (message.command === "copied") {
-        showHint();
+        showHint(message.label);
       }
     });
 
