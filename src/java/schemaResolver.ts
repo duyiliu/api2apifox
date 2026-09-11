@@ -171,7 +171,8 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
   const required: string[] = [];
   if (info.superClass) {
     const supRef = parseTypeText(info.superClass);
-    const supInfo = ctx.index.types.get(simpleName(supRef.name));
+    // 与类型解析同口径:源码索引优先,未命中时从依赖 jar 取(框架基类的字段同样要合并)
+    const supInfo = resolveIndexedType(ctx.index, supRef.name);
     if (supInfo && supInfo.kind !== "enum") {
       const supBindings = new Map<string, TypeRef>();
       supInfo.typeParams.forEach((p, i) => {

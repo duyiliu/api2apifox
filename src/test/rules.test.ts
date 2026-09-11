@@ -424,6 +424,54 @@ public class DeepQueryController {
   );
 });
 
+test("e2e:查询 Bean 继承父类字段(含父类嵌套对象)一并展开", () => {
+  const ctl = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/inherit")
+public class InheritQueryController {
+  /** 继承查询 */
+  @GetMapping
+  public PatientProfile page(ChildQuery query) { return null; }
+}
+`;
+  const classes = `
+package com.example;
+public class ChildQuery extends BaseQuery {
+  /** 子字段 */
+  private String childField;
+  /** 子嵌套 */
+  private BaseNested nested;
+}
+class BaseQuery {
+  /** 基字段 */
+  private Long baseField;
+  /** 基嵌套 */
+  private BaseNested inheritedNested;
+}
+class BaseNested {
+  /** 嵌套字段 */
+  private String baseNestedField;
+}
+`;
+  const res = analyze(
+    [
+      { fsPath: "/mem/dto.java", content: DTO },
+      { fsPath: "/mem/inh.java", content: classes },
+      { fsPath: "/mem/ctl.java", content: ctl },
+    ],
+    { title: "t" }
+  );
+  const names = (res.spec.paths["/api/inherit"].get as Record<string, any>).parameters.map(
+    (p: any) => p.name
+  );
+  assert.ok(names.includes("childField"), "子类字段应展开: " + names);
+  assert.ok(names.includes("baseField"), "父类字段应展开(继承合并): " + names);
+  assert.ok(names.includes("nested.baseNestedField"), "子类嵌套字段应带前缀展开");
+  assert.ok(names.includes("inheritedNested.baseNestedField"), "父类嵌套字段应带前缀展开");
+});
+
 test("e2e:spec 带 x-apifox-folder(根目录/目录来源)", () => {
   const res = analyze(files, {
     title: "t",

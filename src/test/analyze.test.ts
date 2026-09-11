@@ -186,3 +186,54 @@ public class PatientController {
   assert.equal(inner.properties!.gwys.items!.title, "HighRiskFactorCode");
 });
 
+test("DTO 继承父类时合并父类字段(java-parser 的 classExtends 节点)", () => {
+  // 回归:superClassOf 曾查找不存在的 "superclass" 节点,导致继承在任何路径下都未生效
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/Vo.java",
+      content: `
+package com.example;
+
+import io.swagger.annotations.ApiModelProperty;
+
+/** 基类 */
+public class BaseVo {
+  /** 创建时间 */
+  private java.time.LocalDateTime createdAt;
+  @ApiModelProperty("创建人")
+  private Long createdBy;
+}
+
+/** 子类 */
+public class PatientVo extends BaseVo {
+  /** 姓名 */
+  private String name;
+}
+`,
+    },
+    {
+      fsPath: "/mem/Ctrl.java",
+      content: `
+package com.example;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+public class Ctrl {
+  /** 查询 */
+  @GetMapping("/vo")
+  public PatientVo get() { return null; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schema = res.spec.components!.schemas["PatientVo"];
+  assert.ok("name" in schema.properties!, "子类字段应存在");
+  assert.ok("createdAt" in schema.properties!, "父类字段 createdAt 应合并");
+  assert.ok("createdBy" in schema.properties!, "父类字段 createdBy 应合并");
+  assert.equal(schema.properties!.createdAt.format, "date-time");
+  // 父类字段的注解描述同样带出
+  assert.equal(schema.properties!.createdBy.description, "创建人");
+});
+

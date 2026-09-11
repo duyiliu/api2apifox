@@ -108,8 +108,13 @@ function recordComponentsOf(decl: CstNode, source: string): FieldInfo[] {
   });
 }
 
+/**
+ * 取类的父类类型文本(如 "BaseQuery<String>")。
+ * java-parser 的节点名是 classExtends(内含 classType),而非 superclass;此前用错名字导致
+ * 继承从未生效——父类字段在响应模型与查询 Bean 展开中都会静默丢失。
+ */
 function superClassOf(normal: CstNode, source: string): string | undefined {
-  const sup = childNode(normal, "superclass");
+  const sup = childNode(normal, "classExtends");
   if (!sup) {
     return undefined;
   }
@@ -121,9 +126,15 @@ function superClassOf(normal: CstNode, source: string): string | undefined {
   return text && parseTypeText(text).name !== "Object" ? text : undefined;
 }
 
-/** 在子树中找第一个类型节点(unannClassOrInterfaceType / unannType) */
+/** 在子树中找第一个类型节点(unannClassOrInterfaceType / unannType / classType) */
 function findFirstType(node: CstNode): CstNode | undefined {
-  return childNode(node, "unannClassOrInterfaceType") ?? childNode(node, "unannType") ?? findAll(node, "unannClassOrInterfaceType")[0];
+  return (
+    childNode(node, "unannClassOrInterfaceType") ??
+    childNode(node, "unannType") ??
+    childNode(node, "classType") ??
+    findAll(node, "unannClassOrInterfaceType")[0] ??
+    findAll(node, "classType")[0]
+  );
 }
 
 function qualify(source: string, simpleName: string): string {
