@@ -262,3 +262,58 @@ test("查询 Bean(record)展开:嵌套对象按点号命名,集合保持数组�
     "record 查询 Bean 不应产生无法展开的告警: " + analyzed.warnings.join("|")
   );
 });
+
+test("@RequestHeader:无 required 声明默认必填(对齐 Spring),显式 required=false 保持可选", () => {
+  const files: SourceFile[] = [
+    {
+      fsPath: "/mem/HeaderDefaultController.java",
+      content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/headers")
+public class HeaderDefaultController {
+    @GetMapping("/a")
+    public String a(@RequestHeader("X-Token") String token) { return token; }
+
+    @GetMapping("/b")
+    public String b(@RequestHeader(value = "X-Token", required = false) String token) { return token; }
+}
+`,
+    },
+  ];
+  const out = analyze(files, { title: "demo" });
+  const opA = out.spec.paths["/api/headers/a"].get as Record<string, any>;
+  assert.equal(opA.parameters[0].required, true);
+  const opB = out.spec.paths["/api/headers/b"].get as Record<string, any>;
+  assert.equal(opB.parameters[0].required, false);
+});
+
+test("JAX-RS:@QueryParam 无 @DefaultValue 时同样可选(缺失仅取 null)", () => {
+  const files: SourceFile[] = [
+    {
+      fsPath: "/mem/TaskResource.java",
+      content: `
+package com.example;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.HeaderParam;
+
+@Path("/api/jaxrs-tasks")
+public class TaskResource {
+    @GET
+    public String list(@QueryParam("status") String status, @HeaderParam("X-Auth") String auth) { return status + auth; }
+}
+`,
+    },
+  ];
+  const out = analyze(files, { title: "demo" });
+  const op = out.spec.paths["/api/jaxrs-tasks"].get as Record<string, any>;
+  const status = op.parameters.find((p: any) => p.name === "status");
+  assert.equal(status.required, false);
+  // @HeaderParam 缺失会报错(JAX-RS 规范),无 @DefaultValue 保持必填
+  const auth = op.parameters.find((p: any) => p.name === "X-Auth");
+  assert.equal(auth.required, true);
+});

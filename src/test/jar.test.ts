@@ -200,3 +200,25 @@ test("自动发现:无需配置即可找到本机 Maven 仓库(存在 IDEA 配�
   t.diagnostic("发现仓库: " + repos.join(" | "));
   assert.ok(repos.some((r: string) => r.replace(/\\/g, "/") === "D:/repository"), "应自动发现 D:/repository: " + repos.join(","));
 });
+
+/* ---------------- 畸形签名回归(此前死循环 OOM) ---------------- */
+
+test("signature:畸形输入(缺 > / 缺 ;)正常返回,不死循环", () => {
+  // 泛型 < 未闭合:此前 peek 恒为空串导致 args 无限累积直到 OOM
+  const unclosed = parseFieldSignature("Ljava/util/List<");
+  assert.ok(unclosed);
+  assert.equal(unclosed.name, "java.util.List");
+  // 类型变量 ; 缺失:读到串尾即止
+  const unterminatedVar = parseFieldSignature("TX");
+  assert.ok(unterminatedVar);
+  // 类签名 > 未闭合:容错读到串尾为止,不死循环、返回可用的部分结果
+  const cs = parseClassSignature("<E:Ljava/lang/Object;Ljava/util/List<");
+  assert.ok(cs);
+  assert.ok(cs.typeParams.includes("E"));
+  // 合法类签名:形参与父类解析不受影响
+  const ok = parseClassSignature("<E:Ljava/lang/Object;>Ljava/util/List<Ljava/lang/String;>;")!;
+  assert.deepEqual(ok.typeParams, ["E"]);
+  assert.equal(sigToText(ok.superSig!), "java.util.List<java.lang.String>");
+  // 正常输入不受影响
+  assert.equal(sigToText(parseFieldSignature("Ljava/util/List<Ljava/lang/Long;>;")!), "java.util.List<java.lang.Long>");
+});

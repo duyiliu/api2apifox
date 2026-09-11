@@ -249,7 +249,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
               methodIgnored = true;
             }
           }
-          // api.name
+          // folder.name(方法级,优先于类级 folder.name)
           if (!methodIgnored) {
             for (const e of rules.entries) {
               if (e.key !== "folder.name") {
@@ -506,7 +506,9 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
         name: annStr(reqHeader.args, "value", "name") ?? paramName,
         in: "header",
         typeText,
-        required: a.flavor === "jaxrs" ? true : annBool(reqHeader.args, "required") ?? false,
+        // Spring 的 @RequestHeader 默认 required=true(缺头 400),与 easy-yapi 的 findRequired 口径一致;
+        // JAX-RS @HeaderParam 缺失同样报错,@DefaultValue 使其可选(easy-yapi v3 一律视为可选,此处按规范更精确)
+        required: a.flavor === "jaxrs" ? defaultValueAnn === undefined : annBool(reqHeader.args, "required") ?? true,
         description,
         example: example ?? dv,
         defaultValue: dv,
@@ -522,7 +524,9 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
         name: annStr(reqParam.args, "value", "name") ?? paramName,
         in: "query",
         typeText,
-        required: dv !== undefined ? false : annBool(reqParam.args, "required") ?? true,
+        // Spring @RequestParam 默认必填;JAX-RS @QueryParam 缺失只是取 null,天然可选
+        // (与 easy-yapi v3 的 JAX-RS 口径一致)
+        required: dv !== undefined ? false : annBool(reqParam.args, "required") ?? a.flavor !== "jaxrs",
         description,
         example: example ?? dv,
         defaultValue: dv,
@@ -635,7 +639,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     consumes: a.consumes.length ? a.consumes : undefined,
     produces: a.produces.length ? a.produces : undefined,
     methodRange: methodRangeOf(a.method),
-    deprecated: !!findAnn(a.methodAnnotations, "Deprecated") || hasDeprecatedModifier(a.method),
+    deprecated: !!findAnn(a.methodAnnotations, "Deprecated"),
   };
 }
 
@@ -645,12 +649,6 @@ function methodRangeOf(method: CstNode): { startOffset: number; endOffset: numbe
     return undefined;
   }
   return { startOffset: loc.startOffset, endOffset: loc.endOffset, startLine: loc.startLine ?? 1 };
-}
-
-function hasDeprecatedModifier(method: CstNode): boolean {
-  return childAll(method, "methodModifier")
-    .filter(isCstNode)
-    .some((m) => Object.keys(m.children ?? {}).includes("Deprecated"));
 }
 
 interface ImplicitParam {

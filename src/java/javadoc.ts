@@ -27,6 +27,7 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
   let returns: string | undefined;
   const descLines: string[] = [];
   let currentTag: string | null = null;
+  let currentParamName: string | null = null;
 
   for (const line of lines) {
     const tagMatch = line.match(/^\s*@(\w+)\s*(.*)$/);
@@ -37,19 +38,35 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
         const m = rest.match(/^(\S+)\s*(.*)$/);
         if (m) {
           params[m[1]] = m[2];
+          currentParamName = m[1];
         }
-        currentTag = null;
+        currentTag = tag;
       } else if (tag === "return") {
         returns = rest;
-        currentTag = null;
+        currentParamName = null;
+        currentTag = tag;
       } else {
         // 其他 @tag(如 @author/@throws)不计入描述
+        currentParamName = null;
         currentTag = tag;
       }
       continue;
     }
+    if (currentTag === "param" && currentParamName) {
+      // @param 的多行续文归入该参数描述(与 IDEA javadoc 模型/easy-yapi 一致)
+      if (line.trim()) {
+        params[currentParamName] = `${params[currentParamName]}\n${line.trim()}`;
+      }
+      continue;
+    }
+    if (currentTag === "return") {
+      if (line.trim()) {
+        returns = `${returns}\n${line.trim()}`;
+      }
+      continue;
+    }
     if (currentTag) {
-      // tag 的多行续文,丢弃
+      // 其他 @tag 的多行续文,丢弃
       continue;
     }
     descLines.push(line);

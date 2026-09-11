@@ -84,3 +84,13 @@ test("parseJavadoc 提取首行/正文/@param/@return", () => {
   assert.ok(jd?.description.includes("分页查询用户列表"));
   assert.ok(!jd?.description.includes("@param"));
 });
+
+test("parseJavadoc:@param 多行续文归入参数描述(对齐 IDEA/easy-yapi)", () => {
+  const jd = parseJavadoc(
+    ["/**", " * 分页查询用户列表", " *", " * @param keyword 搜索关键字,", " * 支持模糊匹配", " * @return 用户分页数据", " */"].join("\n")
+  );
+  assert.equal(jd?.params.keyword, "搜索关键字,\n支持模糊匹配");
+  // 续文不属于接口正文描述
+  assert.ok(!jd?.description.includes("支持模糊匹配"), jd?.description);
+  assert.ok(jd?.description.includes("分页查询用户列表"));
+});

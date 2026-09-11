@@ -28,11 +28,12 @@ export function parseClassSignature(sig: string): { typeParams: string[]; superS
     const typeParams: string[] = [];
     if (p.peek() === "<") {
       p.next();
-      while (p.peek() !== ">") {
+      // pos 边界防止畸形签名(缺 '>')时 peek 恒为空串、循环体不再推进而死循环
+      while (p.pos < p.s.length && p.peek() !== ">") {
         const name = p.readIdentifier(); // 类型形参名
         p.next(); // ':' (class bound)
         p.parseType(); // class bound 类型(丢弃,只留形参名)
-        while (p.peek() === ":") {
+        while (p.pos < p.s.length && p.peek() === ":") {
           p.next();
           p.parseType(); // interface bounds
         }
@@ -57,8 +58,8 @@ export function sigToText(t: SigType): string {
 }
 
 class SigParser {
-  private pos = 0;
-  constructor(private readonly s: string) {}
+  pos = 0;
+  constructor(readonly s: string) {}
 
   peek(offset = 0): string {
     return this.s[this.pos + offset] ?? "";
@@ -113,7 +114,8 @@ class SigParser {
         const ch = this.peek();
         if (ch === "<") {
           this.next();
-          while (this.peek() !== ">") {
+          // pos 边界防止畸形签名(缺 '>')时死循环(parseType 对空串不再推进)
+          while (this.pos < this.s.length && this.peek() !== ">") {
             args.push(this.parseType());
           }
           this.next(); // '>'
