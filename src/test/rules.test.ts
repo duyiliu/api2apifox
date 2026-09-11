@@ -254,6 +254,50 @@ public class PatientQuery {
   assert.ok(!res.warnings.some((w) => w.includes("PatientQuery") && w.includes("已忽略")), res.warnings.join("|"));
 });
 
+test("e2e:record 形式的查询 Bean 与 class 一致展开为 query 参数", () => {
+  // IDEA 版 Apifox Helper(easy-yapi)遍历 psiClass.fields,而 IntelliJ 平台把 record 组件
+  // augment 成 PsiField,故 record 参数同样展开;这里保证两端行为一致。
+  const ctl = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/records")
+public class RecordQueryController {
+  /** 条件查询 */
+  @GetMapping
+  public PatientProfile page(PatientRecordQuery query) { return null; }
+}
+`;
+  const queryRec = `
+package com.example;
+import io.swagger.annotations.ApiModelProperty;
+public record PatientRecordQuery(
+  /** 姓名 */
+  String name,
+  @ApiModelProperty("页码") Integer pageNo
+) {}
+`;
+  const res = analyze(
+    [
+      { fsPath: "/mem/dto.java", content: DTO },
+      { fsPath: "/mem/qrec.java", content: queryRec },
+      { fsPath: "/mem/ctl.java", content: ctl },
+    ],
+    { title: "t" }
+  );
+  const op = res.spec.paths["/api/records"].get as Record<string, any>;
+  const names = op.parameters.map((p: any) => p.name);
+  assert.ok(names.includes("name"), "record 组件 name 应展开: " + names);
+  assert.ok(names.includes("pageNo"), "record 组件 pageNo 应展开");
+  // 首个组件的 javadoc 会挂到 recordComponentList 上,需回退读取
+  assert.equal(op.parameters.find((p: any) => p.name === "name").description, "姓名");
+  assert.equal(op.parameters.find((p: any) => p.name === "pageNo").description, "页码");
+  assert.ok(
+    !res.warnings.some((w) => w.includes("PatientRecordQuery")),
+    "record 参数不应再产生无法展开的告警: " + res.warnings.join("|")
+  );
+});
+
 test("e2e:spec 带 x-apifox-folder(根目录/目录来源)", () => {
   const res = analyze(files, {
     title: "t",

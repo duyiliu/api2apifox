@@ -794,12 +794,14 @@ function docDescOf(paramDocs: Record<string, string>, fieldName: string): string
  * 展开无注解的“查询 Bean”为 query 参数列表。
  * Spring 对 Controller 方法中无任何绑定注解的普通 JavaBean 参数,会将其字段按 query/form 绑定。
  * 这里取 TypeIndex 中该类型的字段(含父类),逐字段生成 ParameterInfo;
+ * record 的组件(recordComponents)与 class 字段等价展开,与 IDEA 版 Apifox Helper(easy-yapi 遍历
+ * psiClass.fields,而平台会把 record 组件 augment 成 PsiField)的行为保持一致。
  * 嵌套对象字段保持为对象查询参数(名称用 字段名.子字段 形式会过度设计,这里遇到非标量子对象则跳过并提示)。
  */
 function expandQueryBean(index: TypeIndex, typeText: string, _source: string): ParameterInfo[] {
   const t = parseTypeText(typeText);
   const info = resolveIndexedType(index, t.name);
-  if (!info || info.kind === "enum" || info.kind === "record") {
+  if (!info || info.kind === "enum") {
     return [];
   }
   const out: ParameterInfo[] = [];

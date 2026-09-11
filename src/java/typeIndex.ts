@@ -92,12 +92,18 @@ function enumConstantsOf(decl: CstNode): string[] {
 
 function recordComponentsOf(decl: CstNode, source: string): FieldInfo[] {
   const list = childNode(childNode(decl, "recordHeader"), "recordComponentList");
-  return childNodes(list, "recordComponent").map((rc) => {
+  // 首个组件前的 javadoc 会挂到 recordComponentList 上(后续组件挂各自节点),故首个组件回退取列表节点的注释
+  const listJavadoc = nodeJavadoc(list);
+  return childNodes(list, "recordComponent").map((rc, index) => {
     const typeNode = childNode(rc, "unannType");
+    // record 组件的注解挂在 recordComponentModifier(非字段的 variableModifier)
+    const javadocRaw = nodeJavadoc(rc) ?? (index === 0 ? listJavadoc : undefined);
     return {
       name: tokenImage(rc, "Identifier") ?? "",
       typeText: typeNode ? nodeText(source, typeNode).trim() : "Object",
-      annotations: collectAnnotations(childNodes(rc, "variableModifier"), source),
+      annotations: collectAnnotations(childNodes(rc, "recordComponentModifier"), source),
+      javadoc: parseJavadoc(javadocRaw),
+      javadocRaw,
     };
   });
 }
