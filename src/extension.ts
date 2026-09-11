@@ -9,9 +9,11 @@ import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
+import { SyncResultPanel } from "./views/SyncResultPanel";
 import { analyze, analyzeSubset, AnalyzeCache, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
-import { buildSyncPreflightDetail } from "./ui/syncPreflight";
+import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
+import { buildSyncReport } from "./ui/syncResult";
 
 const cache = new AnalyzeCache();
 
@@ -246,8 +248,25 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
     try {
-      const outcome = await syncToApifox(client, getSettings(), analyzed);
-      showResult(outcome.message);
+      const settings = getSettings();
+      const outcome = await syncToApifox(client, settings, analyzed);
+      // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
+      SyncResultPanel.createOrShow(
+        buildSyncReport({
+          counters: outcome.counters,
+          errors: outcome.errors,
+          warnings: analyzed.warnings,
+          endpoints: analyzed.endpoints,
+          target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
+          projectId: settings.projectId,
+          scope: options.scopeLabel,
+          endpointConflictBehavior: settings.endpointConflictBehavior,
+          schemaConflictBehavior: settings.schemaConflictBehavior,
+          folderOf: folderKeyForTree,
+          workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        })
+      );
+      showResult(outcome.message, () => SyncResultPanel.showLast());
     } catch (err) {
       vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
     }
@@ -677,6 +696,11 @@ export function activate(context: vscode.ExtensionContext): void {
           action: () => vscode.commands.executeCommand("apifoxHelper.selectProject"),
         },
         {
+          label: "$(table) 查看上次同步结果",
+          description: "同步计数与接口清单",
+          action: () => vscode.commands.executeCommand("apifoxHelper.showLastSyncResult"),
+        },
+        {
           label: "$(file-code) 导出 OpenAPI 预览",
           description: "生成 openapi.gen.json 规范文件",
           action: () => vscode.commands.executeCommand("apifoxHelper.exportOpenapi"),
@@ -710,6 +734,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令:打开 Webview 设置中心表单面板
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.openSettingsPanel", openSettings)
+  );
+
+  // 命令:查看上次同步结果(面板关掉后可重新打开)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("apifoxHelper.showLastSyncResult", () => SyncResultPanel.showLast())
   );
 
   // 命令:设置令牌
@@ -900,7 +929,7 @@ function getHelperOutputChannel(): vscode.OutputChannel {
   return helperOutputChannel;
 }
 
-function showResult(message: string): void {
+function showResult(message: string, onOpenReport?: () => void): void {
   const lines = message.split("\n").map((s) => s.trim()).filter(Boolean);
   const summary = lines[0] || "同步完成";
   const hasDetails = lines.length > 1;
@@ -913,24 +942,27 @@ function showResult(message: string): void {
     for (const l of lines) {
       channel.appendLine(l);
     }
-
-    const showLogBtn = "查看日志";
-    if (hasWarningsOrErrors) {
-      vscode.window.showWarningMessage(summary, showLogBtn).then((action) => {
-        if (action === showLogBtn) {
-          channel.show(true);
-        }
-      });
-    } else {
-      vscode.window.showInformationMessage(summary, showLogBtn).then((action) => {
-        if (action === showLogBtn) {
-          channel.show(true);
-        }
-      });
-    }
-  } else {
-    vscode.window.showInformationMessage(summary);
   }
+
+  const buttons: string[] = [];
+  if (onOpenReport) {
+    buttons.push("查看结果表");
+  }
+  if (hasDetails) {
+    buttons.push("查看日志");
+  }
+
+  const picked = hasWarningsOrErrors
+    ? vscode.window.showWarningMessage(summary, ...buttons)
+    : vscode.window.showInformationMessage(summary, ...buttons);
+
+  void picked.then((action) => {
+    if (action === "查看日志") {
+      getHelperOutputChannel().show(true);
+    } else if (action === "查看结果表") {
+      onOpenReport?.();
+    }
+  });
 }
 
 export function deactivate(): void {}

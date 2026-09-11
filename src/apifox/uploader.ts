@@ -237,6 +237,10 @@ export async function selectProject(client: ApifoxClient): Promise<boolean> {
 export interface SyncOutcome {
   ok: boolean;
   message: string;
+  /** Apifox 导入接口返回的原始计数(键名与开放 API 一致,结果面板据此成表) */
+  counters: Record<string, number>;
+  /** Apifox 返回的导入错误 */
+  errors: { message?: string; code?: string }[];
 }
 
 /**
@@ -255,7 +259,7 @@ export async function syncToApifox(
 ): Promise<SyncOutcome> {
   const { spec, endpoints, warnings } = analyzed;
   if (!endpoints.length) {
-    return { ok: true, message: "未发现任何 REST 接口,未同步任何内容" };
+    return { ok: true, message: "未发现任何 REST 接口,未同步任何内容", counters: {}, errors: [] };
   }
 
   const result = await vscode.window.withProgress(
@@ -286,7 +290,7 @@ export async function syncToApifox(
     }
   );
 
-  return { ok: true, message: formatResult(result, warnings) };
+  return { ok: true, message: formatResult(result, warnings), counters: result.counters, errors: result.errors };
 }
 
 export function formatResult(result: ImportResult, warnings: string[]): string {

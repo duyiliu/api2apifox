@@ -21,12 +21,18 @@ export function conflictBehaviorLabel(value: string): string {
   return CONFLICT_LABELS[value] ?? value;
 }
 
+/** 目标项目展示名：团队 / 项目（ID: x），同步确认与同步结果共用同一口径。 */
+export function syncTargetLabel(teamName: string, projectName: string, projectId: number): string {
+  const targetName = projectName || `项目 ${projectId}`;
+  const target = teamName ? `${teamName} / ${targetName}` : targetName;
+  return `${target}（ID: ${projectId}）`;
+}
+
 /** 构建批量同步确认框的可读详情，集中保证目标、范围和覆盖策略不会被遗漏。 */
 export function buildSyncPreflightDetail(input: SyncPreflightInput): string {
-  const targetName = input.projectName || `项目 ${input.projectId}`;
-  const target = input.teamName ? `${input.teamName} / ${targetName}` : targetName;
+  const target = syncTargetLabel(input.teamName, input.projectName, input.projectId);
   const lines = [
-    `目标：${target}（ID: ${input.projectId}）`,
+    `目标：${target}`,
     `范围：${input.scopeLabel}，共 ${input.endpointCount} 个接口`,
   ];
 
