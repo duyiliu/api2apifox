@@ -60,6 +60,7 @@
 
 - `@PathVariable` / `@RequestParam(defaultValue)` / `@RequestHeader` / `@RequestBody`
 - 无注解简单类型按 Spring 默认作为 query 参数
+- 无注解查询 Bean 展开为逐字段 query 参数;嵌套对象按 Spring 的 `父字段.子字段` 绑定形态命名(层级上限 5 层),集合保持数组形态
 - `MultipartFile` → `multipart/form-data`
 - Spring Data `Pageable` → `page/size/sort`
 - `@Parameter`/`@ApiParam(hidden=true)` 参数隐藏
@@ -179,6 +180,7 @@
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
 - **依赖 jar 类型识别的边界**:仅解析工作区 `pom.xml` 声明的直接依赖(不含传递依赖的坐标推断;传递依赖类型可通过 `dependencyJars` 显式补充);Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;静态内部类同样以简单名索引,与顶层类型重名时顶层优先)
+- 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布

@@ -298,6 +298,132 @@ public record PatientRecordQuery(
   );
 });
 
+test("e2e:查询 Bean 的嵌套对象按点号展开,集合并列保持数组形态", () => {
+  const ctl = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/nested")
+public class NestedQueryController {
+  /** 条件查询 */
+  @GetMapping
+  public PatientProfile page(NestedQuery query) { return null; }
+}
+`;
+  const queryCls = `
+package com.example;
+import java.util.List;
+public class NestedQuery {
+  /** 关键字 */
+  private String keyword;
+  /** 过滤条件 */
+  private Filter filter;
+  /** 科室编码 */
+  private List<String> deptCodes;
+  /** 分页 */
+  private PagePart page;
+}
+class Filter {
+  /** 名称 */
+  private String name;
+  /** 起始日期 */
+  private java.time.LocalDate startDate;
+}
+class PagePart {
+  private Integer pageNo;
+}
+`;
+  const res = analyze(
+    [
+      { fsPath: "/mem/dto.java", content: DTO },
+      { fsPath: "/mem/nq.java", content: queryCls },
+      { fsPath: "/mem/ctl.java", content: ctl },
+    ],
+    { title: "t" }
+  );
+  const op = res.spec.paths["/api/nested"].get as Record<string, any>;
+  const names = op.parameters.map((p: any) => p.name);
+  // 嵌套对象:Spring 按 WebDataBinder 的 autoGrowNestedPaths 以 父.子 绑定
+  assert.ok(names.includes("filter.name"), "嵌套字段应带父前缀: " + names);
+  assert.ok(names.includes("filter.startDate"), "嵌套字段应带父前缀(含日期类型)");
+  assert.ok(names.includes("page.pageNo"), "二级嵌套父字段应带前缀");
+  assert.ok(names.includes("keyword"), "顶层字段保持原名");
+  assert.equal(op.parameters.find((p: any) => p.name === "filter.name").description, "名称");
+  // 集合保持数组形态,不采用 easy-yapi 的 deptCodes[0] 命名
+  const dept = op.parameters.find((p: any) => p.name === "deptCodes");
+  assert.equal(dept.schema.type, "array");
+  assert.ok(!names.some((n: string) => n.includes("[0]")), "不应出现 [0] 形态: " + names);
+});
+
+test("e2e:查询 Bean 循环引用与层级超限不再静默丢弃,产生告警", () => {
+  const ctl = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/cycle")
+public class CycleQueryController {
+  /** 循环 */
+  @GetMapping
+  public PatientProfile page(CycleA query) { return null; }
+}
+`;
+  const classes = `
+package com.example;
+public class CycleA {
+  private CycleB b;
+  private String aName;
+}
+class CycleB {
+  private CycleA a;
+  private String bName;
+}
+class Deep1 { private Deep2 d2; private String n1; }
+class Deep2 { private Deep3 d3; private String n2; }
+class Deep3 { private Deep4 d4; private String n3; }
+class Deep4 { private Deep5 d5; private String n4; }
+class Deep5 { private Deep6 d6; private String n5; }
+class Deep6 { private String n6; }
+`;
+  const ctlDeep = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/deep")
+public class DeepQueryController {
+  /** 过深 */
+  @GetMapping
+  public PatientProfile page(Deep1 query) { return null; }
+}
+`;
+  const res = analyze(
+    [
+      { fsPath: "/mem/dto.java", content: DTO },
+      { fsPath: "/mem/cyc.java", content: classes },
+      { fsPath: "/mem/ctl.java", content: ctl },
+      { fsPath: "/mem/ctl2.java", content: ctlDeep },
+    ],
+    { title: "t" }
+  );
+  const op = res.spec.paths["/api/cycle"].get as Record<string, any>;
+  const names = op.parameters.map((p: any) => p.name);
+  // 循环引用处截断,其余字段正常展开,且不出现无限递归
+  assert.ok(names.includes("aName"), "根字段应展开: " + names);
+  assert.ok(names.includes("b.bName"), "循环前的嵌套字段应展开");
+  assert.ok(
+    res.warnings.some((w) => w.includes("循环引用")),
+    "循环引用应产生告警: " + res.warnings.join("|")
+  );
+
+  // 层级上限:超过 5 层的字段拒绝展开并告警,不再静默丢失
+  const deepParams = (res.spec.paths["/api/deep"].get as Record<string, any>).parameters
+    .map((p: any) => p.name);
+  assert.ok(deepParams.includes("d2.d3.d4.d5.n5"), "5 层内的字段应展开: " + deepParams);
+  assert.ok(
+    res.warnings.some((w) => w.includes("嵌套层级超过")),
+    "超限字段应产生告警: " + res.warnings.join("|")
+  );
+});
+
 test("e2e:spec 带 x-apifox-folder(根目录/目录来源)", () => {
   const res = analyze(files, {
     title: "t",

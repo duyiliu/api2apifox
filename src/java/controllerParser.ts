@@ -5,7 +5,7 @@ import { parseTypeText, simpleName } from "./typeText";
 import { HelperProperties } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
-  annArray, annBool, annStr, AnnotationInfo, EndpointFlavor, EndpointInfo, findAnn,
+  annArray, annBool, annStr, AnnotationInfo, ClassInfo, EndpointFlavor, EndpointInfo, findAnn,
   ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
 import { schemaExample, schemaDescription } from "./schemaResolver";
@@ -551,9 +551,12 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
       requestBody = { typeText, required: true, description };
     } else if (a.index) {
       // Spring 无注解的复杂 Bean:按 query 参数展开字段(如分页/条件查询对象 PatientQuery query)
-      const expanded = expandQueryBean(a.index, typeText, pf.source);
-      if (expanded.length) {
-        for (const f of expanded) {
+      const expansion = expandQueryBean(a.index, paramName, typeText);
+      for (const w of expansion.warnings) {
+        warnings.push(`${a.controller}.${a.methodName}: ${w}`);
+      }
+      if (expansion.params.length) {
+        for (const f of expansion.params) {
           if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
             parameters.push({ ...f, description: f.description || docDescOf(paramDocs, f.name) });
           }
@@ -790,48 +793,74 @@ function docDescOf(paramDocs: Record<string, string>, fieldName: string): string
   return paramDocs[fieldName]?.trim() || undefined;
 }
 
+/** 查询 Bean 展开的最大嵌套层数(与 easy-yapi flattenFields 的 maxDepth 对齐) */
+const MAX_QUERY_BEAN_DEPTH = 5;
+
+interface QueryBeanExpansion {
+  params: ParameterInfo[];
+  /** 未能展开的嵌套字段告警(层级超限/循环引用),由调用方补上控制器与方法前缀 */
+  warnings: string[];
+}
+
 /**
  * 展开无注解的“查询 Bean”为 query 参数列表。
- * Spring 对 Controller 方法中无任何绑定注解的普通 JavaBean 参数,会将其字段按 query/form 绑定。
- * 这里取 TypeIndex 中该类型的字段(含父类),逐字段生成 ParameterInfo;
- * record 的组件(recordComponents)与 class 字段等价展开,与 IDEA 版 Apifox Helper(easy-yapi 遍历
- * psiClass.fields,而平台会把 record 组件 augment 成 PsiField)的行为保持一致。
- * 嵌套对象字段保持为对象查询参数(名称用 字段名.子字段 形式会过度设计,这里遇到非标量子对象则跳过并提示)。
+ * Spring 对 Controller 方法中无任何绑定注解的普通 JavaBean 参数,会将其字段按 query/form 绑定;
+ * 嵌套对象按 WebDataBinder 默认的 autoGrowNestedPaths 以「父字段.子字段」形式绑定,故此处用点号命名递归展开
+ * (与 IDEA 版 Apifox Helper / easy-yapi 的展开口径一致)。
+ * record 的组件(recordComponents)与 class 字段等价展开——easy-yapi 遍历 psiClass.fields,
+ * 而 IntelliJ 平台会把 record 组件 augment 成 PsiField。
+ * 集合与数组保持自身形态(如 List<String> 输出为数组参数),不采用 easy-yapi 的 field[0] 命名:
+ * Spring 对集合的常规绑定是重复同名参数,文档写 [0] 会误导为只能传一个元素。
+ * 无法展开的字段(超出层级上限、循环引用)不再静默丢弃,统一通过 warnings 上报。
  */
-function expandQueryBean(index: TypeIndex, typeText: string, _source: string): ParameterInfo[] {
+function expandQueryBean(index: TypeIndex, paramName: string, typeText: string): QueryBeanExpansion {
   const t = parseTypeText(typeText);
   const info = resolveIndexedType(index, t.name);
   if (!info || info.kind === "enum") {
-    return [];
+    return { params: [], warnings: [] };
   }
-  const out: ParameterInfo[] = [];
+  const params: ParameterInfo[] = [];
+  const warnings: string[] = [];
   const seen = new Set<string>();
-  const walk = (ci: import("./model").ClassInfo, depth: number) => {
-    if (depth > 4) {
-      return;
-    }
+
+  /**
+   * @param prefix 嵌套路径前缀(根层级为空)
+   * @param depth 嵌套层数(根为 0;父类字段不增加层数)
+   * @param pathTypes 当前嵌套路径上的类型名,用于循环引用检测
+   */
+  const walk = (ci: ClassInfo, prefix: string, depth: number, pathTypes: Set<string>) => {
     const fields = ci.fields.length ? ci.fields : ci.recordComponents;
     for (const f of fields) {
-      // 忽略静态/JsonIgnore 等已在类型索引里滤掉;这里按字段注解再滤一次
-      if (seen.has(f.name)) {
+      const name = prefix ? `${prefix}.${f.name}` : f.name;
+      if (seen.has(name)) {
         continue;
       }
-      const fSimple = simpleName(parseTypeText(f.typeText).name);
-      const sub = resolveIndexedType(index, fSimple);
-      if (sub && sub.kind !== "enum" && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple)) {
-        // 子对象:Spring 会按 父字段名.子字段 绑定 query;为可读性这里扁平化为 子字段 会冲突,
-        // 故仅当子对象可再展开时递归,名称保留 字段名 前缀
-        continue; // 复杂嵌套在此版不展开,避免误导
+      const fRef = parseTypeText(f.typeText);
+      const fSimple = simpleName(fRef.name);
+      // 数组/集合(含 List<Dto>)保持原形态,不下钻
+      const sub = fRef.dims === 0 ? resolveIndexedType(index, fSimple) : undefined;
+      const nested = !!sub && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple);
+      if (nested) {
+        if (depth + 1 >= MAX_QUERY_BEAN_DEPTH) {
+          warnings.push(`参数 ${paramName} 的嵌套字段 ${name} 未展开(嵌套层级超过 ${MAX_QUERY_BEAN_DEPTH} 层)`);
+          continue;
+        }
+        if (pathTypes.has(fSimple)) {
+          warnings.push(`参数 ${paramName} 的嵌套字段 ${name} 未展开(检测到循环引用:${fSimple})`);
+          continue;
+        }
+        walk(sub, name, depth + 1, new Set([...pathTypes, fSimple]));
+        continue;
       }
-      seen.add(f.name);
+      seen.add(name);
       const required = !!findAnn(f.annotations, "NotNull", "NotBlank", "NotEmpty");
       // 字段描述:@ApiModelProperty/@Schema 优先(此前只读 Javadoc,注解描述丢失),Javadoc 兜底
       const desc = schemaDescription(
         f.annotations,
         (f.javadoc && (f.javadoc.description || f.javadoc.firstLine)) || undefined
       );
-      out.push({
-        name: f.name,
+      params.push({
+        name,
         in: "query",
         typeText: f.typeText,
         required,
@@ -839,15 +868,17 @@ function expandQueryBean(index: TypeIndex, typeText: string, _source: string): P
         annotations: f.annotations,
       });
     }
+    // 父类字段并入当前层级(不改前缀、不增加嵌套层数)
     if (ci.superClass) {
       const sup = resolveIndexedType(index, parseTypeText(ci.superClass).name);
-      if (sup && sup.kind === "class") {
-        walk(sup, depth + 1);
+      if (sup && (sup.kind === "class" || sup.kind === "record")) {
+        walk(sup, prefix, depth, pathTypes);
       }
     }
   };
-  walk(info, 0);
-  return out;
+
+  walk(info, "", 0, new Set([info.simpleName]));
+  return { params, warnings };
 }
 
 function isPlainValueType(simple: string): boolean {
