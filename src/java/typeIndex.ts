@@ -125,95 +125,112 @@ function qualify(source: string, simpleName: string): string {
   return m ? `${m[1]}.${simpleName}` : simpleName;
 }
 
-/** 构建类型索引 */
+/**
+ * 由 classDeclaration / interfaceDeclaration 构建 ClassInfo(class/enum/record/interface)。
+ * javadocCarriers:注释可能挂靠的外层节点(顶层为 typeDeclaration,嵌套为 classBodyDeclaration /
+ * interfaceMemberDeclaration),按“由外向内”的顺序传入。
+ */
+function classInfoOf(decl: CstNode, source: string, ...javadocCarriers: (CstNode | undefined)[]): ClassInfo | undefined {
+  const normal = childNode(decl, "normalClassDeclaration");
+  const enumDecl = childNode(decl, "enumDeclaration");
+  const recordDecl = childNode(decl, "recordDeclaration");
+  const normalItf = childNode(decl, "normalInterfaceDeclaration");
+  const inner = normal ?? enumDecl ?? recordDecl ?? normalItf;
+  if (!inner) {
+    return undefined;
+  }
+  const simpleName = typeNameOf(inner);
+  if (!simpleName) {
+    return undefined;
+  }
+  const base = {
+    simpleName,
+    qualifiedName: qualify(source, simpleName),
+    annotations: collectAnnotations(annotationsOf(decl, inner), source),
+    javadoc: javadocOf(...javadocCarriers, decl, inner),
+  };
+  if (normal) {
+    return {
+      ...base,
+      kind: "class",
+      typeParams: typeParamsOf(normal),
+      fields: collectFields(childNode(normal, "classBody"), source),
+      recordComponents: [],
+      enumConstants: [],
+      superClass: superClassOf(normal, source),
+    };
+  }
+  if (enumDecl) {
+    return {
+      ...base,
+      kind: "enum",
+      typeParams: [],
+      fields: [],
+      recordComponents: [],
+      enumConstants: enumConstantsOf(enumDecl),
+    };
+  }
+  if (recordDecl) {
+    return {
+      ...base,
+      kind: "record",
+      typeParams: typeParamsOf(recordDecl),
+      fields: [],
+      recordComponents: recordComponentsOf(recordDecl, source),
+      enumConstants: [],
+    };
+  }
+  return {
+    ...base,
+    kind: "interface" as TypeKind,
+    typeParams: typeParamsOf(normalItf),
+    fields: [],
+    recordComponents: [],
+    enumConstants: [],
+  };
+}
+
+/** 构建类型索引:顶层声明 + 类/接口/record 体内的嵌套(静态)类型声明 */
 export function buildIndex(files: ParsedFile[]): TypeIndex {
   const types = new Map<string, ClassInfo>();
   const byFile = new Map<string, string[]>();
 
   for (const pf of files) {
     const names: string[] = [];
+    const indexed = new Set<CstNode>();
+
+    // ---- 顶层声明 ----
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
-      const classDecl = childNode(typeDecl, "classDeclaration");
-      const interfaceDecl = childNode(typeDecl, "interfaceDeclaration");
-
-      // ---- class / enum / record ----
-      const normal = classDecl ? childNode(classDecl, "normalClassDeclaration") : undefined;
-      const enumDecl = classDecl ? childNode(classDecl, "enumDeclaration") : undefined;
-      const recordDecl = classDecl ? childNode(classDecl, "recordDeclaration") : undefined;
-
-      if (normal) {
-        const simpleName = typeNameOf(normal);
-        if (simpleName) {
-          const classBody = childNode(normal, "classBody");
-          const info: ClassInfo = {
-            simpleName,
-            qualifiedName: qualify(pf.source, simpleName),
-            kind: "class",
-            typeParams: typeParamsOf(normal),
-            fields: collectFields(classBody as CstNode, pf.source),
-            recordComponents: [],
-            enumConstants: [],
-            annotations: collectAnnotations(annotationsOf(classDecl, normal), pf.source),
-            superClass: superClassOf(normal, pf.source),
-            javadoc: javadocOf(typeDecl, classDecl, normal),
-          };
-          types.set(simpleName, info);
-          names.push(simpleName);
-        }
-      } else if (enumDecl) {
-        const simpleName = typeNameOf(enumDecl);
-        if (simpleName) {
-          types.set(simpleName, {
-            simpleName,
-            qualifiedName: qualify(pf.source, simpleName),
-            kind: "enum",
-            typeParams: [],
-            fields: [],
-            recordComponents: [],
-            enumConstants: enumConstantsOf(enumDecl),
-            annotations: collectAnnotations(annotationsOf(classDecl, enumDecl), pf.source),
-            javadoc: javadocOf(typeDecl, classDecl, enumDecl),
-          });
-          names.push(simpleName);
-        }
-      } else if (recordDecl) {
-        const simpleName = typeNameOf(recordDecl);
-        if (simpleName) {
-          types.set(simpleName, {
-            simpleName,
-            qualifiedName: qualify(pf.source, simpleName),
-            kind: "record",
-            typeParams: typeParamsOf(recordDecl),
-            fields: [],
-            recordComponents: recordComponentsOf(recordDecl, pf.source),
-            enumConstants: [],
-            annotations: collectAnnotations(annotationsOf(classDecl, recordDecl), pf.source),
-            javadoc: javadocOf(typeDecl, classDecl, recordDecl),
-          });
-          names.push(simpleName);
-        }
+      const decl = childNode(typeDecl, "classDeclaration") ?? childNode(typeDecl, "interfaceDeclaration");
+      if (!decl) {
+        continue;
       }
-
-      // ---- interface(索引留档;Feign 支持为二期) ----
-      if (interfaceDecl) {
-        const normalItf = childNode(interfaceDecl, "normalInterfaceDeclaration");
-        const simpleName = normalItf ? typeNameOf(normalItf) : "";
-        if (simpleName) {
-          types.set(simpleName, {
-            simpleName,
-            qualifiedName: qualify(pf.source, simpleName),
-            kind: "interface" as TypeKind,
-            typeParams: typeParamsOf(normalItf),
-            fields: [],
-            recordComponents: [],
-            enumConstants: [],
-            annotations: collectAnnotations(annotationsOf(interfaceDecl, normalItf), pf.source),
-            javadoc: javadocOf(typeDecl, interfaceDecl, normalItf),
-          });
-          names.push(simpleName);
-        }
+      const info = classInfoOf(decl, pf.source, typeDecl);
+      if (info) {
+        indexed.add(decl);
+        types.set(info.simpleName, info);
+        names.push(info.simpleName);
       }
     }
+
+    // ---- 嵌套声明:类体内的 class/interface(含 enum/record)、接口体内的 class/interface ----
+    // 形如 `PatientSaveRequest.HealthProfileRequest` 的请求模型依赖于此;同名时顶层声明优先。
+    const bodyDecls = [...findAll(pf.cst, "classBodyDeclaration"), ...findAll(pf.cst, "interfaceMemberDeclaration")];
+    for (const bodyDecl of bodyDecls) {
+      const member = childNode(bodyDecl, "classMemberDeclaration") ?? bodyDecl;
+      const decl = childNode(member, "classDeclaration") ?? childNode(member, "interfaceDeclaration");
+      if (!decl || indexed.has(decl)) {
+        continue;
+      }
+      const info = classInfoOf(decl, pf.source, bodyDecl);
+      if (!info || types.has(info.simpleName)) {
+        continue;
+      }
+      indexed.add(decl);
+      types.set(info.simpleName, info);
+      names.push(info.simpleName);
+    }
+
     byFile.set(pf.fsPath, names);
   }
   return { types, byFile };

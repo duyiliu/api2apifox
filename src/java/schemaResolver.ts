@@ -547,18 +547,41 @@ export function schemaExample(annotations: AnnotationInfo[]): string | undefined
 
 /* ---------------- .apifox-helper.properties 字段级规则 ---------------- */
 
-/** 判断字段类型是否为本项目索引(或依赖 jar)中的枚举类型 */
-function isEnumFieldType(field: FieldInfo, ctx: ResolveContext): boolean {
-  const t = parseTypeText(field.typeText);
-  const name = simpleName(t.name);
-  let info = ctx.index.types.get(name);
+/** 按简单名在源码索引 / 依赖 jar 中查找类型;命中 jar 时回填缓存 */
+function lookupType(name: string, ctx: ResolveContext): ClassInfo | undefined {
+  const simple = simpleName(name);
+  let info = ctx.index.types.get(simple);
   if (!info && ctx.index.jarLookup) {
-    info = ctx.index.jarLookup(name);
+    info = ctx.index.jarLookup(simple);
     if (info) {
-      ctx.index.types.set(name, info);
+      ctx.index.types.set(simple, info);
     }
   }
-  return !!info && info.kind === "enum";
+  return info;
+}
+
+/**
+ * 取字段的枚举类型名:字段本身是枚举,或数组/集合的元素类型是枚举(如 List<HighRiskFactorCode>、MyEnum[]),
+ * 与 .apifox-helper.properties 中 helper.findClass(it.type()?.name())?.isEnum() 的判定意图对齐。
+ * 非枚举返回 undefined。
+ */
+function enumTypeNameOf(field: FieldInfo, ctx: ResolveContext): string | undefined {
+  let t = parseTypeText(field.typeText);
+  // 逐层剥掉数组维度与集合包装(限 8 层,防御异常类型声明)
+  for (let depth = 0; depth < 8; depth++) {
+    if (t.dims > 0) {
+      t = { ...t, dims: t.dims - 1 };
+      continue;
+    }
+    const name = simpleName(t.name);
+    if (COLLECTIONS.has(name) && t.args[0]) {
+      t = t.args[0];
+      continue;
+    }
+    const info = lookupType(name, ctx);
+    return info && info.kind === "enum" ? name : undefined;
+  }
+  return undefined;
 }
 
 interface FieldRuleEngineResult {
@@ -574,15 +597,14 @@ interface FieldRuleEngineResult {
 
 /** 把 RuleContext 所需的字段元数据补齐到 ctx.fieldRules 对象 */
 function fieldRuleContext(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveContext): RuleContext {
-  const isEnum = isEnumFieldType(field, ctx);
-  const enumSimpleName = isEnum ? simpleName(parseTypeText(field.typeText).name) : undefined;
+  const enumName = enumTypeNameOf(field, ctx);
   return {
     annotations: field.annotations,
     javadocRaw: rawJavadocOf(field),
     subject: `${classInfo.simpleName}.${field.name}`,
     fieldName: field.name,
-    isEnum,
-    enumSimpleName,
+    isEnum: enumName !== undefined,
+    enumSimpleName: enumName,
   };
 }
 
@@ -597,10 +619,9 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
     ignored: false,
     appendDesc: (_d, _f, _c) => _d,
   };
-  // enumFieldDoc 开关不依赖 rules,单独处理
-  const enumDoc = ctx.options?.enumFieldDoc === true && isEnumFieldType(field, ctx);
-  if (enumDoc) {
-    const enumName = simpleName(parseTypeText(field.typeText).name);
+  // enumFieldDoc 开关不依赖 rules,单独处理(集合元素为枚举时同样追加,如 List<MyEnum>)
+  const enumName = ctx.options?.enumFieldDoc === true ? enumTypeNameOf(field, ctx) : undefined;
+  if (enumName) {
     result.appendDesc = (_currentDesc: string | undefined, _f, _c) =>
       _currentDesc ? `${_currentDesc}\n(枚举类:${enumName})` : `(枚举类:${enumName})`;
   }

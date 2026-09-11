@@ -150,6 +150,54 @@ test("e2e:groovy 经典形态(枚举小驼峰)安全求值成功且为枚举字�
   assert.ok(schema.properties!.status.description!.includes("（枚举类：MyStatus）"));
 });
 
+test("e2e:枚举元素集合/数组字段(List<枚举>、枚举[])同样追加(枚举类:X)", () => {
+  const groovyRule =
+    'field.doc=groovy: (it.name()?.length() > 0 && Character.isLowerCase(it.name().charAt(0)) && helper.findClass(it.type()?.name())?.isEnum()) ? "（枚举类：" + it.type()?.name()?.substring(it.type()?.name()?.lastIndexOf(\'.\') + 1) + "）" : null';
+  const rules = loadPropertiesFiles([{ path: "/mem/.apifox-helper.properties", content: groovyRule }]);
+  // 列表元素为枚举:字段声明类型是 List,枚举判定需下钻到元素类型;纯字符串集合不受影响
+  const dto2 = DTO.replace(
+    "  /** 状态 */\n  private MyStatus status;",
+    `  /** 状态 */
+  private MyStatus status;
+
+  /** 状态集合 */
+  private java.util.List<MyStatus> statusList;
+
+  /** 状态数组 */
+  private MyStatus[] statusArray;
+
+  /** 名称集合 */
+  private java.util.List<String> nameList;`
+  );
+  const res = analyze(
+    files.map((f) => (f.fsPath.endsWith("dto.java") ? { ...f, content: dto2 } : f)),
+    { title: "t", rules }
+  );
+  const schema = res.spec.components!.schemas["PatientProfile"];
+  assert.ok(schema.properties!.statusList.description!.includes("（枚举类：MyStatus）"));
+  assert.ok(schema.properties!.statusArray.description!.includes("（枚举类：MyStatus）"));
+  // 字符串集合不能被误判为枚举
+  assert.ok(!schema.properties!.nameList.description!.includes("（枚举类"));
+});
+
+test("e2e:enumFieldDoc 开关对枚举元素集合字段同样生效", () => {
+  const dto2 = DTO.replace(
+    "  /** 状态 */\n  private MyStatus status;",
+    `  /** 状态 */
+  private MyStatus status;
+
+  /** 状态集合 */
+  private java.util.List<MyStatus> statusList;`
+  );
+  const res = analyze(
+    files.map((f) => (f.fsPath.endsWith("dto.java") ? { ...f, content: dto2 } : f)),
+    { title: "t", enumFieldDoc: true }
+  );
+  const schema = res.spec.components!.schemas["PatientProfile"];
+  assert.ok(schema.properties!.status.description!.includes("(枚举类:MyStatus)"));
+  assert.ok(schema.properties!.statusList.description!.includes("(枚举类:MyStatus)"));
+});
+
 test("e2e:enumFieldDoc 开关开启后枚举字段追加(枚举类:X)", () => {
   const res = analyze(files, { title: "t", enumFieldDoc: true });
   const schema = res.spec.components!.schemas["PatientProfile"];

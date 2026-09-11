@@ -130,3 +130,59 @@ test("analyzeSubset 只保留与所选接口相关的告警,未选控制器告�
   assert.ok(!subset.warnings.some((w) => w.includes("patchUser")));
 });
 
+test("嵌套静态类(DTO 内部类)纳入类型索引并展开为独立数据模型", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/PatientSaveRequest.java",
+      content: `
+package com.example;
+
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import java.util.List;
+
+@ApiModel("患者保存请求")
+public class PatientSaveRequest {
+  @ApiModelProperty("姓名")
+  private String name;
+
+  @ApiModelProperty("当前健康档案")
+  private HealthProfileRequest healthProfile;
+
+  @ApiModel("健康档案请求")
+  public static class HealthProfileRequest {
+    @ApiModelProperty("高危因素编码数组")
+    private List<HighRiskFactorCode> gwys;
+  }
+}
+
+enum HighRiskFactorCode { LOW_BIRTH_WEIGHT, PRETERM }
+`,
+    },
+    {
+      fsPath: "/mem/PatientController.java",
+      content: `
+package com.example;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+public class PatientController {
+  /** 新增患者 */
+  @PostMapping("/patients")
+  public Long save(@RequestBody PatientSaveRequest req) { return 1L; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const outer = res.spec.components!.schemas["PatientSaveRequest"];
+  assert.equal(outer.properties!.healthProfile.$ref, "#/components/schemas/HealthProfileRequest");
+  // 嵌套类自带类级注解描述,不被外层字段描述覆盖
+  const inner = res.spec.components!.schemas["HealthProfileRequest"];
+  assert.equal(inner.title, "HealthProfileRequest");
+  assert.equal(inner.description, "健康档案请求");
+  assert.equal(inner.properties!.gwys.type, "array");
+  assert.equal(inner.properties!.gwys.items!.title, "HighRiskFactorCode");
+});
+
