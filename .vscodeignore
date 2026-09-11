@@ -10,5 +10,6 @@ sample/**
 work/**
 probe/**
 *.log
+*.vsix
 openapi.gen.json
 npm-debug.log

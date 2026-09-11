@@ -19,7 +19,7 @@
 ## 📦 安装
 
 - **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `apifox-helper-vscode.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
+- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手
 
@@ -186,7 +186,7 @@
 npm install
 npm run compile     # esbuild 打包到 dist/
 npm test            # 解析器单测 + sample 项目端到端断言
-npm run package     # 打包 vsix
+npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
 ```
 
 在 VS Code 中调试:打开本目录后 F5(Extension Development Host),用 `sample/` 目录作为测试工作区。

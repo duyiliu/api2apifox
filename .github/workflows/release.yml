@@ -50,14 +50,18 @@ jobs:
         run: npm test
 
       - name: Package VSIX
-        run: npx @vscode/vsce package --no-dependencies -o apifox-helper-vscode.vsix
+        run: |
+          VSIX_NAME="$(node -p "require('./package.json').name + '-' + require('./package.json').version + '.vsix'")"
+          echo "VSIX_NAME=${VSIX_NAME}" >> "$GITHUB_ENV"
+          echo "Packaging ${VSIX_NAME}"
+          npx @vscode/vsce package --no-dependencies -o "${VSIX_NAME}"
 
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx @vscode/vsce publish --packagePath apifox-helper-vscode.vsix --skip-duplicate -p "$VSCE_PAT"
+        run: npx @vscode/vsce publish --packagePath "$VSIX_NAME" --skip-duplicate -p "$VSCE_PAT"
 
       - name: Create GitHub Release with VSIX asset
-        run: gh release create "$GITHUB_REF_NAME" apifox-helper-vscode.vsix --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" "$VSIX_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
