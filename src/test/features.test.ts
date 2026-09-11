@@ -39,6 +39,10 @@ test("识别全部接口(含 Feign/JAX-RS/Actuator,hidden 除外)", () => {
     "PUT /api/v1/users/{id}/status",
     "POST /api/v1/users/import",
     "PATCH /api/v1/users/{id}",
+    // UserDetailController(继承 / 泛型基类 / 嵌套静态类 / record 夹具)
+    "GET /api/v1/user-details",
+    "GET /api/v1/user-details/{id}",
+    "PUT /api/v1/user-details/{id}/contact",
     // OrderController(internal-migrate 被 @Operation(hidden=true) 排除)
     "GET /api/v1/orders",
     "GET /api/v1/orders/page",
@@ -202,4 +206,59 @@ test("endpointAt 按光标位置定位接口", () => {
   // 光标在方法之后,取最近的上一个
   const before = createOrder.methodRange!.startOffset - 1;
   assert.ok(endpointAt(endpoints, single.fsPath, before));
+});
+
+test("继承字段合并:父类字段进入子类模型,泛型基类形参正确绑定", () => {
+  // 回归:superClassOf 曾查找不存在的 "superclass" 节点,导致继承合并从未生效
+  const detail = spec.components!.schemas["UserDetailVO"];
+  assert.ok("username" in detail.properties!, "子类自有字段应存在");
+  assert.ok("createdAt" in detail.properties!, "父类字段 createdAt 应合并");
+  assert.ok("createdBy" in detail.properties!, "父类字段 createdBy 应合并");
+  assert.equal(detail.properties!.createdAt.format, "date-time");
+  assert.equal(detail.properties!.createdBy.description, "创建人 ID");
+
+  // 泛型基类:BasePageResult<UserVO> 的 T 应绑定为 UserVO
+  const page = spec.components!.schemas["UserPageResult"];
+  assert.equal(page.properties!.records.type, "array");
+  assert.equal(page.properties!.records.items!.$ref, "#/components/schemas/UserVO");
+  assert.equal(page.properties!.total.format, "int64");
+  // 未实例化的基类本身不应被登记为模型
+  assert.equal(spec.components!.schemas["BaseAuditVO"], undefined);
+});
+
+test("嵌套静态类与非 record 复合字段展开为独立数据模型", () => {
+  const detail = spec.components!.schemas["UserDetailVO"];
+  assert.equal(detail.properties!.profile.$ref, "#/components/schemas/Profile");
+  assert.equal(detail.properties!.contact.$ref, "#/components/schemas/UserContactRecord");
+
+  const profile = spec.components!.schemas["Profile"];
+  assert.equal(profile.title, "Profile");
+  assert.equal(profile.properties!.nickname.type, "string");
+  assert.deepEqual(profile.properties!.status.enum, ["ACTIVE", "INACTIVE"]);
+  assert.equal(detail.properties!.tags.type, "array");
+});
+
+test("record:首组件注释与后续组件注解都进入模型描述", () => {
+  const contact = spec.components!.schemas["UserContactRecord"];
+  // 首组件的 javadoc 挂在 recordComponentList 上,需回退读取
+  assert.equal(contact.properties!.phone.description, "手机号");
+  // 后续组件的 @Schema 注解挂在 recordComponentModifier 上
+  assert.equal(contact.properties!.email.description, "电子邮箱");
+});
+
+test("查询 Bean(record)展开:嵌套对象按点号命名,集合保持数组形态", () => {
+  const op = spec.paths["/api/v1/user-details"].get as Record<string, any>;
+  const names = op.parameters.map((p: any) => p.name);
+  assert.ok(names.includes("keyword"), "record 顶层组件应展开: " + names);
+  assert.ok(names.includes("filter.pageNo"), "嵌套对象应按 父.子 命名: " + names);
+  assert.ok(names.includes("filter.pageSize"), "嵌套对象应按 父.子 命名");
+  const dept = op.parameters.find((p: any) => p.name === "deptCodes");
+  assert.equal(dept.schema.type, "array");
+  assert.equal(dept.schema.items.type, "string");
+  // 描述来自 record 组件注释
+  assert.equal(op.parameters.find((p: any) => p.name === "keyword").description, "关键字");
+  assert.ok(
+    !analyzed.warnings.some((w) => w.includes("UserQuery")),
+    "record 查询 Bean 不应产生无法展开的告警: " + analyzed.warnings.join("|")
+  );
 });
