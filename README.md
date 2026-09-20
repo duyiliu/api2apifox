@@ -104,7 +104,7 @@
 
 ## 🖥 接口列表视图
 
-- **浏览**:侧边栏「接口列表」按模块/控制器分组展示工作区解析出的所有接口;目录默认收起,手动展开/收起后刷新保持;保存 Java 文件后自动刷新(侧边栏不可见时延迟到下次可见)
+- **浏览**:侧边栏「接口列表」按接口目录分组展示工作区解析出的所有接口,目录 key 含 `/` 时逐级嵌套(如 `测评工作站/测评量表-CARS`);目录默认收起,手动展开/收起后刷新保持;保存 Java 文件后自动刷新(侧边栏不可见时延迟到下次可见)
 - **快速过滤**:点击标题栏漏斗图标输入关键词(支持 URL 路径、中文描述、HTTP 方法、Controller 类名等),支持多词组合(空格分隔),实时保留匹配项并高亮关键字;过滤激活时常驻一行 `🔍 "关键字" · 命中数/总数`,一键清除
 - **搜索并跳转**:放大镜图标弹出 QuickPick,模糊匹配接口,回车直接跳转到源码定义
 - **批量勾选**:过滤状态下「全选」仅勾选当前命中接口;若存在过滤隐藏的已选项,同步时会明确选择“仅当前过滤”或“全部已选”;勾选按 Apifox 项目隔离并跨会话保持
@@ -129,7 +129,7 @@
 | `apifoxHelper.endpointConflictBehavior` | `OVERWRITE_EXISTING` | 接口冲突:`OVERWRITE_EXISTING` / `AUTO_MERGE` / `KEEP_EXISTING` / `CREATE_NEW` |
 | `apifoxHelper.schemaConflictBehavior` | `OVERWRITE_EXISTING` | 数据模型冲突策略,取值同上 |
 | `apifoxHelper.include` | `["**/src/main/java/**/*.java"]` | 扫描 glob |
-| `apifoxHelper.exclude` | `["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**"]` | 排除 glob |
+| `apifoxHelper.exclude` | `["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**", "**/.*/**"]` | 排除 glob；工作区根下隐藏目录还会被强制过滤 |
 | `apifoxHelper.exportPath` | `openapi.gen.json` | 预览导出路径 |
 | `apifoxHelper.pageTypeStyle` | `mybatis-plus` | 简单名 `Page` 的展开形态:`mybatis-plus`(records/total/current)或 `spring-data`(content/totalElements/number) |
 | `apifoxHelper.folderNameSource` | `tag` | 接口目录命名来源:`tag`(@Tag 注解,缺省类名)或 `controller`(类名) |
@@ -180,6 +180,7 @@
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
 - **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限 120,超出部分告警);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;静态内部类同样以简单名索引,与顶层类型重名时顶层优先)
+- **隐藏目录与工作区内另一处 git 检出不参与扫描**:工作区根下任一 `.xxx` 目录的内容均跳过,因此 `.kilo/worktrees`、`.claude/worktrees` 和其他 AI 工具的隐藏工作目录不会产生重复接口；嵌套 git 检出同样按 `.git` 标记跳过。要扫描某个工作树,请将该工作树根目录作为独立工作区或多根工作区文件夹打开
 - 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 

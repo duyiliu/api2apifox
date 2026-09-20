@@ -12,6 +12,7 @@ import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
 import { analyze, analyzeSubset, AnalyzeCache, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
+import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
 import { buildSyncReport } from "./ui/syncResult";
 
@@ -61,7 +62,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
       vscode.window.showWarningMessage(`pom.xml 数量达到上限 ${MAX_POMS},部分模块的依赖 jar 未纳入识别(可用 dependencyJars 显式补充)`);
     }
     const coords: { groupId: string; artifactId: string }[] = [];
-    for (const p of poms) {
+    for (const p of withoutIgnoredSources(poms)) {
       try {
         coords.push(...parsePomDependencies(await fs.promises.readFile(p.fsPath, "utf8")));
       } catch {
@@ -94,7 +95,8 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
   if (!settings.helperProperties) {
     return undefined;
   }
-  const uris = await vscode.workspace.findFiles("**/.apifox-helper.properties", "**/node_modules/**", 100);
+  // 隐藏目录/副本内的同名 rules 会因路径更深而覆盖工作区根配置,先剔除
+  const uris = withoutIgnoredSources(await vscode.workspace.findFiles("**/.apifox-helper.properties", "**/node_modules/**", 100));
   if (!uris.length) {
     return undefined;
   }
@@ -126,6 +128,34 @@ function pathDepth(p: string): number {
   return p.split("/").length;
 }
 
+/** `.git` 探针:整包扫描跳过 Agent 工作树/嵌套仓库副本,每次收集前 reset 以感知新建的工作树 */
+const gitEntryProbe = createGitEntryProbe((p) => fs.existsSync(p));
+
+const hasGitEntry = (dir: string): boolean => gitEntryProbe.hasGitEntry(dir);
+
+/**
+ * 剔除工作区根下任意隐藏目录与另一个 git 检出下的文件,避免 AI 工具工作树等副本
+ * 被解析成重复接口。keepCheckoutOf 指向的非隐藏副本保留,使显式同步仍可解析类型。
+ */
+function withoutIgnoredSources(uris: vscode.Uri[], keepCheckoutOf?: vscode.Uri): vscode.Uri[] {
+  gitEntryProbe.reset();
+  const allowed = new Map<string, string | undefined>();
+  if (keepCheckoutOf) {
+    const root = vscode.workspace.getWorkspaceFolder(keepCheckoutOf)?.uri.fsPath;
+    if (root) {
+      allowed.set(root, findNestedCheckoutRoot(path.dirname(keepCheckoutOf.fsPath), root, hasGitEntry));
+    }
+  }
+  return uris.filter((uri) => {
+    const root = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
+    if (!root) {
+      return true;
+    }
+    const sourceDir = path.dirname(uri.fsPath);
+    return !isInHiddenDirectory(sourceDir, root) && !isSkippedCheckout(sourceDir, root, hasGitEntry, allowed.get(root));
+  });
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const secrets = context.secrets;
 
@@ -145,7 +175,11 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   /** 收集要分析的 Java 文件;singleFile 限定为一个文件(token 取消即中断读文件循环) */
-  const collectFiles = async (singleFile?: vscode.Uri, token?: vscode.CancellationToken): Promise<SourceFile[] | undefined> => {
+  const collectFiles = async (
+    singleFile?: vscode.Uri,
+    token?: vscode.CancellationToken,
+    keepCheckoutOf?: vscode.Uri
+  ): Promise<SourceFile[] | undefined> => {
     const settings = getSettings();
     let uris: vscode.Uri[];
     if (singleFile) {
@@ -162,6 +196,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage(`Java 源文件数达到扫描上限 ${MAX_FILES},超出部分未纳入解析(可用 include/exclude 收敛范围)`);
       }
     }
+    // 工作区根下的隐藏目录与 Agent 工作树等副本不参与源码扫描
+    uris = withoutIgnoredSources(uris, keepCheckoutOf ?? singleFile);
     const files: SourceFile[] = [];
     for (const uri of uris) {
       if (token?.isCancellationRequested) {
@@ -591,7 +627,11 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 过滤状态下 folder 节点只包含可见接口；命令语义是“整个目录”，因此回到全量树取数。
-      const endpoints = treeProvider.allEndpoints().filter((ep) => folderKeyForTree(ep) === node.key);
+      // 目录语义含子目录:`测评工作站` 应连带其下 `测评量表-*`
+      const endpoints = treeProvider.allEndpoints().filter((ep) => {
+        const key = folderKeyForTree(ep);
+        return key === node.key || key.startsWith(`${node.key}/`);
+      });
       if (!endpoints.length) {
         vscode.window.showWarningMessage("该目录下没有可同步的接口");
         return;
@@ -814,7 +854,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // 用全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
       await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async (token) => {
-        const allFiles = await collectFiles(undefined, token);
+        const allFiles = await collectFiles(undefined, token, target);
         if (!allFiles) {
           return undefined;
         }
@@ -852,7 +892,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // 用全量上下文解析类型,只输出该接口
       await doSync("未发现可同步的接口", async (token) => {
-        const allFiles = await collectFiles(undefined, token);
+        const allFiles = await collectFiles(undefined, token, target);
         const source = allFiles ?? files;
         return analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
       }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
@@ -891,6 +931,10 @@ export function activate(context: vscode.ExtensionContext): void {
       provideCodeLenses(document) {
         const settings = getSettings();
         if (!settings.enableCodeLens) {
+          return [];
+        }
+        const root = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
+        if (root && isInHiddenDirectory(path.dirname(document.uri.fsPath), root)) {
           return [];
         }
         const rel = document.uri.fsPath.replace(/\\/g, "/");

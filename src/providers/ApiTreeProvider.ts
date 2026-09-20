@@ -1,11 +1,18 @@
 import * as vscode from "vscode";
 import { EndpointInfo } from "../java/model";
 import { getSettings } from "../config/settings";
+import {
+  buildFolderTree,
+  countFolderEndpoints,
+  flattenFolderEndpoints,
+  folderSelectionState,
+  FolderTree,
+} from "./folderTree";
 
 /**
  * 侧边栏「接口列表」树:
  * - 顶部置顶项:当前绑定的项目与团队(点击直达设置中心)
- * - 目录(按 folderKey/tag 分组)→ 接口(方法+路径)
+ * - 目录(按 folderKey 分组,`/` 路径逐级嵌套)→ 接口(方法+路径)
  * - 点击接口跳转到源码定义
  * - 勾选接口后可用标题栏「同步勾选的接口」批量同步
  * - 过滤入口在标题栏漏斗图标(命令面板/右键同名命令),过滤状态显示在树标题 description
@@ -23,8 +30,13 @@ export type ApiTreeNode =
       hiddenChecked: number;
     }
   | { kind: "empty"; message: string }
-  | { kind: "folder"; key: string; endpoints: EndpointInfo[] }
+  | { kind: "folder"; key: string; label: string; endpoints: EndpointInfo[]; children: FolderTree[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
+
+/** 目录树节点 → 视图节点 */
+function toFolderNode(node: FolderTree): ApiTreeNode {
+  return { kind: "folder", key: node.key, label: node.label, endpoints: node.endpoints, children: node.children };
+}
 
 const METHOD_ICON: Record<string, { id: string; color: string }> = {
   GET: { id: "arrow-small-right", color: "testing.iconPassed" },
@@ -172,20 +184,8 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       this.filteredEndpoints = [...allEndpoints];
     }
 
-    const groups = new Map<string, EndpointInfo[]>();
-    for (const ep of this.filteredEndpoints) {
-      const key = this.folderKeyOf(ep) || "未分组";
-      const arr = groups.get(key) ?? [];
-      arr.push(ep);
-      groups.set(key, arr);
-    }
-    this.roots = [...groups.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([key, list]) => ({
-        kind: "folder" as const,
-        key,
-        endpoints: list.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method)),
-      }));
+    const groups = buildFolderTree(this.filteredEndpoints, this.folderKeyOf);
+    this.roots = groups.map(toFolderNode);
 
     // 仅在确实完成过一次分析时清掉已消失接口；未扫描/扫描取消不能抹掉历史选择。
     if (this.analysis !== undefined) {
@@ -277,27 +277,26 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       const collapsible = expanded
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.Collapsed;
-      const item = new vscode.TreeItem(element.key, collapsible);
+      const item = new vscode.TreeItem(element.label, collapsible);
       item.iconPath = new vscode.ThemeIcon("folder-library");
-      const total = element.endpoints.length;
-      let checkedInFolder = 0;
-      for (const ep of element.endpoints) {
-        if (this.checked.has(`${ep.method} ${ep.path}`)) {
-          checkedInFolder++;
-        }
-      }
-      if (total > 0 && checkedInFolder === total) {
+      // 统计含子目录:父目录上直接反映整棵子树的接口量与勾选情况
+      const total = countFolderEndpoints(element);
+      const state = folderSelectionState(element, (ep) => this.checked.has(`${ep.method} ${ep.path}`));
+      const checkedInFolder = state === "all" ? total : state === "some" ? undefined : 0;
+      const direct = element.endpoints.length;
+      const scope = direct === total ? `${total} 个接口` : `含子目录 ${total} 个`;
+      if (checkedInFolder === total && total > 0) {
         item.checkboxState = vscode.TreeItemCheckboxState.Checked;
-        item.description = `已全选 · ${total} 个接口`;
-      } else if (checkedInFolder > 0) {
+        item.description = `已全选 · ${scope}`;
+      } else if (checkedInFolder === undefined) {
         item.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
-        item.description = `${checkedInFolder}/${total} 已选 · 共 ${total} 个`;
+        item.description = `部分已选 · ${scope}`;
       } else {
         item.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
-        item.description = `${total} 个接口`;
+        item.description = scope;
       }
       item.contextValue = "folder";
-      item.tooltip = `目录: ${element.key}\n接口数: ${total}\n已勾选: ${checkedInFolder}`;
+      item.tooltip = `目录: ${element.key}\n接口数: ${total}(含子目录)${direct === total ? "" : `\n直属接口: ${direct}`}`;
       return item;
     }
     const ep = element.endpoint;
@@ -377,7 +376,8 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       return [...nodes, ...this.roots];
     }
     if (element.kind === "folder") {
-      return element.endpoints.map((endpoint) => ({ kind: "endpoint" as const, endpoint }));
+      // 先子目录后直属接口:与 Apifox 目录树一致
+      return [...element.children.map(toFolderNode), ...element.endpoints.map((endpoint) => ({ kind: "endpoint" as const, endpoint }))];
     }
     return [];
   }
@@ -434,9 +434,9 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     this.persistChecked();
   }
 
-  /** 目录勾选变化(联动该目录下所有接口) */
-  setFolderChecked(folder: { endpoints: EndpointInfo[] }, checked: boolean): void {
-    for (const ep of folder.endpoints) {
+  /** 目录勾选变化(联动该目录及其子目录下的所有接口) */
+  setFolderChecked(folder: FolderTree, checked: boolean): void {
+    for (const ep of flattenFolderEndpoints(folder)) {
       const key = `${ep.method} ${ep.path}`;
       if (checked) {
         this.checked.add(key);

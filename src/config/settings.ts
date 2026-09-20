@@ -42,7 +42,7 @@ export function getSettings(): ApifoxSettings {
     endpointConflictBehavior: cfg.get<string>("endpointConflictBehavior", "OVERWRITE_EXISTING"),
     schemaConflictBehavior: cfg.get<string>("schemaConflictBehavior", "OVERWRITE_EXISTING"),
     include: cfg.get<string[]>("include", ["**/src/main/java/**/*.java"]),
-    exclude: cfg.get<string[]>("exclude", ["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**"]),
+    exclude: cfg.get<string[]>("exclude", ["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**", "**/.*/**"]),
     exportPath: cfg.get<string>("exportPath", "openapi.gen.json"),
     pageTypeStyle: cfg.get<"mybatis-plus" | "spring-data">("pageTypeStyle", "mybatis-plus"),
     folderNameSource: cfg.get<"tag" | "controller">("folderNameSource", "tag"),
