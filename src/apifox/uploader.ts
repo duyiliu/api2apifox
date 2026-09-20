@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, ImportResult } from "./client";
+import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, describeErrorChain, ImportResult } from "./client";
 import { getToken } from "../config/secret";
 import { saveProjectId, ApifoxSettings } from "../config/settings";
 import { AnalyzeOutput } from "../pipeline";
@@ -336,5 +336,6 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApifoxApiError) {
     return err.message;
   }
-  return err instanceof Error ? err.message : String(err);
+  // 非开放 API 抛出的错误同样展开 cause 链,避免只剩一句 "fetch failed"
+  return describeErrorChain(err);
 }

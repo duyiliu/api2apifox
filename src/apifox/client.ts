@@ -108,10 +108,10 @@ export class ApifoxClient {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
-      if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      if (isAbortError(err)) {
         throw new ApifoxApiError(`请求超时(${this.timeoutMs}ms):${url}`, 0);
       }
-      throw new ApifoxApiError(`网络请求失败(${url}):${err instanceof Error ? err.message : String(err)}`, 0);
+      throw new ApifoxApiError(formatNetworkFailure(url, err), 0);
     }
 
     const text = await res.text();
@@ -160,4 +160,110 @@ function humanizeError(status: number, payload?: { message?: string; code?: numb
 function extractList<T>(body: unknown, valid: (item: any) => boolean): T[] {
   const arr = Array.isArray(body) ? body : Array.isArray((body as { items?: unknown[] })?.items) ? (body as { items: unknown[] }).items : [];
   return arr.filter(valid) as T[];
+}
+
+/** 错误链上的单个节点:文本描述、错误名,以及命中本机地址时的端点(用于识别代理) */
+interface ErrorNode {
+  name: string;
+  text: string;
+  loopback?: string;
+}
+
+/** cause 链递归深度上限,防止异常对象自引用或深层嵌套拖垮报错路径 */
+const MAX_ERROR_DEPTH = 6;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.replace(/^\[|\]$/g, "").toLowerCase();
+  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+}
+
+/** 单节点可读文本:以 message 为主,message 未包含 code 时补上,避免丢失 ECONNREFUSED 这类关键码 */
+function describeNode(node: Record<string, unknown>): string {
+  const message = readText(node.message);
+  const code = readText(node.code);
+  if (!code || message.includes(code)) {
+    return message;
+  }
+  return message ? `${message} ${code}` : code;
+}
+
+function loopbackEndpoint(node: Record<string, unknown>): string | undefined {
+  const host = readText(node.address) || readText(node.hostname);
+  if (!host || !isLoopbackHost(host)) {
+    return undefined;
+  }
+  return typeof node.port === "number" ? `${host}:${node.port}` : host;
+}
+
+/**
+ * 展开错误链。除了标准 cause,还需处理 AggregateError:多地址(IPv4/IPv6)全部失败时
+ * undici 会把各地址的错误挂在 errors 上,只读 cause 会漏掉真实原因。
+ */
+function collectErrorChain(err: unknown): ErrorNode[] {
+  const nodes: ErrorNode[] = [];
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > MAX_ERROR_DEPTH || !isRecord(value) || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    nodes.push({ name: readText(value.name), text: describeNode(value), loopback: loopbackEndpoint(value) });
+    if (Array.isArray(value.errors)) {
+      for (const sub of value.errors) {
+        visit(sub, depth + 1);
+      }
+    }
+    visit(value.cause, depth + 1);
+  };
+  visit(err, 0);
+  return nodes;
+}
+
+function chainText(nodes: ErrorNode[], err: unknown): string {
+  return nodes.map((node) => node.text).filter(Boolean).join(": ") || String(err);
+}
+
+/**
+ * 展开错误链的可读描述。Node 的 fetch 连接失败时只抛 `TypeError: fetch failed`,
+ * 真实原因(ECONNREFUSED / ENOTFOUND / 证书错误等)只存在于 err.cause 中;
+ * 不展开会把「本地代理未启动」这类可定位问题压成一句无信息量的 "fetch failed"。
+ */
+export function describeErrorChain(err: unknown): string {
+  return chainText(collectErrorChain(err), err);
+}
+
+/**
+ * 网络请求失败的完整描述。扩展宿主里的 fetch 受 IDE 代理(http.proxy)影响,
+ * 因此当失败地址是本机端口、目标主机却在别处时,直接点明代理未启动这一常见原因。
+ */
+export function formatNetworkFailure(url: string, err: unknown): string {
+  const nodes = collectErrorChain(err);
+  let message = `网络请求失败(${url}):${chainText(nodes, err)}`;
+  const localEndpoint = nodes.find((node) => node.loopback)?.loopback;
+  const targetHost = hostOf(url);
+  if (localEndpoint && targetHost && !isLoopbackHost(targetHost)) {
+    message += `;错误地址 ${localEndpoint} 是本机端口(目标为 ${targetHost}),通常是 IDE/系统代理未启动,请检查代理设置后重试`;
+  }
+  return message;
+}
+
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/** AbortSignal.timeout 触发时错误既可能是 DOMException,也可能被 undici 包进 cause,故沿链查找 */
+function isAbortError(err: unknown): boolean {
+  return collectErrorChain(err).some((node) => node.name === "TimeoutError" || node.name === "AbortError");
 }

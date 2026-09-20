@@ -32,13 +32,47 @@ test("client:请求挂起时按 timeoutMs 抛出超时错误", async () => {
   }
 });
 
-test("client:网络失败抛出可读的 ApifoxApiError", async () => {
-  globalThis.fetch = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
+test("client:网络失败展开 cause 链,暴露 ECONNREFUSED 与本地代理提示", async () => {
+  // 复刻 Node fetch 连接失败的真实形态:外层只有 "fetch failed",真因在 cause 上
+  const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:55467"), {
+    code: "ECONNREFUSED",
+    errno: -4078,
+    syscall: "connect",
+    address: "127.0.0.1",
+    port: 55467,
+  });
+  globalThis.fetch = (() =>
+    Promise.reject(new TypeError("fetch failed", { cause: refused }))) as unknown as typeof fetch;
   try {
     const client = new ApifoxClient("https://api.example.com", "token");
     await assert.rejects(
       client.listTeams(),
-      (err: unknown) => err instanceof ApifoxApiError && err.message.includes("ECONNREFUSED")
+      (err: unknown) =>
+        err instanceof ApifoxApiError &&
+        err.message.includes("fetch failed") &&
+        err.message.includes("connect ECONNREFUSED 127.0.0.1:55467") &&
+        err.message.includes("代理")
+    );
+  } finally {
+    globalThis.fetch = ORIGINAL_FETCH;
+  }
+});
+
+test("client:目标自身的失败只展开原因,不误报代理提示", async () => {
+  const dns = Object.assign(new Error("getaddrinfo ENOTFOUND api.example.com"), {
+    code: "ENOTFOUND",
+    hostname: "api.example.com",
+  });
+  globalThis.fetch = (() =>
+    Promise.reject(new TypeError("fetch failed", { cause: dns }))) as unknown as typeof fetch;
+  try {
+    const client = new ApifoxClient("https://api.example.com", "token");
+    await assert.rejects(
+      client.listTeams(),
+      (err: unknown) =>
+        err instanceof ApifoxApiError &&
+        err.message.includes("getaddrinfo ENOTFOUND api.example.com") &&
+        !err.message.includes("代理")
     );
   } finally {
     globalThis.fetch = ORIGINAL_FETCH;
