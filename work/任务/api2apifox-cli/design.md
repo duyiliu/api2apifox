@@ -85,10 +85,10 @@ CLI 的正式命名已经确定：
 
 ## 当前阶段
 
-- 当前阶段：CLI MVP 已实现并通过本地与真实项目验证，进入发布
-- 最近进展：完成共享配置/扫描/分析/同步服务、`scan/export/sync/config` 四个命令、JSON 协议、退出码、安全确认、取消信号、npm workspace、README、Schema、`release-cli.yml` 与测试；实测同步 25 个接口到 Apifox 测试项目
-- 下一步：修复 `--timeout-ms` 相关文档与发布收尾，随后让 VS Code 扩展改用共享 `ProjectAnalyzer` / `SyncService`
-- 阻塞项：仓库 `NPM_TOKEN` secret 与本机 GitHub CLI 凭据需配置，否则只能本地手工发布
+- 当前阶段：CLI 已发布 0.1.0，后续进入 VS Code 适配迁移与增强阶段
+- 最近进展：完成共享核心、四个命令、JSON 协议、退出码、同步安全、可配置超时、发布工作流与测试；`@duyiliu/api2apifox@0.1.0` 已发布到 npm，标签 `cli-v0.1.0` 已推送
+- 下一步：让 VS Code 扩展改用共享 `ProjectAnalyzer` / `SyncService`，并补充 mock Apifox 同步测试
+- 阻塞项：无；仓库 `NPM_TOKEN` secret 未配置，只影响后续版本的自动化发布，可继续手工发布
 
 ## 上下文交接
 
@@ -608,7 +608,7 @@ src/vscode/
 - [ ] 3.4 增加 mock Apifox 同步测试
 - [x] 3.5 增加 `npm pack --dry-run` 内容检查
 - [x] 3.6 配置 npm trusted publishing 或 `NPM_TOKEN`（已加入 `release-cli.yml`；仓库侧仍需配置 `NPM_TOKEN` secret）
-- [ ] 3.7 发布 `@duyiliu/api2apifox@0.1.0`
+- [x] 3.7 发布 `@duyiliu/api2apifox@0.1.0`（2026-09-21 手工发布，标签 `cli-v0.1.0`）
 
 ### 阶段 4：增强项
 
@@ -691,7 +691,9 @@ src/vscode/
 | 首次真实导入 | `sync --project sample --project-id 8865417 --yes` | Apifox 测试项目 | 25 接口 + 6 目录创建成功 | 已通过（服务端完成；客户端 60s 超时后实测确认） |
 | 重复同步幂等 | 同参数再次 `KEEP_EXISTING` 同步 | Apifox 测试项目 | 25 接口与 17 模型全部忽略，失败 0 | 已通过（654 ms） |
 | 跨平台路径 | Windows/Linux CI | sample | 扫描范围和相对路径一致 | 未验证 |
-| npm 包检查 | `npm pack --dry-run --json --workspace @duyiliu/api2apifox` | CLI package | 仅 LICENSE、README、dist/cli.js、package.json、Schema 五个文件 | 已通过（185 KB） |
+| npm 包检查 | `npm pack --dry-run --json --workspace @duyiliu/api2apifox` | CLI package | 仅 LICENSE、README、dist/cli.js、package.json、Schema 五个文件 | 已通过（186 KB） |
+| 已发布包可用性 | 干净目录 `npm install @duyiliu/api2apifox@0.1.0` 后 `npx api2apifox scan` | sample | 版本 0.1.0，扫描得到 19 文件 / 25 接口 / 17 模型 | 已通过 |
+| VSIX 体积回归 | `npx @vscode/vsce ls --no-dependencies` | 扩展包 | 新增 workspace 后 `packages/**` 不出现在扩展包内 | 已通过 |
 | VS Code 回归 | `npm run typecheck && npm test && npm run compile` | sample | 现有命令、配置、OpenAPI 不变 | 已通过静态/单测/构建；Extension Host 尚未手工验证 |
 
 ## 补充资料
@@ -711,8 +713,9 @@ src/vscode/
 
 ## 遗留问题
 
-1. `@duyiliu` npm scope 是否已存在且当前账号有 public publish 权限，需要发布前验证。
+1. `@duyiliu` scope 的发布权限已验证通过：`@duyiliu/api2apifox@0.1.0` 已成功发布。仓库 `NPM_TOKEN` secret 仍未配置，自动化发布需补齐。
 2. CLI 是否在首版提供 `projects` 命令用于列出团队/项目；当前建议推迟到增强阶段。
 3. 核心包是否最终公开发布；当前建议保持 private，避免过早承诺公共 API。
 4. CLI 初版是否与扩展版本联动发布；当前建议独立版本、独立标签。
 5. 是否支持从现有 `.vscode/settings.json` 生成 `.api2apifox.json`；当前建议未来提供显式迁移命令，不静默读取。
+6. `REQUEST_TIMEOUT` 只表示本地停止等待，服务端可能已写入成功；后续可考虑在超时后自动做一次只读状态核对，把「结果未知」收敛为明确结论。
