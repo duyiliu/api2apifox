@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>api2apifox 独立 CLI 技术设计</title>
+  <style>
+    :root{--canvas:#f4f1ec;--paper:#fffaf2;--strong:#fff;--ink:#181716;--soft:#4d4740;--muted:#83786d;--line:#e5dbcf;--brand:#f97316;--dark:#c2410c;--accent:#2563eb;--accent-soft:#e8efff;--warm:#fff1dc;--code:#181716;--code-text:#fff7ed;--shadow:0 28px 80px rgba(52,37,21,.16);--radius:24px;--width:940px}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,rgba(249,115,22,.18),transparent 28rem),radial-gradient(circle at 88% 10%,rgba(37,99,235,.12),transparent 30rem),linear-gradient(180deg,#faf6ef 0%,var(--canvas) 48rem);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:16px;line-height:1.75}a{color:var(--accent);text-decoration:none}.shell{width:min(var(--width),calc(100% - 32px));margin:36px auto 72px}.document{overflow:hidden;border:1px solid #d4c5b5;border-radius:34px;background:var(--paper);box-shadow:var(--shadow)}.cover{padding:64px 68px 54px;background:radial-gradient(circle at 86% 18%,rgba(37,99,235,.18),transparent 15rem),radial-gradient(circle at 16% 2%,rgba(249,115,22,.22),transparent 18rem),linear-gradient(135deg,#fffaf2,#fff4e3 64%,#f7efe4);border-bottom:1px solid var(--line)}.brand-row{display:flex;justify-content:space-between;gap:18px;margin-bottom:48px}.brand{font-weight:900;letter-spacing:.06em;text-transform:uppercase}.tag{padding:6px 12px;border:1px solid rgba(194,65,12,.18);border-radius:999px;background:rgba(255,255,255,.58);color:var(--dark);font-size:13px;font-weight:800}.kicker{color:var(--dark);font-size:13px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}h1{max-width:780px;margin:12px 0 0;font-size:clamp(42px,7vw,76px);font-weight:920;letter-spacing:-.06em;line-height:1}.subtitle{max-width:760px;margin:24px 0 0;color:var(--soft);font-size:21px;line-height:1.6}.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}.meta span{padding:8px 12px;border:1px solid #d4c5b5;border-radius:999px;background:rgba(255,255,255,.62);color:var(--muted);font-size:13px;font-weight:750}.summary{padding:30px 68px;border-bottom:1px solid var(--line);background:var(--strong)}.summary b{color:var(--dark)}.summary p{margin:0;font-size:21px;font-weight:720;line-height:1.55}.content{padding:50px 68px 70px}.content h2{margin:2em 0 .7em;padding-top:.45em;border-top:1px solid var(--line);font-size:34px;letter-spacing:-.035em}.content h3{margin:1.65em 0 .55em;font-size:24px}.content h4{margin:1.3em 0 .4em;color:var(--dark);font-size:18px}.content p{margin:.9em 0}.lead{color:var(--soft);font-size:19px}.note,.card{margin:1.4em 0;padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius);background:var(--strong);box-shadow:0 12px 30px rgba(52,37,21,.07)}.note{border-color:rgba(37,99,235,.18);background:linear-gradient(135deg,var(--accent-soft),#fff 78%)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:1.4em 0}.pill{display:inline-block;margin:3px 4px 3px 0;padding:4px 9px;border-radius:999px;background:var(--warm);color:var(--dark);font-size:13px;font-weight:800}.flow{display:grid;gap:10px;margin:1.4em 0}.flow div{padding:13px 16px;border:1px solid var(--line);border-radius:14px;background:#fff}.arrow{text-align:center;color:var(--brand);font-weight:900}table{width:100%;margin:1.4em 0;border-collapse:separate;border-spacing:0;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:#fff;font-size:14px}th,td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f7eddf;font-size:13px}tr:last-child td{border-bottom:0}code{padding:.15em .4em;border:1px solid rgba(194,65,12,.16);border-radius:7px;background:var(--warm);color:#9a3412;font-family:Consolas,monospace;font-size:.9em}pre{overflow:auto;margin:1.4em 0;padding:19px 21px;border-radius:20px;background:var(--code);color:var(--code-text);line-height:1.6}pre code{padding:0;border:0;background:transparent;color:inherit}.footer{display:flex;justify-content:space-between;gap:10px;padding:22px 68px;border-top:1px solid var(--line);background:#f7eddf;color:var(--muted);font-size:13px}@media(max-width:720px){.shell{width:calc(100% - 18px);margin:9px auto 32px}.cover,.summary,.content,.footer{padding-left:24px;padding-right:24px}.brand-row,.footer{display:block}.tag{display:inline-block;margin-top:12px}.grid{grid-template-columns:1fr}table{display:block;overflow:auto}}
+  </style>
+</head>
+<body>
+<div class="shell"><article class="document">
+<header class="cover">
+  <div class="brand-row"><div class="brand">API2APIFOX</div><div class="tag">技术设计 · 待实施</div></div>
+  <div class="kicker">AI Agent First CLI</div>
+  <h1>api2apifox 独立 CLI 技术设计</h1>
+  <p class="subtitle">将现有 VS Code 扩展的 Java 静态解析、OpenAPI 构建和 Apifox 同步能力抽成共享核心，并以 <code>@duyiliu/api2apifox</code> 独立发布。</p>
+  <div class="meta"><span>命令：api2apifox</span><span>Node.js ≥ 20</span><span>2026-09-20</span><span>主要受众：AI / CI / 开发者</span></div>
+</header>
+<section class="summary"><p><b>核心结论：</b>采用“同仓库双产品、共享核心、独立发布”。CLI 提供 <code>scan</code>、<code>export</code>、<code>sync</code>、<code>config</code> 四个命令，以稳定 JSON 信封、明确退出码和显式写入确认服务 AI Agent。</p></section>
+<main class="content">
+  <div class="note"><strong>设计边界</strong><p>本方案只设计，不修改现有业务代码。VS Code 的命令、配置键、SecretStorage 和 Marketplace 发布链保持兼容；CLI 不复制第二套解析器。</p></div>
+
+  <h2>1. 产品身份</h2>
+  <table><thead><tr><th>载体</th><th>名称</th><th>说明</th></tr></thead><tbody>
+    <tr><td>VS Code 展示名</td><td>ApiGen for Apifox</td><td>保持现有用户认知</td></tr>
+    <tr><td>Marketplace ID</td><td><code>duyiliu.api2apifox</code></td><td>保持不变</td></tr>
+    <tr><td>npm 包</td><td><code>@duyiliu/api2apifox</code></td><td>独立公开发布</td></tr>
+    <tr><td>CLI 命令</td><td><code>api2apifox</code></td><td>稳定、便于 AI 调用</td></tr>
+    <tr><td>配置文件</td><td><code>.api2apifox.json</code></td><td>不保存 Token</td></tr>
+    <tr><td>环境变量</td><td><code>API2APIFOX_*</code></td><td>CI/Agent 凭据入口</td></tr>
+  </tbody></table>
+
+  <h2>2. 总体架构</h2>
+  <div class="flow">
+    <div><strong>展示与适配层</strong><br>VS Code：命令、Webview、SecretStorage、进度提示<br>CLI：argv、stdout/stderr、TTY 确认、退出码</div>
+    <div class="arrow">↓ 统一调用</div>
+    <div><strong>Application Core</strong><br>ProjectScanner · ConfigResolver · MavenDependencyResolver · RuleLoader · ProjectAnalyzer · SyncService</div>
+    <div class="arrow">↓ 复用</div>
+    <div><strong>Domain Core</strong><br>Java Parser · Type Index · Rule Engine · Schema Resolver · OpenAPI Builder · Jar/Class Parser · Apifox HTTP Client</div>
+  </div>
+  <p class="lead">关键约束：共享核心生产代码不得 import <code>vscode</code>。VS Code 与 CLI 对相同 fixture 必须生成相同 OpenAPI。</p>
+
+  <h3>仓库与发布结构</h3>
+  <pre><code>apifox-helper-vscode/
+├── package.json                # VS Code 根包，private: true
+├── packages/
+│   ├── core/                   # 内部共享核心，暂不公开
+│   └── cli/                    # @duyiliu/api2apifox
+├── src/                        # VS Code 适配层；迁移期保留现有代码
+└── .github/workflows/
+    ├── release.yml             # v* → Marketplace
+    └── release-cli.yml         # cli-v* → npm</code></pre>
+
+  <h2>3. CLI 命令</h2>
+  <div class="grid">
+    <div class="card"><h3><code>scan</code></h3><p>扫描源码并输出接口摘要，不写文件、不访问 Apifox。</p><pre><code>api2apifox scan --project . --format json</code></pre></div>
+    <div class="card"><h3><code>export</code></h3><p>生成 OpenAPI 文件。覆盖已有文件必须显式 <code>--force</code>。</p><pre><code>api2apifox export --project . \
+  --output openapi.gen.json</code></pre></div>
+    <div class="card"><h3><code>sync</code></h3><p>预检后同步。非 TTY 必须传 <code>--yes</code>；<code>--dry-run</code> 不写远端。</p><pre><code>api2apifox sync --project . \
+  --yes --format json</code></pre></div>
+    <div class="card"><h3><code>config</code></h3><p>输出最终配置与字段来源，Token 只显示是否存在。</p><pre><code>api2apifox config --project . \
+  --format json</code></pre></div>
+  </div>
+
+  <h3>精确范围</h3>
+  <p><span class="pill">--file 可重复</span><span class="pill">--endpoint "METHOD PATH" 可重复</span><span class="pill">全量类型上下文</span></p>
+  <p>单文件或单接口同步仍扫描项目全量源码用于 DTO 解析，只筛选最终输出，保持与 VS Code 当前行为一致。</p>
+
+  <h2>4. 配置模型</h2>
+  <p>优先级：<strong>CLI 参数 &gt; 环境变量 &gt; .api2apifox.json &gt; 内置默认值</strong>。首版不静默读取 VS Code settings。</p>
+  <pre><code>{
+  "$schema": "https://unpkg.com/@duyiliu/api2apifox/schema/config.schema.json",
+  "projectId": 123456,
+  "apiBaseUrl": "https://api.apifox.com",
+  "include": ["**/src/main/java/**/*.java"],
+  "exclude": ["**/target/**", "**/build/**", "**/src/test/**", "**/.*/**"],
+  "endpointConflictBehavior": "OVERWRITE_EXISTING",
+  "schemaConflictBehavior": "OVERWRITE_EXISTING",
+  "pageTypeStyle": "mybatis-plus",
+  "folderNameSource": "tag",
+  "helperProperties": { "enabled": true, "enumFieldDoc": false }
+}</code></pre>
+  <table><thead><tr><th>环境变量</th><th>用途</th></tr></thead><tbody>
+    <tr><td><code>API2APIFOX_TOKEN</code></td><td>Apifox Access Token</td></tr>
+    <tr><td><code>API2APIFOX_PROJECT_ID</code></td><td>目标项目 ID</td></tr>
+    <tr><td><code>API2APIFOX_API_BASE_URL</code></td><td>开放 API 地址</td></tr>
+    <tr><td><code>API2APIFOX_CONFIG</code></td><td>显式配置文件路径</td></tr>
+  </tbody></table>
+
+  <h2>5. AI 输出协议</h2>
+  <p><code>--format json</code> 时，stdout 只能输出一个最终 JSON 对象；进度与诊断写 stderr，禁止颜色和普通日志污染。</p>
+  <pre><code>{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "sync",
+  "version": "0.1.0",
+  "durationMs": 482,
+  "result": {
+    "dryRun": false,
+    "target": { "projectId": 123456 },
+    "scope": { "type": "workspace", "endpointCount": 42 },
+    "counters": {
+      "endpointCreated": 2,
+      "endpointUpdated": 40,
+      "endpointFailed": 0
+    },
+    "errors": []
+  },
+  "warnings": []
+}</code></pre>
+  <p>失败同样输出稳定信封，AI 优先读取 <code>error.code</code>，外层脚本可按退出码快速分支。</p>
+
+  <h3>退出码</h3>
+  <table><thead><tr><th>码</th><th>含义</th><th>典型错误</th></tr></thead><tbody>
+    <tr><td>0</td><td>成功</td><td>OK</td></tr>
+    <tr><td>2</td><td>参数/配置错误</td><td>CONFIG_INVALID</td></tr>
+    <tr><td>3</td><td>没有 Java 文件或目标接口</td><td>NO_ENDPOINT_MATCHED</td></tr>
+    <tr><td>4</td><td>鉴权/权限失败</td><td>APIFOX_AUTH_FAILED</td></tr>
+    <tr><td>5</td><td>网络/超时</td><td>REQUEST_TIMEOUT</td></tr>
+    <tr><td>6</td><td>导入部分失败</td><td>IMPORT_PARTIAL_FAILURE</td></tr>
+    <tr><td>7</td><td>I/O 或内部错误</td><td>INTERNAL_ERROR</td></tr>
+    <tr><td>130</td><td>取消</td><td>CANCELLED</td></tr>
+  </tbody></table>
+
+  <h2>6. 安全策略</h2>
+  <ul>
+    <li><code>scan</code>、<code>config</code>、<code>export</code> 默认只读。</li>
+    <li><code>sync --dry-run</code> 不调用 Apifox 写接口。</li>
+    <li>实际同步必须交互确认或显式 <code>--yes</code>。</li>
+    <li>非 TTY 且无 <code>--yes</code> 时立即返回，不允许挂起。</li>
+    <li>配置文件禁止 <code>token</code> 字段；Token 不进入 stdout、错误栈或日志。</li>
+    <li>默认不删除 Apifox 中未匹配资源，首版不暴露删除开关。</li>
+    <li>接收 SIGINT/SIGTERM，取消返回 130；文件导出采用临时文件 + rename。</li>
+  </ul>
+
+  <h2>7. 发布与版本</h2>
+  <div class="grid">
+    <div class="card"><h3>VS Code 扩展</h3><p>继续使用根版本 <code>0.2.x</code>，标签 <code>v*</code>，发布到 Marketplace。</p></div>
+    <div class="card"><h3>CLI</h3><p>首发 <code>@duyiliu/api2apifox@0.1.0</code>，标签 <code>cli-v*</code>，独立发布到 npm。</p></div>
+  </div>
+  <p>CLI 包白名单仅包含 <code>dist/cli.js</code>、README、LICENSE、配置 Schema 和 package.json，并在 CI 中运行 <code>npm pack --dry-run</code> 验证。</p>
+
+  <h2>8. 实施顺序</h2>
+  <ol>
+    <li><strong>抽取共享核心：</strong>扫描、Maven 依赖、规则加载、分析和同步服务。</li>
+    <li><strong>VS Code 回接共享核心：</strong>现有命令和 OpenAPI 输出保持不变。</li>
+    <li><strong>实现 CLI MVP：</strong>四个命令、配置、JSON、退出码、确认和取消。</li>
+    <li><strong>验证：</strong>子进程测试、mock Apifox、跨平台路径、VS Code/CLI OpenAPI 一致性。</li>
+    <li><strong>发布：</strong>独立 npm 工作流，发布 <code>0.1.0</code>。</li>
+  </ol>
+
+  <h2>9. 验收重点</h2>
+  <table><thead><tr><th>场景</th><th>决定性标准</th></tr></thead><tbody>
+    <tr><td>JSON 可消费性</td><td>stdout 恰好一个 JSON 根对象，无颜色或进度污染</td></tr>
+    <tr><td>行为一致性</td><td>相同 fixture 下 CLI 与 VS Code 生成的 OpenAPI 深度相等</td></tr>
+    <tr><td>非交互安全</td><td>sync 无 --yes 时快速失败，不等待 stdin</td></tr>
+    <tr><td>事实边界</td><td>不虚构 Apifox 未返回的逐接口同步状态</td></tr>
+    <tr><td>凭据安全</td><td>任何成功/失败输出均不包含 Token</td></tr>
+    <tr><td>跨平台</td><td>Windows、Linux 路径和 glob 结果一致</td></tr>
+    <tr><td>发布包</td><td>npm tarball 仅含白名单，安装后 api2apifox 可执行</td></tr>
+  </tbody></table>
+
+  <div class="note"><strong>推荐下一步</strong><p>从“抽取 ProjectAnalyzer/ProjectScanner/SyncService，并让 VS Code 先回接”开始，而不是先写 CLI 参数层。只有核心编排真正无 VS Code 依赖，CLI 才不会成为第二套实现。</p></div>
+</main>
+<footer class="footer"><span>api2apifox CLI Design</span><span>主档：work/任务/api2apifox-cli/design.md</span></footer>
+</article></div>
+</body>
+</html>
