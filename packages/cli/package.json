@@ -1,0 +1,38 @@
+{
+  "name": "@duyiliu/api2apifox",
+  "version": "0.1.0",
+  "description": "Scan Java REST APIs, generate OpenAPI, and sync to Apifox from the command line",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duyiliu/apifox-helper-vscode"
+  },
+  "type": "commonjs",
+  "bin": {
+    "api2apifox": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/cli.js",
+    "README.md",
+    "LICENSE",
+    "schema/config.schema.json"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.js"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "java-parser": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  }
+}

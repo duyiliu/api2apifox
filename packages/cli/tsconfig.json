@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist-test",
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../src/core/**/*.ts",
+    "../../src/apifox/client.ts",
+    "../../src/config/helperProperties.ts",
+    "../../src/java/**/*.ts",
+    "../../src/openapi/**/*.ts",
+    "../../src/pipeline.ts"
+  ],
+  "exclude": [
+    "../../src/test/**",
+    "../../node_modules",
+    "dist",
+    "dist-test"
+  ]
+}

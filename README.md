@@ -21,6 +21,20 @@
 - **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
 - **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
 
+### 独立 CLI（AI Agent / CI）
+
+无需 VS Code 即可扫描、导出和同步，CLI 包名为 `@duyiliu/api2apifox`，命令名为 `api2apifox`：
+
+```bash
+npm install -g @duyiliu/api2apifox
+api2apifox scan --project . --format json
+api2apifox export --project . --output openapi.gen.json --force
+api2apifox sync --project . --project-id 123456 --dry-run --format json
+API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
+```
+
+真正同步必须交互确认或显式传入 `--yes`；Token 推荐通过 `API2APIFOX_TOKEN` 提供，不允许写入 `.api2apifox.json`。首次导入需要创建目录、接口和模型，等待上限默认 300000 毫秒，可用 `--timeout-ms` 调整；若返回 `REQUEST_TIMEOUT`，请先查询目标项目确认结果再重试。完整参数和配置示例见 [`packages/cli/README.md`](packages/cli/README.md)。
+
 ## 🚀 快速上手
 
 1. 用 VS Code / Cursor 打开一个 Spring Boot 工程

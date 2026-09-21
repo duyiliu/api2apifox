@@ -38,7 +38,9 @@ export class ApifoxClient {
     private readonly token: string,
     private readonly apiVersion: string = APIFOX_API_VERSION,
     /** 请求超时毫秒数;导入大文档可能偏慢,默认给足 60s */
-    private readonly timeoutMs: number = 60_000
+    private readonly timeoutMs: number = 60_000,
+    /** CLI 可传入外部取消信号;扩展调用方缺省时仅受 timeout 控制 */
+    private readonly signal?: AbortSignal
   ) {}
 
   /**
@@ -105,9 +107,14 @@ export class ApifoxClient {
           "Content-Type": "application/json",
         },
         body: json === undefined ? undefined : JSON.stringify(json),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: this.signal ? AbortSignal.any([this.signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
+      if (this.signal?.aborted) {
+        const cancelled = new Error("操作已取消");
+        cancelled.name = "AbortError";
+        throw cancelled;
+      }
       if (isAbortError(err)) {
         throw new ApifoxApiError(`请求超时(${this.timeoutMs}ms):${url}`, 0);
       }

@@ -4,6 +4,27 @@ import { ApifoxApiError, ApifoxClient } from "../apifox/client";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
+test("client:外部 AbortSignal 取消请求时抛出 AbortError", async () => {
+  const controller = new AbortController();
+  globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal }) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    })) as unknown as typeof fetch;
+  try {
+    const client = new ApifoxClient("https://api.example.com", "token", undefined, 5_000, controller.signal);
+    const pending = client.listTeams();
+    controller.abort();
+    await assert.rejects(pending, (error: unknown) => error instanceof Error && error.name === "AbortError");
+  } finally {
+    globalThis.fetch = ORIGINAL_FETCH;
+  }
+});
+
 test("client:请求挂起时按 timeoutMs 抛出超时错误", async () => {
   // 模拟忽略 body 但尊重 AbortSignal 的挂起 fetch,验证超时路径(此前无超时会永远挂起)
   globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal }) =>

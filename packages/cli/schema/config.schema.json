@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unpkg.com/@duyiliu/api2apifox/schema/config.schema.json",
+  "title": "api2apifox CLI configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "title": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "integer", "minimum": 0 },
+    "apiBaseUrl": { "type": "string", "format": "uri", "pattern": "^https?://" },
+    "include": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "exclude": { "type": "array", "items": { "type": "string" } },
+    "exportPath": { "type": "string" },
+    "endpointConflictBehavior": { "$ref": "#/$defs/conflictBehavior" },
+    "schemaConflictBehavior": { "$ref": "#/$defs/conflictBehavior" },
+    "pageTypeStyle": { "enum": ["mybatis-plus", "spring-data"] },
+    "folderNameSource": { "enum": ["tag", "controller"] },
+    "rootFolderName": { "type": "string" },
+    "schemaFolderId": { "type": "integer", "minimum": 0 },
+    "helperProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "enumFieldDoc": { "type": "boolean" }
+      }
+    },
+    "dependencyRepos": { "type": "array", "items": { "type": "string" } },
+    "dependencyJars": { "type": "array", "items": { "type": "string" } },
+    "timeoutMs": { "type": "number", "exclusiveMinimum": 0 }
+  },
+  "$defs": {
+    "conflictBehavior": {
+      "enum": ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"]
+    }
+  }
+}
