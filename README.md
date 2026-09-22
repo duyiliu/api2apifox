@@ -35,6 +35,8 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 
 真正同步必须交互确认或显式传入 `--yes`；Token 推荐通过 `API2APIFOX_TOKEN` 提供，不允许写入 `.api2apifox.json`。首次导入需要创建目录、接口和模型，等待上限默认 300000 毫秒，可用 `--timeout-ms` 调整；若返回 `REQUEST_TIMEOUT`，请先查询目标项目确认结果再重试。完整参数和配置示例见 [`packages/cli/README.md`](packages/cli/README.md)。
 
+> CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
+
 ## 🚀 快速上手
 
 1. 用 VS Code / Cursor 打开一个 Spring Boot 工程
