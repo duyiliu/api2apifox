@@ -34,6 +34,24 @@ api2apifox sync --project . --project-id 123456 --yes --timeout-ms 600000 --form
 
 如果同步返回 `REQUEST_TIMEOUT`，说明本地已停止等待，但 Apifox 服务端可能仍在继续导入。请先查询目标项目确认结果，不要立即重复同步。
 
+## 范围与筛选
+
+```bash
+api2apifox scan --file cah-childhealth/cah-childhealth-server/src/main/java/com/yzkj/cah/childhealth/server/modules/system/controller/SystemPingController.java
+api2apifox scan --endpoint "GET /api/users" --format json
+api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
+```
+
+- `--file <path>`：只保留该源文件里的接口，相对项目根或绝对路径均可，可重复
+- `--endpoint "METHOD PATH"`：只保留该接口（方法大写，路径与 OpenAPI 一致），可重复
+- `--include <glob>` / `--exclude <glob>`：扫描阶段的包含/排除 glob，可重复
+- `--dependency-repo <dir>` / `--dependency-jar <path>`：补充本地 Maven 仓库目录或显式依赖 jar，可重复
+
+两点容易踩坑：
+
+1. `--include` / `--exclude` **不是追加，而是整体替换**默认列表。只想额外加一条时要把默认值写全：默认 include 为 `**/src/main/java/**/*.java`，默认 exclude 为 `**/target/**`、`**/build/**`、`**/src/test/**`、`**/sample/**`、`**/.*/**`。
+2. `--file` / `--endpoint` 是**解析后过滤**，不会减少扫描量；文件多、想加快速度请用 `--include` / `--exclude` 收敛扫描范围。
+
 ## 配置文件
 
 项目根目录可创建 `.api2apifox.json`：
@@ -56,6 +74,8 @@ api2apifox sync --project . --project-id 123456 --yes --timeout-ms 600000 --form
 }
 ```
 
+> `$schema` 只用于编辑器补全与校验，按实际安装位置填写。项目内安装（`npm i -D @duyiliu/api2apifox`）时上面的路径有效；全局安装（`npm i -g`）或 `npx` 调用时项目里没有该文件，可删掉这一行，不影响 CLI 运行。
+
 Token 不允许写入配置文件。推荐使用环境变量：
 
 ```bash
@@ -71,6 +91,8 @@ $env:API2APIFOX_PROJECT_ID = "123456"
 ```
 
 配置优先级：CLI 参数 > 环境变量 > `.api2apifox.json` > 默认值。
+
+本配置只作用于 CLI：它与 VS Code 扩展「ApiGen for Apifox」的 `apifoxHelper.*` 设置（以及扩展 SecretStorage 中的令牌）**相互独立**，两边需分别配置，改一边不会影响另一边。反过来，扩展也不会读取本文件。
 
 `timeoutMs` 可在配置文件中设置，用于慢速网络或大型项目：
 

@@ -325,24 +325,115 @@ function detectRequestedFormat(argv: string[]): "text" | "json" {
   return "text";
 }
 
+const DEFAULT_INCLUDE_TEXT = "**/src/main/java/**/*.java";
+const DEFAULT_EXCLUDE_TEXT = "**/target/**、**/build/**、**/src/test/**、**/sample/** 等 5 项";
+
+/** 公共筛选参数说明：多个命令共用，避免各命令帮助文案彼此漂移 */
+const FILTER_HELP = `  --file <path>             只保留该源文件（相对项目根或绝对路径）里的接口，可重复
+  --endpoint <METHOD PATH>  只保留该接口，如 "GET /api/users"，可重复
+  --include <glob>          扫描包含的 glob，可重复；传入即整体替换默认值 ${DEFAULT_INCLUDE_TEXT}
+  --exclude <glob>          扫描排除的 glob，可重复；传入即整体替换默认值 ${DEFAULT_EXCLUDE_TEXT}`;
+
+const COMMON_HELP = `  --project <dir>           项目根目录，默认当前目录
+  --config <file>           配置文件，默认 <project>/.api2apifox.json
+  --format text|json        输出格式，默认 text；json 时 stdout 只输出一个 JSON 信封`;
+
+const HELP_FLAG = `  -h, --help                显示帮助`;
+
+const FILTER_NOTE = `说明:
+  --file / --endpoint 是解析后过滤，不会减少扫描量；想加快速度请用 --include / --exclude 收敛范围。
+  --include / --exclude 不是追加：传入即整体替换默认列表，需要保留默认范围时请显式写全。`;
+
 function helpText(command?: CliOptions["command"]): string {
   if (command) {
     return commandHelp(command);
   }
-  return `api2apifox ${VERSION}\n\n用法:\n  api2apifox <command> [options]\n\n命令:\n  scan     扫描 Java 项目并输出接口摘要\n  export   生成 OpenAPI JSON 文件\n  sync     预检或同步到 Apifox\n  config   输出最终配置及来源（Token 仅显示是否存在）\n\n公共参数:\n  --project <dir>          项目根目录，默认当前目录\n  --config <file>          配置文件，默认 .api2apifox.json\n  --format text|json       输出格式\n  --file <path>            筛选源文件，可重复\n  --endpoint <METHOD PATH> 筛选接口，可重复\n  --timeout-ms <ms>        Apifox 请求等待上限，默认 300000\n  --help                   显示帮助\n  --version                显示版本\n\n运行 api2apifox <command> --help 查看命令参数。`;
+  return `api2apifox ${VERSION}
+
+用法:
+  api2apifox <command> [options]
+
+命令:
+  scan     扫描 Java 项目并输出接口摘要（只读，不联网）
+  export   生成 OpenAPI JSON 文件（只读，不联网）
+  sync     --dry-run 预检，或真正同步到 Apifox
+  config   输出最终配置及其来源（Token 只显示是否已配置）
+
+公共参数:
+${COMMON_HELP}
+${FILTER_HELP}
+  --dependency-repo <dir>   额外的本地 Maven 仓库目录，可重复（传入即替换配置值）
+  --dependency-jar <path>   显式依赖 jar 的绝对路径，可重复（传入即替换配置值）
+  --timeout-ms <ms>         Apifox 请求等待上限，默认 300000
+${HELP_FLAG}
+  -v, --version             显示版本
+
+退出码:
+  0 成功        2 参数/配置/确认错误   3 没有 Java 文件或目标接口
+  4 鉴权/权限   5 网络/超时/服务错误   6 导入部分失败
+  7 本地 I/O 或内部错误              130 取消
+
+配置优先级: 命令行参数 > API2APIFOX_* 环境变量 > .api2apifox.json > 默认值
+
+运行 api2apifox <command> --help 查看该命令的完整参数。`;
 }
 
 function commandHelp(command: NonNullable<CliOptions["command"]>): string {
-  const common = `\n公共筛选:\n  --file <path>\n  --endpoint <METHOD PATH>\n  --include <glob>\n  --exclude <glob>`;
   switch (command) {
     case "scan":
-      return `api2apifox scan --project . [--format json]${common}`;
+      return `api2apifox scan [options]
+
+扫描 Java 项目并输出接口摘要。只读：不写文件、不联网。
+
+选项:
+${COMMON_HELP}
+${FILTER_HELP}
+${HELP_FLAG}
+
+${FILTER_NOTE}
+  没有匹配到接口时退出码为 3。`;
     case "export":
-      return `api2apifox export --project . [--output openapi.gen.json] [--force] [--stdout]${common}`;
+      return `api2apifox export [options]
+
+把扫描结果导出为 OpenAPI 3.0 JSON。只读：不联网。
+
+选项:
+${COMMON_HELP}
+  -o, --output <file>       输出文件，默认取配置 exportPath（openapi.gen.json）
+  --force                   目标文件已存在时覆盖
+  --stdout                  把 OpenAPI 直接写到 stdout（不能与 --format json 同时使用）
+${FILTER_HELP}
+${HELP_FLAG}
+
+${FILTER_NOTE}`;
     case "sync":
-      return `api2apifox sync --project . [--dry-run | --yes] [--project-id <id>] [--token <token>] [--timeout-ms <ms>]${common}`;
+      return `api2apifox sync [options]
+
+把接口同步到 Apifox；加 --dry-run 只预检、不写入。
+
+选项:
+${COMMON_HELP}
+  --dry-run                 只预检，不写入 Apifox（无需 token）
+  -y, --yes                 跳过交互确认；非交互环境必须显式传入
+  --project-id <id>         目标 Apifox 项目 ID
+  --token <token>           Apifox 访问令牌，推荐改用 API2APIFOX_TOKEN 环境变量
+  --endpoint-conflict <模式> 接口冲突处理：OVERWRITE_EXISTING | AUTO_MERGE | KEEP_EXISTING | CREATE_NEW
+  --schema-conflict <模式>   数据模型冲突处理：取值同上
+  --timeout-ms <ms>         等待上限，默认 300000；首次全量导入偏慢，可调大
+${FILTER_HELP}
+${HELP_FLAG}
+
+${FILTER_NOTE}
+  返回 REQUEST_TIMEOUT 表示本地已停止等待，服务端可能仍在导入：请先查询目标项目确认结果，不要立即重试。`;
     case "config":
-      return "api2apifox config --project . [--format json]";
+      return `api2apifox config [options]
+
+输出每个配置字段的最终值与来源（default / file:... / env:... / cli），
+Token 只显示是否已配置，不输出明文。
+
+选项:
+${COMMON_HELP}
+${HELP_FLAG}`;
   }
 }
 
