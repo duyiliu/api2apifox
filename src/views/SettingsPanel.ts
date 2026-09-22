@@ -701,6 +701,7 @@ export class SettingsPanel {
   </div>
 
   <script nonce="${nonce}">
+    // 本段 JS 位于 TS 模板字面量内:正则里的反斜杠必须写成 \\,单写 \\/ 会被模板吞成 // 而变成注释
     const vscode = acquireVsCodeApi();
 
     // 状态与缓存
@@ -744,7 +745,7 @@ export class SettingsPanel {
     function formSignature() {
       return JSON.stringify({
         token: inputToken.value.trim(),
-        apiBaseUrl: inputBaseUrl.value.trim().replace(/\/+$/, ''),
+        apiBaseUrl: inputBaseUrl.value.trim().replace(/\\/+$/, ''),
         projectId: Number(selectProject.value) || 0,
         endpointConflictBehavior: selectEndpointConflict.value,
         schemaConflictBehavior: selectSchemaConflict.value,
@@ -882,9 +883,10 @@ export class SettingsPanel {
     function updateBindingDesc() {
       const teamOpt = selectTeam.selectedOptions[0];
       const projOpt = selectProject.selectedOptions[0];
-      const teamName = teamOpt && teamOpt.value ? teamOpt.textContent : '';
+      // 选项文本自带「(ID: n)」后缀,这里剥掉后另附 ID,避免「儿童保健 (ID: 77)（ID: 77）」这类重复
+      const teamName = teamOpt && teamOpt.value ? teamOpt.textContent.replace(/ \\(ID: \\d+\\)$/, '') : '';
       const projId = Number(selectProject.value) || 0;
-      const projName = projOpt && projId > 0 ? projOpt.textContent : '';
+      const projName = projOpt && projId > 0 ? projOpt.textContent.replace(/ \\(ID: \\d+\\)$/, '') : '';
 
       if (projId > 0) {
         const prefix = document.createTextNode('当前已选：');
@@ -936,7 +938,7 @@ export class SettingsPanel {
     }
 
     function connectionKey() {
-      return inputToken.value.trim() + '\n' + inputBaseUrl.value.trim().replace(/\/+$/, '');
+      return inputToken.value.trim() + '\\n' + inputBaseUrl.value.trim().replace(/\\/+$/, '');
     }
 
     function invalidateConnection() {
