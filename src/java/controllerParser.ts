@@ -599,7 +599,7 @@ function methodSignature(site: TypeSite, method: CstNode): string {
     }
     const ref = parseTypeText(nodeText(pf.source, typeNode));
     const name = ref.name;
-    const resolvedName = name.includes(".")
+    const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
       ? name
       : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
     const varargs = !!regular && childNode(fp, "variableArityParameter") !== undefined;

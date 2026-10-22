@@ -49,7 +49,8 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
   };
   const output = hasFilter
     ? analyzeSubset(scanned.files, options, (endpoint) => {
-        const fileMatch = fileSelectors.size === 0 || fileSelectors.has(normalizeFsPath(endpoint.fsPath));
+        const fileMatch = fileSelectors.size === 0 || fileSelectors.has(normalizeFsPath(endpoint.fsPath)) ||
+          (!!endpoint.ownerFsPath && fileSelectors.has(normalizeFsPath(endpoint.ownerFsPath)));
         const endpointMatch = endpointSelectors.size === 0 || endpointSelectors.has(`${endpoint.method.toUpperCase()} ${normalizeEndpointPath(endpoint.path)}`);
         return fileMatch && endpointMatch;
       })

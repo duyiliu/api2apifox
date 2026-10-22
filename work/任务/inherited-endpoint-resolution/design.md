@@ -1,6 +1,6 @@
 # 继承接口解析:抽象父类/接口声明的端点归属具体 Controller
 
-> 状态:已实现(128 测试全绿),2026-10-22
+> 状态:已实现(134 核心测试、10 CLI 测试全绿),2026-10-22
 > 背景:在真实项目 child-adolescent-health-backend(Ext Plus 框架)中,
 > `AbstractScaleController`(抽象基类,无 `@RestController`、无类级 `@RequestMapping`)声明了
 > `@GetMapping("record") public ResponseDto<AssessmentRecordResponse> getScaleRecord(...)`,
@@ -44,20 +44,21 @@ IDEA 版插件不开源(基于 easy-api 定制),以 [tangcent/easy-api](https://
 
 - **D1 只做源码内继承**:继承链只能追溯到工作区源码中可定位的顶层类型;依赖 jar 内的父类(如框架基类)无方法源码,不参与。
   非顶层(嵌套)类型不做继承展开,与 `parseControllers` 的既有扫描范围一致。
-- **D2 子类覆写优先,但不吞掉父类映射**:按「方法名 + 形参类型简单名」识别覆写;
+- **D2 子类覆写优先,但不吞掉父类映射**:按「方法名 + 规范化参数类型(含数组维度)」识别覆写,基本类型不拼包名;
   只有**产出端点**(命中映射注解且未被 hidden/规则忽略)的声明才占用签名,因此子类覆写未重声明映射时,
   父类声明继续产出(对齐 easy-api `superMethods()` 回退)。覆写并重声明映射时只保留子类声明。
 - **D3 类级前缀不叠加**:取继承链(具体类 → 父类 BFS → 接口)上最近的一处 `@RequestMapping` / `@Path`,
   与 Spring 的合并注解口径一致;Feign 的 `@FeignClient(path)` 同理。
 - **D4 声明位置与归属分离**:`fsPath`/`methodRange` 指向方法真实声明处(父类文件,保证跳转到定义准确),
   `ownerFsPath` 指向具体 Controller 文件(保证「同步当前文件」不丢接口);`controller`/`operationId`/`tag` 一律取具体类。
+  扩展与 CLI 文件筛选均同时接受声明文件和具体 Controller 文件。
 - **D5 边界**:覆写且未重声明映射时,参数与返回值按**父类声明**解析(而非 easy-api 的「子类参数 + 沿链回查注解」);
   泛型父类的形参不做实例化绑定,保持既有的「不解析泛型继承」能力边界。
 
 ## 5. 验证
 
-- `npm test`:128 用例全绿;新增同名重载回归用例覆盖参数全限定名区分。
-- 真实工程端到端(469 个 Java 文件):接口数 121 → 127,新增 6 个继承端点,
+- 2026-10-22 复审回归:`npm test` 134/134,CLI 测试 10/10;覆盖八种基本类型的跨包覆写以及 CLI 按具体 Controller/声明文件筛选继承接口。
+- 初次实现时的真实工程端到端(469 个 Java 文件):接口数 121 → 127,新增 6 个继承端点,
   如 `GET /assessment/visits/{visitId}/scales/CARS/record <- CarsScaleController.getScaleRecord`
   (`declaringType=AbstractScaleController`,`fsPath=AbstractScaleController.java`),
   摘要/路径参数/响应 `$ref` 均正常,告警为 0。

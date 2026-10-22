@@ -1,6 +1,6 @@
 # 嵌套类型按 Java 作用域解析 + 同名模型 `_N` 后缀
 
-> 状态:已实现(125 测试全绿),2026-09-22
+> 状态:已实现(134 核心测试、10 CLI 测试全绿),2026-10-22
 > 背景:在真实项目 child-adolescent-health-backend(Ext Plus 框架)中,
 > `SpecialVisitExamProjectSaveRequest.ExamProject`(嵌套 DTO)与
 > `modules.exam.model.entity.ExamProject`(顶层实体)简单名相同,
@@ -41,15 +41,18 @@ IDEA 版插件不开源,官方文档说明其「基于 [easy-api](https://github
 
 ## 4. 关键决策
 
-- **D1 作用域优先于顶层**:类体内简单名先查 `nested.get("外层链.简单名")`,再由内向外、最后回退顶层;对齐 PSI。
+- **D1 作用域优先于顶层**:类体内简单名先查 `nested.get("外层链.简单名")`,作用域保存完整成员路径(如 `Outer.Inner` → `Outer`),再由内向外、最后回退顶层。
   顶层同包/跨包重名仍无法区分(插件不做 import 解析),保持「后扫描覆盖」的既有边界。
-- **D2 去重键用类型身份而非显示名**:同一 `ClassInfo` 的泛型实例仍按 `qualifiedName + «实参»` 复用;
+- **D2 去重键用类型身份而非显示名**:同一 `ClassInfo` 的泛型实例按 `qualifiedName + «调用处解析后的实参身份»` 复用;
   不同身份、显示名相同、结构不同才追加 `_N`,避免修复作用域后仍复用错误 `$ref`。
-- **D3 结构相同则复用同名**(对齐 easy-api `registerWithShapeCheck`),冲突时重建一次使循环引用指向最终名字。
+- **D3 构建前预留唯一名称**:正在构建的名称与已完成名称均不可重复占用,循环引用发出后不再重命名。
+  仅对已完成且本次无循环引用的同结构模型复用名称,避免重建单个模型时遗留其他模型中的旧引用。
 
 ## 5. 验证
 
-- `npm test`:125 用例全绿(原 123 + 新增 2)。
-- 真实工程端到端(439 个 Java 文件):
+- 2026-10-22 复审回归:`npm test` 134/134,CLI 测试 10/10;覆盖多层作用域、泛型包装与继承、同名双向递归(两个入口方向)及非递归同结构复用。
+
+- 初次实现时:`npm test` 125 用例全绿(原 123 + 新增 2)。
+- 初次实现时的真实工程端到端(439 个 Java 文件):
   `SpecialVisitExamProjectSaveRequest.examProjects.items -> #/components/schemas/ExamProject`,
   该 `ExamProject` 的 properties 为 `{projectCode}`(嵌套 DTO),实体未被任何接口引用故不产生 `_2`。

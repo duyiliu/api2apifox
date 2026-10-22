@@ -560,3 +560,124 @@ public class Ctrl {
   assert.ok("nestedOnly" in schemas[itemRef.split("/").pop()!].properties!);
 });
 
+function analyzeJavaSources(sources: Record<string, string>) {
+  return analyze(Object.entries(sources).map(([name, content]) => ({ fsPath: `/mem/${name}.java`, content })), { title: "regression" });
+}
+
+test("多层嵌套类型保留完整作用域并优先于顶层同名类型", () => {
+  const result = analyzeJavaSources({
+    Item: "public class Item { private String topOnly; }",
+    Outer: `public class Outer { private Inner.Item relative; public static class Inner {
+      private Item item;
+      public static class Item { private String nestedOnly; }
+    } }`,
+    Ctrl: `import org.springframework.web.bind.annotation.*;
+      @RestController public class Ctrl {
+        @GetMapping("/deep") public Outer.Inner get() { return null; }
+        @GetMapping("/outer") public Outer outer() { return null; }
+      }`,
+  });
+  const schemas = result.spec.components!.schemas;
+  const operation = result.spec.paths["/deep"].get as any;
+  const refName = (schema: any) => schema.$ref.split("/").pop();
+  const inner = schemas[refName(operation.responses["200"].content["*/*"].schema)];
+  assert.deepEqual(Object.keys(schemas[refName(inner.properties!.item)].properties!), ["nestedOnly"]);
+  const outer = schemas[refName((result.spec.paths["/outer"].get as any).responses["200"].content["*/*"].schema)];
+  assert.deepEqual(Object.keys(schemas[refName(outer.properties!.relative)].properties!), ["nestedOnly"]);
+});
+
+test("同名模型互相递归时双向引用保持各自类型身份", () => {
+  for (const reverse of [false, true]) {
+    const result = analyzeJavaSources({
+      OuterA: "public class OuterA { public static class Node { private String aOnly; private java.util.Optional<OuterB.Node> next; } }",
+      OuterB: "public class OuterB { public static class Node { private Integer bOnly; private OuterA.Node next; } }",
+      Ctrl: `import org.springframework.web.bind.annotation.*;
+        @RestController public class Ctrl {
+          @GetMapping("/nodes") public ${reverse ? "OuterB" : "OuterA"}.Node get() { return null; }
+        }`,
+    });
+    const schemas = result.spec.components!.schemas;
+    const operation = result.spec.paths["/nodes"].get as any;
+    const refName = (schema: any) => schema.$ref.split("/").pop();
+    const start = refName(operation.responses["200"].content["*/*"].schema);
+    const next = refName(schemas[start].properties!.next);
+    assert.notEqual(start, next);
+    assert.equal(refName(schemas[next].properties!.next), start);
+    assert.ok((reverse ? "bOnly" : "aOnly") in schemas[start].properties!);
+    assert.ok((reverse ? "aOnly" : "bOnly") in schemas[next].properties!);
+  }
+});
+
+test("泛型继承与自递归字段保留已绑定的嵌套类型身份", () => {
+  const result = analyzeJavaSources({
+    Item: "public class Item { private String wrong; }",
+    Base: "public class Base<T> { private T inherited; }",
+    Child: "public class Child<T> extends Base<T> { private Child<T> next; }",
+    Ctrl: `import org.springframework.web.bind.annotation.*;
+      @RestController public class Ctrl { public static class Item { private String actual; }
+        @GetMapping("/generic-cycle") public Child<Item> get() { return null; } }`,
+  });
+  const schemas = result.spec.components!.schemas;
+  const refName = (schema: any) => schema.$ref.split("/").pop();
+  const root = (result.spec.paths["/generic-cycle"].get as any).responses["200"].content["*/*"].schema;
+  const child = schemas[refName(root)];
+  assert.equal(child.properties!.next.$ref, root.$ref);
+  assert.deepEqual(Object.keys(schemas[refName(child.properties!.inherited)].properties!), ["actual"]);
+});
+
+test("泛型包装按调用处解析同名嵌套实参且保留集合与多层泛型绑定", () => {
+  const result = analyzeJavaSources({
+    Envelope: "public class Envelope<T> { private T data; private java.util.List<T> items; private Box<T> box; }",
+    Box: "public class Box<V> { private V value; }",
+    A: `import org.springframework.web.bind.annotation.*;
+      @RestController public class A { public static class Item { private String aOnly; }
+        @GetMapping("/a") public Envelope<Item> get() { return null; } }`,
+    B: `import org.springframework.web.bind.annotation.*;
+      @RestController public class B { public static class Item { private String bOnly; }
+        @GetMapping("/b") public Envelope<Item> get() { return null; } }`,
+  });
+  const schemas = result.spec.components!.schemas;
+  const deref = (schema: any): any => schemas[schema.$ref.split("/").pop()];
+  const responses = ["/a", "/b"].map((url) => (result.spec.paths[url].get as any).responses["200"].content["*/*"].schema);
+  assert.notEqual(responses[0].$ref, responses[1].$ref);
+  for (const [i, response] of responses.entries()) {
+    const envelope = deref(response);
+    const expected = [i === 0 ? "aOnly" : "bOnly"];
+    assert.deepEqual(Object.keys(deref(envelope.properties.data).properties), expected);
+    assert.deepEqual(Object.keys(deref(envelope.properties.items.items).properties), expected);
+    assert.deepEqual(Object.keys(deref(deref(envelope.properties.box).properties.value).properties), expected);
+  }
+});
+
+test("同结构非递归嵌套模型仍复用一个 schema", () => {
+  const result = analyzeJavaSources({
+    A: `import org.springframework.web.bind.annotation.*;
+      @RestController public class A { public static class Item { private String value; }
+        @GetMapping("/a") public Item get() { return null; } }`,
+    B: `import org.springframework.web.bind.annotation.*;
+      @RestController public class B { public static class Item { private String value; }
+        @GetMapping("/b") public Item get() { return null; } }`,
+  });
+  const a = (result.spec.paths["/a"].get as any).responses["200"].content["*/*"].schema.$ref;
+  const b = (result.spec.paths["/b"].get as any).responses["200"].content["*/*"].schema.$ref;
+  assert.equal(a, b);
+  assert.equal(result.warnings.length, 0);
+});
+
+test("跨包覆写的基本类型参数不拼包名,只保留子类路由", () => {
+  for (const type of ["boolean", "byte", "short", "int", "long", "char", "float", "double"]) {
+    const result = analyzeJavaSources({
+      Base: `package base;
+        import org.springframework.web.bind.annotation.*;
+        public abstract class Base { @GetMapping("/old") public String find(@RequestParam ${type} id) { return null; } }`,
+      Child: `package api;
+        import base.Base;
+        import org.springframework.web.bind.annotation.*;
+        @RestController public class Child extends Base {
+          @Override @GetMapping("/new") public String find(@RequestParam ${type} id) { return null; }
+        }`,
+    });
+    assert.deepEqual(result.endpoints.map((endpoint) => endpoint.path), ["/new"], type);
+  }
+});
+

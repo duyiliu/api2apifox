@@ -323,13 +323,20 @@ export function buildIndex(files: ParsedFile[]): TypeIndex {
 /**
  * 按 Java 作用域查找类型:类体内对简单名的引用优先命中该类的成员类型(嵌套类型遮蔽顶层同名类型),
  * 逐层向外(内层 → 外层 → 顶层)回退;也支持显式 `Outer.Inner` / `pkg.Outer.Inner` 写法。
- * scope 为**由内向外**的外层类型简单名链(调用方可用 typeScopeOf 构造);未命中时回退顶层/依赖 jar 索引。
+ * scope 为由内向外的完整成员路径(如 Outer.Inner → Outer);未命中时回退顶层/依赖 jar 索引。
  * 与 IDEA 版基于 PSI(PsiType.resolve)的解析口径对齐。
  */
 export function resolveScopedType(index: TypeIndex, name: string, scope?: readonly string[]): ClassInfo | undefined {
   const trimmed = name.trim();
   if (!trimmed) {
     return undefined;
+  }
+  // 相对成员路径也按当前作用域补全,例如 Outer 中的 Inner.Item。
+  for (const enc of scope ?? []) {
+    const hit = index.nested.get(`${enc}.${trimmed}`);
+    if (hit) {
+      return hit;
+    }
   }
   // 显式限定名:逐段剥掉前导包名,尝试嵌套键 `Outer.Inner`
   if (trimmed.includes(".")) {
@@ -341,14 +348,7 @@ export function resolveScopedType(index: TypeIndex, name: string, scope?: readon
       }
     }
   }
-  const simple = simpleName(trimmed);
-  for (const enc of scope ?? []) {
-    const hit = index.nested.get(`${enc}.${simple}`);
-    if (hit) {
-      return hit;
-    }
-  }
-  return resolveIndexedType(index, simple);
+  return resolveIndexedType(index, simpleName(trimmed));
 }
 
 /** 类型自身的作用域链(由内向外,含自身);用于解析其字段/父类中的简单名 */
@@ -356,8 +356,8 @@ export function typeScopeOf(info: ClassInfo | undefined): string[] | undefined {
   if (!info) {
     return undefined;
   }
-  const enclosing = info.enclosing ? [...info.enclosing].reverse() : [];
-  return [info.simpleName, ...enclosing];
+  const path = [...(info.enclosing ?? []), info.simpleName];
+  return path.map((_, i) => path.slice(0, path.length - i).join("."));
 }
 
 /**

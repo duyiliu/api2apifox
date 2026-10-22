@@ -16,6 +16,42 @@ function run(args, env = {}) {
   });
 }
 
+test("运行版本与发布清单一致", () => {
+  const version = require("../package.json").version;
+  const result = run(["--version"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), version);
+  const config = run(["config", "--project", SAMPLE, "--format", "json"]);
+  assert.equal(config.status, 0, config.stderr);
+  assert.equal(JSON.parse(config.stdout).version, version);
+});
+
+test("--file 按具体 Controller 选中继承端点且不包含其他子类", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-inherited-"));
+  const files = {
+    "Base.java": 'import org.springframework.web.bind.annotation.*; public abstract class Base { @GetMapping("/items") public String list() {return null;} }',
+    "Child.java": 'import org.springframework.web.bind.annotation.*; @RestController @RequestMapping("/child") public class Child extends Base {}',
+    "Other.java": 'import org.springframework.web.bind.annotation.*; @RestController @RequestMapping("/other") public class Other extends Base {}',
+  };
+  try {
+    for (const [name, source] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), source);
+    const args = ["scan", "--project", dir, "--include", "**/*.java", "--format", "json"];
+    const full = run(args);
+    assert.equal(full.status, 0, full.stderr);
+    assert.equal(JSON.parse(full.stdout).result.endpointCount, 2);
+    const selected = run([...args, "--file", "Child.java"]);
+    assert.equal(selected.status, 0, selected.stderr);
+    const endpoints = JSON.parse(selected.stdout).result.endpoints;
+    assert.deepEqual(endpoints.map((endpoint) => endpoint.path), ["/child/items"]);
+    const declared = run([...args, "--file", "Base.java"]);
+    assert.equal(declared.status, 0, declared.stderr);
+    assert.equal(JSON.parse(declared.stdout).result.endpointCount, 2);
+  } finally {
+    for (const name of Object.keys(files)) fs.unlinkSync(path.join(dir, name));
+    fs.rmdirSync(dir);
+  }
+});
+
 test("scan JSON 输出单一成功信封", () => {
   const result = run(["scan", "--project", SAMPLE, "--format", "json"]);
   assert.equal(result.status, 0, result.stderr);

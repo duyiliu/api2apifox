@@ -55,7 +55,7 @@ function refTo(name: string): JsonSchema {
  * 不同类型的简单名相同时(如实体 `ExamProject` 与请求内嵌 `...SaveRequest.ExamProject`),
  * 首个占用简单名,后续追加 `_2`、`_3` … 并记录告警,避免后者静默复用前者的 $ref
  * (对齐 IDEA 版 easy-api `OpenApiSchemaConverter.registerWithShapeCheck` 的口径:
- * 结构完全相同才复用同一名字,否则追加 `_N` 后缀并 warn)。
+ * 非递归的已完成模型可按相同结构复用;递归模型保留预留名称,避免改变已发出的引用)。
  */
 export class SchemaRegistry {
   readonly schemas: Record<string, JsonSchema> = {};
@@ -63,10 +63,8 @@ export class SchemaRegistry {
   readonly warnings: string[] = [];
   /** 类型身份 -> 最终 schema 名 */
   private readonly byIdentity = new Map<string, string>();
-  /** 处理中的类型身份 -> 暂定名(供循环引用提前拿到 $ref) */
-  private readonly pending = new Map<string, string>();
-  /** 正在构建的类型身份(循环引用检测) */
-  private readonly building = new Set<string>();
+  /** 构建前预留唯一名称;循环引用一旦使用该名称,整个构建过程不再重命名。 */
+  private readonly pending = new Map<string, { name: string; referenced: boolean }>();
 
   /**
    * 取已存在的 $ref;不存在则用 make() 生成并登记。
@@ -78,46 +76,47 @@ export class SchemaRegistry {
     if (known) {
       return refTo(known);
     }
-    if (this.building.has(identity)) {
-      // 循环引用:用暂定名占位(make() 会围绕该名字自洽)
-      return refTo(this.pending.get(identity) ?? displayName);
+    const pending = this.pending.get(identity);
+    if (pending) {
+      pending.referenced = true;
+      return refTo(pending.name);
     }
 
-    this.building.add(identity);
-    this.pending.set(identity, displayName);
+    const { name: reserved, candidates } = this.reserveName(displayName);
+    const entry = { name: reserved, referenced: false };
+    this.pending.set(identity, entry);
     try {
-      let schema = make();
-      let name = displayName;
-      const occupied = this.schemas[name];
-      if (occupied && stableStringify(occupied) !== stableStringify(schema)) {
-        const slot = this.allocateSuffixedName(displayName, schema);
-        name = slot.name;
-        // 改为后缀名后重建,使内部循环引用指向最终名字
-        this.pending.set(identity, name);
-        schema = make();
-        if (!slot.reused) {
-          this.warnings.push(`同名类型冲突:${identity} 的结构与已有模型 ${displayName} 不同,已登记为 ${name}`);
-        }
+      const schema = make();
+      // 仅复用构建前已完成的模型;有循环引用时必须保留已经发出的名称。
+      const shape = entry.referenced ? undefined : stableStringify(schema);
+      const equivalent = shape !== undefined
+        ? candidates.find(([, existing]) => stableStringify(existing) === shape)
+        : undefined;
+      const name = equivalent?.[0] ?? reserved;
+      if (!equivalent) {
+        this.schemas[name] = schema;
       }
-      this.schemas[name] = schema;
+      if (!equivalent && name !== displayName) {
+        this.warnings.push(`同名类型冲突:${identity} 已登记为 ${name},以保留独立模型及循环引用`);
+      }
       this.byIdentity.set(identity, name);
       return refTo(name);
     } finally {
-      this.building.delete(identity);
       this.pending.delete(identity);
     }
   }
 
-  /** 找第一个空闲或结构一致的 `name_N` 槽位(N ≥ 2);reused 表示复用了已有的同结构模型 */
-  private allocateSuffixedName(baseName: string, schema: JsonSchema): { name: string; reused: boolean } {
-    for (let n = 2; ; n++) {
-      const candidate = `${baseName}_${n}`;
+  /** 已登记和正在构建的名称均不可占用,保证递归中的类型身份不会发生碰撞。 */
+  private reserveName(baseName: string): { name: string; candidates: [string, JsonSchema][] } {
+    const reserved = new Set([...this.pending.values()].map((entry) => entry.name));
+    const candidates: [string, JsonSchema][] = [];
+    for (let n = 1; ; n++) {
+      const candidate = n === 1 ? baseName : `${baseName}_${n}`;
       const existing = this.schemas[candidate];
-      if (existing === undefined) {
-        return { name: candidate, reused: false };
-      }
-      if (stableStringify(existing) === stableStringify(schema)) {
-        return { name: candidate, reused: true };
+      if (existing) {
+        candidates.push([candidate, existing]);
+      } else if (!reserved.has(candidate)) {
+        return { name: candidate, candidates };
       }
     }
   }
@@ -129,7 +128,7 @@ export interface ResolveContext {
   /** 泛型形参绑定:T -> TypeRef */
   bindings?: Map<string, TypeRef>;
   /**
-   * 当前解析位置的 Java 外层类型作用域链(**由内向外**,含当前类自身)。
+   * 当前解析位置的完整 Java 成员类型路径(**由内向外**,如 Outer.Inner → Outer)。
    * 类体内对简单名的引用优先命中成员(嵌套)类型,与 IDEA 版 PSI 解析口径一致;
    * Controller 层解析用 typeScopeOf(controllerInfo) 传入。
    */
@@ -162,9 +161,11 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
   const name = simpleName(t.name);
 
   // 泛型形参(如 Result<T> 中的 T)
-  const bound = ctx.bindings?.get(name);
+  const bound = !t.name.includes(".") ? ctx.bindings?.get(name) : undefined;
   if (bound) {
-    return resolveType(bound, ctx);
+    const bindings = new Map(ctx.bindings);
+    bindings.delete(name);
+    return resolveType(bound, { ...ctx, bindings });
   }
 
   const builtin = builtinSchema(name, t, ctx);
@@ -186,15 +187,32 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     return enumSchema(info);
   }
 
+  // 在调用处解析实参身份,防止进入包装类作用域后将 A.Item/B.Item 混为简单名 Item。
+  const instance = { ...t, args: t.args.map((arg) => bindTypeArgument(arg, ctx)) };
   const bindings = new Map<string, TypeRef>();
   info.typeParams.forEach((param, i) => {
-    if (t.args[i]) {
-      bindings.set(param, t.args[i]);
+    if (instance.args[i]) {
+      bindings.set(param, instance.args[i]);
     }
   });
-  return ctx.registry.getOrAdd(schemaIdentity(info, t), schemaName(info, t), () =>
+  return ctx.registry.getOrAdd(schemaIdentity(info, instance), schemaName(info, instance), () =>
     classSchema(info, { ...ctx, bindings })
   );
+}
+
+/** 将泛型变量替换为绑定值,并把源码类型解析成调用处的全限定名(含嵌套路径)。 */
+function bindTypeArgument(t: TypeRef, ctx: ResolveContext, resolving = new Set<string>()): TypeRef {
+  const bound = !t.name.includes(".") ? ctx.bindings?.get(t.name) : undefined;
+  if (bound && !resolving.has(t.name)) {
+    const next = new Set(resolving).add(t.name);
+    const resolved = bindTypeArgument(bound, ctx, next);
+    return { ...resolved, dims: resolved.dims + t.dims, wildcard: t.wildcard ?? resolved.wildcard };
+  }
+  const name = simpleName(t.name);
+  const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+    ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+  const info = builtin ? undefined : resolveScopedType(ctx.index, t.name, ctx.scope);
+  return { ...t, name: info?.qualifiedName ?? t.name, args: t.args.map((arg) => bindTypeArgument(arg, ctx, resolving)) };
 }
 
 /** 类型身份:全限定名 + 泛型实参(同一类型的不同泛型实例各自成模型) */
@@ -204,7 +222,8 @@ function schemaIdentity(info: ClassInfo, t: TypeRef): string {
 
 /** 期望的 schema 名:简单名 + 泛型实参 */
 function schemaName(info: ClassInfo, t: TypeRef): string {
-  return info.simpleName + genericKeyText(t);
+  const displayType = (arg: TypeRef): TypeRef => ({ ...arg, name: simpleName(arg.name), args: arg.args.map(displayType) });
+  return info.simpleName + genericKeyText({ ...t, args: t.args.map(displayType) });
 }
 
 function genericKeyText(t: TypeRef): string {
@@ -263,7 +282,7 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
       const supBindings = new Map<string, TypeRef>();
       supInfo.typeParams.forEach((p, i) => {
         if (supRef.args[i]) {
-          supBindings.set(p, supRef.args[i]);
+          supBindings.set(p, bindTypeArgument(supRef.args[i], classCtx));
         }
       });
       const supSchema = classSchema(supInfo, { ...classCtx, bindings: supBindings });
