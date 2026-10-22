@@ -29,9 +29,6 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        run: npm ci
-
       - name: Verify tag matches CLI package version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -43,6 +40,40 @@ jobs:
           fi
           echo "Publishing @duyiliu/api2apifox ${PKG_VER}"
 
+      - name: Check whether version is already published
+        id: published
+        working-directory: packages/cli
+        run: |
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VER="$(node -p "require('./package.json').version")"
+          LOOKUP="$(mktemp)"
+          trap 'rm -f "$LOOKUP" "$LOOKUP.err"' EXIT
+          if npm view "${PKG_NAME}@${PKG_VER}" version --json >"$LOOKUP" 2>"$LOOKUP.err"; then
+            echo "已存在 ${PKG_NAME}@${PKG_VER}，跳过发布"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "${PKG_NAME}@${PKG_VER} 已存在，本次跳过上传。" >> "$GITHUB_STEP_SUMMARY"
+          elif node -e 'try { process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).error?.code === "E404" ? 0 : 1); } catch { process.exit(1); }' "$LOOKUP"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$LOOKUP.err"
+            echo "::error::npm registry 查询失败，停止发布。"
+            exit 1
+          fi
+
+      - name: Check npm publish credentials
+        if: steps.published.outputs.exists == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::缺少仓库 secret NPM_TOKEN，无法自动发布 npm 包。"
+            exit 1
+          fi
+          npm whoami >/dev/null
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Type check CLI and shared core
         run: npm run typecheck:cli
 
@@ -52,26 +83,20 @@ jobs:
       - name: Run CLI integration tests
         run: npm test --workspace @duyiliu/api2apifox
 
-      - name: Inspect publish contents
-        working-directory: packages/cli
-        run: npm pack --dry-run
-
-      - name: Check whether version is already published
-        id: published
+      - name: Pack and verify publish artifact
         working-directory: packages/cli
         run: |
-          PKG_NAME="$(node -p "require('./package.json').name")"
-          PKG_VER="$(node -p "require('./package.json').version")"
-          if npm view "${PKG_NAME}@${PKG_VER}" version >/dev/null 2>&1; then
-            echo "已存在 ${PKG_NAME}@${PKG_VER}，跳过发布"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          PACK_DIR="$(mktemp -d)"
+          npm pack --pack-destination "$PACK_DIR"
+          TARBALL="$(find "$PACK_DIR" -maxdepth 1 -name '*.tgz' -print -quit)"
+          node verify-package.js "$TARBALL"
+          echo "CLI_TARBALL=$TARBALL" >> "$GITHUB_ENV"
 
       - name: Publish to npm
         if: steps.published.outputs.exists == 'false'
         working-directory: packages/cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: |
+          npm publish "$CLI_TARBALL" --access public
+          echo "已提交 ${CLI_TARBALL##*/} 至 npm registry。" >> "$GITHUB_STEP_SUMMARY"

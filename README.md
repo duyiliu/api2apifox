@@ -197,7 +197,7 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
 - **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限 120,超出部分告警);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的**顶层**重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;插件不做 import 解析,无法区分同名顶层类型)
-- 类体/接口体内的**嵌套类型按 Java 作用域解析**:字段类型里的简单名优先命中本类的成员(嵌套)类型,再由内向外回退到顶层类型(与 IDEA 版基于 PSI 的 `PsiType.resolve` 口径一致),因此嵌套 DTO 与顶层实体同名不会互相错引;同名但结构不同的模型会按 IDEA/easy-api 口径追加 `_2`、`_3` … 后缀并告警
+- 类体/接口体内的**嵌套类型按 Java 作用域解析**:支持完整的多层成员路径及泛型包装中的嵌套实参,字段类型里的简单名优先命中本类成员,再由内向外回退到顶层类型。不同类型同名时追加 `_2`、`_3` … 并告警;已完成的非递归同结构模型可复用,递归模型保留独立名称以保证引用准确
 - **隐藏目录与工作区内另一处 git 检出不参与扫描**:工作区根下任一 `.xxx` 目录的内容均跳过,因此 `.kilo/worktrees`、`.claude/worktrees` 和其他 AI 工具的隐藏工作目录不会产生重复接口；嵌套 git 检出同样按 `.git` 标记跳过。要扫描某个工作树,请将该工作树根目录作为独立工作区或多根工作区文件夹打开
 - 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
 - 继承接口的**泛型形参不做实例化绑定**:`abstract class Base<T>` 的方法签名里引用 `T` 时按未绑定类型处理(如 `T` 直接落在 `$ref`/类型名上);抽象基类声明为具体类型的场景不受影响
@@ -213,6 +213,10 @@ npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
 ```
 
 在 VS Code 中调试:打开本目录后 F5(Extension Development Host),用 `sample/` 目录作为测试工作区。
+
+CLI 的 `npm pack` 会通过 `prepack` 自动构建并校验运行版本。维护者应使用
+`node packages/cli/verify-package.js <tarball.tgz>` 校验最终包,再发布同一份 tarball。
+CLI 工作流只认 `cli-v*` 标签,需要仓库 secret `NPM_TOKEN`;缺失时会在构建前明确报错。
 
 **发版流程(维护者)**:仓库配置了 GitHub Actions 工作流 `.github/workflows/release.yml`,推送 `v*` tag 后自动完成:类型检查 → 单测 → 打包 vsix → 发布到 VS Code Marketplace → 创建 GitHub Release(附带 vsix)。首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`(Azure DevOps PAT,scope 勾选 Marketplace → Manage)。日常发版:
 
