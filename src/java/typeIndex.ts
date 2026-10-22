@@ -137,17 +137,47 @@ function findFirstType(node: CstNode): CstNode | undefined {
   );
 }
 
-function qualify(source: string, simpleName: string): string {
+/** 取 classDeclaration/interfaceDeclaration 内层的实际类型声明节点 */
+function innerTypeDeclOf(decl: CstNode): CstNode | undefined {
+  return (
+    childNode(decl, "normalClassDeclaration") ??
+    childNode(decl, "enumDeclaration") ??
+    childNode(decl, "recordDeclaration") ??
+    childNode(decl, "normalInterfaceDeclaration")
+  );
+}
+
+/** 取类型声明的体节点(classBody/interfaceBody/enumBody/recordBody) */
+function typeBodyOf(decl: CstNode): CstNode | undefined {
+  const inner = innerTypeDeclOf(decl);
+  if (!inner) {
+    return undefined;
+  }
+  return (
+    childNode(inner, "classBody") ??
+    childNode(inner, "interfaceBody") ??
+    childNode(inner, "enumBody") ??
+    childNode(inner, "recordBody")
+  );
+}
+
+/** 全限定名:package + 外层类型链 + 简单名(嵌套类型如 `pkg.Outer.Inner`) */
+function qualify(source: string, simpleName: string, enclosing: string[] = []): string {
   const m = /^\s*package\s+([\w.]+)\s*;/m.exec(source);
-  return m ? `${m[1]}.${simpleName}` : simpleName;
+  return [m?.[1], ...enclosing, simpleName].filter(Boolean).join(".");
 }
 
 /**
  * 由 classDeclaration / interfaceDeclaration 构建 ClassInfo(class/enum/record/interface)。
- * javadocCarriers:注释可能挂靠的外层节点(顶层为 typeDeclaration,嵌套为 classBodyDeclaration /
- * interfaceMemberDeclaration),按“由外向内”的顺序传入。
+ * enclosing:外层类型简单名链(由外向内);javadocCarriers:注释可能挂靠的外层节点(顶层为 typeDeclaration,
+ * 嵌套为 classBodyDeclaration / interfaceMemberDeclaration),按“由外向内”的顺序传入。
  */
-function classInfoOf(decl: CstNode, source: string, ...javadocCarriers: (CstNode | undefined)[]): ClassInfo | undefined {
+function classInfoOf(
+  decl: CstNode,
+  source: string,
+  enclosing: string[] = [],
+  ...javadocCarriers: (CstNode | undefined)[]
+): ClassInfo | undefined {
   const normal = childNode(decl, "normalClassDeclaration");
   const enumDecl = childNode(decl, "enumDeclaration");
   const recordDecl = childNode(decl, "recordDeclaration");
@@ -162,7 +192,8 @@ function classInfoOf(decl: CstNode, source: string, ...javadocCarriers: (CstNode
   }
   const base = {
     simpleName,
-    qualifiedName: qualify(source, simpleName),
+    qualifiedName: qualify(source, simpleName, enclosing),
+    ...(enclosing.length ? { enclosing: [...enclosing] } : {}),
     annotations: collectAnnotations(annotationsOf(decl, inner), source),
     javadoc: javadocOf(...javadocCarriers, decl, inner),
   };
@@ -207,14 +238,73 @@ function classInfoOf(decl: CstNode, source: string, ...javadocCarriers: (CstNode
   };
 }
 
-/** 构建类型索引:顶层声明 + 类/接口/record 体内的嵌套(静态)类型声明 */
+/** 取类/接口/枚举体中的直接成员类型声明及其中间载体节点(供 javadoc 挂靠) */
+function directMemberTypeDecls(body: CstNode | undefined): { decl: CstNode; carrier: CstNode }[] {
+  const out: { decl: CstNode; carrier: CstNode }[] = [];
+  const consider = (carrier: CstNode) => {
+    const member =
+      childNode(carrier, "classMemberDeclaration") ?? childNode(carrier, "interfaceMemberDeclaration") ?? carrier;
+    const decl = childNode(member, "classDeclaration") ?? childNode(member, "interfaceDeclaration");
+    if (decl) {
+      out.push({ decl, carrier });
+    }
+  };
+  for (const bd of childNodes(body, "classBodyDeclaration")) {
+    consider(bd);
+  }
+  for (const im of childNodes(body, "interfaceMemberDeclaration")) {
+    consider(im);
+  }
+  // 枚举体:`{ A, B; class Inner {...} }` 的成员挂在 enumBodyDeclarations 下
+  const enumBodyDecls = childNode(body, "enumBodyDeclarations");
+  if (enumBodyDecls) {
+    for (const bd of childNodes(enumBodyDecls, "classBodyDeclaration")) {
+      consider(bd);
+    }
+  }
+  return out;
+}
+
+/**
+ * 递归登记一个类型声明(顶层或嵌套)及其成员类型。
+ * 嵌套类型同时进入 nested(始终登记,键为 `Outer.Inner`)与 types(仅当简单名未被占用,维持顶层优先)。
+ */
+function indexTypeDecl(
+  pf: ParsedFile,
+  decl: CstNode,
+  carrier: CstNode | undefined,
+  enclosing: string[],
+  out: { types: Map<string, ClassInfo>; nested: Map<string, ClassInfo>; names: string[] }
+): void {
+  const info = classInfoOf(decl, pf.source, enclosing, carrier);
+  if (!info) {
+    return;
+  }
+  if (enclosing.length) {
+    out.nested.set([...enclosing, info.simpleName].join("."), info);
+    if (!out.types.has(info.simpleName)) {
+      out.types.set(info.simpleName, info);
+      out.names.push(info.simpleName);
+    }
+  } else {
+    out.types.set(info.simpleName, info);
+    out.names.push(info.simpleName);
+  }
+  const body = typeBodyOf(decl);
+  for (const member of directMemberTypeDecls(body)) {
+    indexTypeDecl(pf, member.decl, member.carrier, [...enclosing, info.simpleName], out);
+  }
+}
+
+/** 构建类型索引:顶层声明 + 类/接口/record/枚举体内的嵌套类型声明(递归) */
 export function buildIndex(files: ParsedFile[]): TypeIndex {
   const types = new Map<string, ClassInfo>();
+  const nested = new Map<string, ClassInfo>();
   const byFile = new Map<string, string[]>();
 
   for (const pf of files) {
     const names: string[] = [];
-    const indexed = new Set<CstNode>();
+    const out = { types, nested, names };
 
     // ---- 顶层声明 ----
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
@@ -222,35 +312,52 @@ export function buildIndex(files: ParsedFile[]): TypeIndex {
       if (!decl) {
         continue;
       }
-      const info = classInfoOf(decl, pf.source, typeDecl);
-      if (info) {
-        indexed.add(decl);
-        types.set(info.simpleName, info);
-        names.push(info.simpleName);
-      }
-    }
-
-    // ---- 嵌套声明:类体内的 class/interface(含 enum/record)、接口体内的 class/interface ----
-    // 形如 `PatientSaveRequest.HealthProfileRequest` 的请求模型依赖于此;同名时顶层声明优先。
-    const bodyDecls = [...findAll(pf.cst, "classBodyDeclaration"), ...findAll(pf.cst, "interfaceMemberDeclaration")];
-    for (const bodyDecl of bodyDecls) {
-      const member = childNode(bodyDecl, "classMemberDeclaration") ?? bodyDecl;
-      const decl = childNode(member, "classDeclaration") ?? childNode(member, "interfaceDeclaration");
-      if (!decl || indexed.has(decl)) {
-        continue;
-      }
-      const info = classInfoOf(decl, pf.source, bodyDecl);
-      if (!info || types.has(info.simpleName)) {
-        continue;
-      }
-      indexed.add(decl);
-      types.set(info.simpleName, info);
-      names.push(info.simpleName);
+      indexTypeDecl(pf, decl, typeDecl, [], out);
     }
 
     byFile.set(pf.fsPath, names);
   }
-  return { types, byFile };
+  return { types, nested, byFile };
+}
+
+/**
+ * 按 Java 作用域查找类型:类体内对简单名的引用优先命中该类的成员类型(嵌套类型遮蔽顶层同名类型),
+ * 逐层向外(内层 → 外层 → 顶层)回退;也支持显式 `Outer.Inner` / `pkg.Outer.Inner` 写法。
+ * scope 为**由内向外**的外层类型简单名链(调用方可用 typeScopeOf 构造);未命中时回退顶层/依赖 jar 索引。
+ * 与 IDEA 版基于 PSI(PsiType.resolve)的解析口径对齐。
+ */
+export function resolveScopedType(index: TypeIndex, name: string, scope?: readonly string[]): ClassInfo | undefined {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  // 显式限定名:逐段剥掉前导包名,尝试嵌套键 `Outer.Inner`
+  if (trimmed.includes(".")) {
+    const parts = trimmed.split(".");
+    for (let i = 0; i < parts.length - 1; i++) {
+      const hit = index.nested.get(parts.slice(i).join("."));
+      if (hit) {
+        return hit;
+      }
+    }
+  }
+  const simple = simpleName(trimmed);
+  for (const enc of scope ?? []) {
+    const hit = index.nested.get(`${enc}.${simple}`);
+    if (hit) {
+      return hit;
+    }
+  }
+  return resolveIndexedType(index, simple);
+}
+
+/** 类型自身的作用域链(由内向外,含自身);用于解析其字段/父类中的简单名 */
+export function typeScopeOf(info: ClassInfo | undefined): string[] | undefined {
+  if (!info) {
+    return undefined;
+  }
+  const enclosing = info.enclosing ? [...info.enclosing].reverse() : [];
+  return [info.simpleName, ...enclosing];
 }
 
 /**

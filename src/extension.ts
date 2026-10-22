@@ -858,7 +858,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath);
+        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
       }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
     })
   );

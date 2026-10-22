@@ -64,6 +64,7 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 - **Spring Cloud OpenFeign**:`@FeignClient` 接口
 - **JAX-RS**:`@Path/@GET/@POST/@QueryParam/@PathParam/@HeaderParam/@DefaultValue/@Consumes/@Produces`
 - **Actuator 自定义端点**:`@Endpoint` + `@ReadOperation/@WriteOperation/@DeleteOperation` + `@Selector`
+- **继承接口**:方法声明在抽象父类/接口上时按具体 Controller 展开(子类覆写优先;覆写未重声明映射时回退父类声明);类级路径前缀取继承链上最近的一处(Spring `findMergedAnnotation` 口径,不叠加)
 
 > 冲突规则:同 method+path 冲突时 Spring MVC Controller 优先于 Feign/JAX-RS 声明;同方法多路径时 operationId 自动加序号。
 
@@ -195,9 +196,11 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
 - **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限 120,超出部分告警);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
-- 同项目内不同包下的重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;静态内部类同样以简单名索引,与顶层类型重名时顶层优先)
+- 同项目内不同包下的**顶层**重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;插件不做 import 解析,无法区分同名顶层类型)
+- 类体/接口体内的**嵌套类型按 Java 作用域解析**:字段类型里的简单名优先命中本类的成员(嵌套)类型,再由内向外回退到顶层类型(与 IDEA 版基于 PSI 的 `PsiType.resolve` 口径一致),因此嵌套 DTO 与顶层实体同名不会互相错引;同名但结构不同的模型会按 IDEA/easy-api 口径追加 `_2`、`_3` … 后缀并告警
 - **隐藏目录与工作区内另一处 git 检出不参与扫描**:工作区根下任一 `.xxx` 目录的内容均跳过,因此 `.kilo/worktrees`、`.claude/worktrees` 和其他 AI 工具的隐藏工作目录不会产生重复接口；嵌套 git 检出同样按 `.git` 标记跳过。要扫描某个工作树,请将该工作树根目录作为独立工作区或多根工作区文件夹打开
 - 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
+- 继承接口的**泛型形参不做实例化绑定**:`abstract class Base<T>` 的方法签名里引用 `T` 时按未绑定类型处理(如 `T` 直接落在 `$ref`/类型名上);抽象基类声明为具体类型的场景不受影响
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布

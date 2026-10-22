@@ -237,3 +237,326 @@ public class Ctrl {
   assert.equal(schema.properties!.createdBy.description, "创建人");
 });
 
+test("嵌套类与顶层实体同名时按 Java 作用域引用嵌套类型,同名不同结构追加 _2 后缀并告警", () => {
+  // 回归:类型索引只按简单名索引导致请求体里的 ExamProject 被顶层实体覆盖(错引实体字段)
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/SpecialVisitExamProjectSaveRequest.java",
+      content: `
+package com.example.doctor;
+
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import jakarta.validation.constraints.NotBlank;
+import java.util.List;
+
+@ApiModel("特殊就诊开立体检项目请求")
+public class SpecialVisitExamProjectSaveRequest {
+  @ApiModelProperty("本次开立的体检项目列表")
+  private List<ExamProject> examProjects;
+
+  @ApiModel("特殊就诊待开立体检项目")
+  public static class ExamProject {
+    @ApiModelProperty("本地体检项目编码")
+    @NotBlank
+    private String projectCode;
+  }
+}
+`,
+    },
+    {
+      fsPath: "/mem/ExamProject.java",
+      content: `
+package com.example.exam;
+
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+
+@ApiModel("本地体检项目定义")
+public class ExamProject {
+  @ApiModelProperty("本地项目编码")
+  private String projectCode;
+
+  @ApiModelProperty("本地项目名称")
+  private String projectName;
+}
+`,
+    },
+    {
+      fsPath: "/mem/DoctorController.java",
+      content: `
+package com.example.doctor;
+
+import com.example.exam.ExamProject;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+public class DoctorController {
+  /** 开立体检项目 */
+  @PostMapping("/special/exam-projects")
+  public void save(@RequestBody SpecialVisitExamProjectSaveRequest req) { }
+
+  /** 查询体检项目定义 */
+  @GetMapping("/exam-projects/{id}")
+  public ExamProject get(@PathVariable Long id) { return null; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const nameOf = (ref: string) => ref.split("/").pop()!;
+
+  // 请求体字段引用的是嵌套 DTO(只有 projectCode),而不是同名实体的字段
+  const post = res.spec.paths["/special/exam-projects"].post as Record<string, any>;
+  const outer = schemas[nameOf(post.requestBody.content["application/json"].schema.$ref)];
+  const reqRef = outer.properties!.examProjects.items!.$ref!;
+  assert.deepEqual(Object.keys(schemas[nameOf(reqRef)].properties!), ["projectCode"]);
+
+  // 实体响应引用另一份模型(含 projectName),两者不可混用
+  const get = res.spec.paths["/exam-projects/{id}"].get as Record<string, any>;
+  const entityRef: string = get.responses["200"].content["*/*"].schema.$ref;
+  assert.notEqual(nameOf(entityRef), nameOf(reqRef));
+  assert.ok("projectName" in schemas[nameOf(entityRef)].properties!);
+
+  // 简单名冲突按 IDEA/easy-api 口径追加 _2 后缀并产生告警
+  const clashNames = Object.keys(schemas).filter((k) => k === "ExamProject" || k.startsWith("ExamProject_"));
+  assert.equal(clashNames.length, 2);
+  assert.ok(res.warnings.some((w) => w.includes("同名类型冲突") && w.includes("ExamProject")));
+});
+
+test("抽象父类声明的接口方法被子类继承:路径/归属/覆盖与修饰符口径", () => {
+  // 回归:父类方法与类级 @RequestMapping 此前完全不参与子类解析(真实工程 AbstractScaleController 案例)
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/BaseCrudController.java",
+      content: `
+package com.example.assessment;
+
+import org.springframework.web.bind.annotation.*;
+
+@RequestMapping("/base")
+public abstract class BaseCrudController {
+  /** 查询列表 */
+  @GetMapping("items")
+  public String list() { return null; }
+
+  /** 私有方法不应被继承 */
+  @GetMapping("secret")
+  private void secret() { }
+
+  /** 静态方法不应被继承 */
+  @GetMapping("static-hit")
+  public static void staticHit() { }
+
+  /** 被覆写的映射(注解留在父类) */
+  @DeleteMapping("items/{id}")
+  protected void remove(@PathVariable("id") Long id) { }
+
+  /** 被覆写并重声明映射 */
+  @PutMapping("items/{id}")
+  protected void update(@PathVariable("id") Long id) { }
+}
+`,
+    },
+    {
+      fsPath: "/mem/ItemController.java",
+      content: `
+package com.example.assessment;
+
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.*;
+
+@Tag(name = "条目管理")
+@RestController
+public class ItemController extends BaseCrudController {
+  @Override
+  protected void remove(Long id) { }
+
+  /** 覆盖更新 */
+  @Override
+  @PutMapping("items/{id}")
+  protected void update(@PathVariable("id") Long id) { }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const keys = res.endpoints.map((e) => `${e.method} ${e.path}`).sort();
+  assert.deepEqual(keys, ["DELETE /base/items/{id}", "GET /base/items", "PUT /base/items/{id}"]);
+  // 继承接口归属具体 Controller,路径前缀与 tag 取具体类的声明
+  const list = res.endpoints.find((e) => e.operationId === "ItemController_list")!;
+  assert.equal(list.controller, "ItemController");
+  assert.equal(list.tag, "条目管理");
+  assert.equal(list.summary, "查询列表");
+  // 声明位置指向父类文件,ownerFsPath 指向具体 Controller
+  assert.ok(list.fsPath.endsWith("BaseCrudController.java"), list.fsPath);
+  assert.ok(list.ownerFsPath!.endsWith("ItemController.java"), list.ownerFsPath);
+  // 覆写但未重声明映射:父类注解生效(source of truth 仍是父类声明)
+  const remove = res.endpoints.find((e) => `${e.method} ${e.path}` === "DELETE /base/items/{id}")!;
+  assert.equal(remove.summary, "被覆写的映射(注解留在父类)");
+  // 覆写并重声明映射:以子类声明为准,不产生重复接口
+  const update = res.endpoints.find((e) => `${e.method} ${e.path}` === "PUT /base/items/{id}")!;
+  assert.equal(update.summary, "覆盖更新");
+  assert.equal(update.fsPath.endsWith("ItemController.java"), true);
+  assert.equal(res.endpoints.filter((e) => `${e.method} ${e.path}` === "PUT /base/items/{id}").length, 1);
+});
+
+test("Controller implements 接口时接口上的映射注解生效(子类覆写优先)", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/OrderApi.java",
+      content: `
+package com.example.assessment;
+
+import org.springframework.web.bind.annotation.*;
+
+public interface OrderApi {
+  /** 订单详情 */
+  @GetMapping("{id}")
+  String get(@PathVariable("id") Long id);
+
+  /** 删除订单 */
+  @DeleteMapping("{id}")
+  void remove(@PathVariable("id") Long id);
+}
+`,
+    },
+    {
+      fsPath: "/mem/OrderController.java",
+      content: `
+package com.example.assessment;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/orders")
+public class OrderController implements OrderApi {
+  /** 覆盖:订单详情 */
+  @Override
+  @GetMapping("{id}")
+  public String get(@PathVariable("id") Long id) { return null; }
+
+  @Override
+  public void remove(@PathVariable("id") Long id) { }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const keys = res.endpoints.map((e) => `${e.method} ${e.path}`).sort();
+  assert.deepEqual(keys, ["DELETE /orders/{id}", "GET /orders/{id}"]);
+  const get = res.endpoints.find((e) => e.method === "GET")!;
+  assert.equal(get.summary, "覆盖:订单详情");
+  assert.equal(get.controller, "OrderController");
+  assert.equal(get.declaringType, undefined);
+  // 子类未重声明映射时,接口声明兜底
+  const remove = res.endpoints.find((e) => e.method === "DELETE")!;
+  assert.equal(remove.summary, "删除订单");
+  assert.ok(remove.fsPath.endsWith("OrderApi.java"), remove.fsPath);
+  assert.equal(remove.declaringType, "OrderApi");
+  assert.ok(remove.ownerFsPath!.endsWith("OrderController.java"), remove.ownerFsPath);
+});
+
+test("继承的同名重载按参数类型全限定名区分", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/a/AApi.java",
+      content: `
+package a;
+import org.springframework.web.bind.annotation.*;
+public interface AApi {
+  @GetMapping("/a") void find(a.Payload payload);
+}
+`,
+    },
+    {
+      fsPath: "/mem/b/BApi.java",
+      content: `
+package b;
+import org.springframework.web.bind.annotation.*;
+public interface BApi {
+  @GetMapping("/b") void find(b.Payload payload);
+}
+`,
+    },
+    {
+      fsPath: "/mem/a/Payload.java",
+      content: `package a; public class Payload {}`,
+    },
+    {
+      fsPath: "/mem/b/Payload.java",
+      content: `package b; public class Payload {}`,
+    },
+    {
+      fsPath: "/mem/CombinedController.java",
+      content: `
+import org.springframework.web.bind.annotation.RestController;
+@RestController
+public class CombinedController implements a.AApi, b.BApi {}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  assert.deepEqual(res.endpoints.map((e) => e.path).sort(), ["/a", "/b"]);
+});
+
+test("字段显式声明 Outer.Inner 时优先命中嵌套类型而非同名顶层类型", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/Holder.java",
+      content: `
+package com.example;
+
+ /** 外层 */
+public class Holder {
+  public static class Item {
+    private String nestedOnly;
+  }
+}
+`,
+    },
+    {
+      fsPath: "/mem/Item.java",
+      content: `
+package com.example;
+
+public class Item {
+  private String topLevelOnly;
+}
+`,
+    },
+    {
+      fsPath: "/mem/User.java",
+      content: `
+package com.example;
+
+public class User {
+  private Holder.Item item;
+}
+`,
+    },
+    {
+      fsPath: "/mem/Ctrl.java",
+      content: `
+package com.example;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+public class Ctrl {
+  /** 查询 */
+  @PostMapping("/users")
+  public void save(@RequestBody User user) { }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const bodyRef = (res.spec.paths["/users"].post as Record<string, any>).requestBody.content["application/json"].schema.$ref;
+  const userSchema = schemas[bodyRef.split("/").pop()!];
+  const itemRef = userSchema.properties!.item.$ref!;
+  assert.ok("nestedOnly" in schemas[itemRef.split("/").pop()!].properties!);
+});
+

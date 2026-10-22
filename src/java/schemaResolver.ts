@@ -3,7 +3,7 @@ import { parseTypeText, simpleName, TypeRef, typeToKeyText } from "./typeText";
 import { AnnotationInfo } from "./annotation";
 import { HelperProperties } from "../config/helperProperties";
 import { detectValueSyntax, evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
-import { resolveIndexedType } from "./typeIndex";
+import { resolveScopedType, typeScopeOf } from "./typeIndex";
 
 export interface JsonSchema {
   type?: string;
@@ -31,25 +31,95 @@ export interface JsonSchema {
   pattern?: string;
 }
 
-/** components/schemas 注册表:同名类型 + 相同泛型实参只生成一份定义 */
+/** 稳定的 JSON 序列化(对象键排序),用于判定两份 schema 结构是否一致 */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "null";
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(stableStringify).join(",") + "]";
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return "{" + entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",") + "}";
+}
+
+function refTo(name: string): JsonSchema {
+  return { $ref: `#/components/schemas/${name}` };
+}
+
+/**
+ * components/schemas 注册表。
+ * 以「类型身份」(qualifiedName + 泛型实参)去重:同一类型只生成一份定义;
+ * 不同类型的简单名相同时(如实体 `ExamProject` 与请求内嵌 `...SaveRequest.ExamProject`),
+ * 首个占用简单名,后续追加 `_2`、`_3` … 并记录告警,避免后者静默复用前者的 $ref
+ * (对齐 IDEA 版 easy-api `OpenApiSchemaConverter.registerWithShapeCheck` 的口径:
+ * 结构完全相同才复用同一名字,否则追加 `_N` 后缀并 warn)。
+ */
 export class SchemaRegistry {
   readonly schemas: Record<string, JsonSchema> = {};
-  private readonly inProgress = new Set<string>();
+  /** 同名不同结构产生的命名冲突告警(由调用方并入 warnings 输出) */
+  readonly warnings: string[] = [];
+  /** 类型身份 -> 最终 schema 名 */
+  private readonly byIdentity = new Map<string, string>();
+  /** 处理中的类型身份 -> 暂定名(供循环引用提前拿到 $ref) */
+  private readonly pending = new Map<string, string>();
+  /** 正在构建的类型身份(循环引用检测) */
+  private readonly building = new Set<string>();
 
-  /** 取已存在的 $ref;不存在则用 make() 生成并登记;生成中重复请求(循环引用)返回 $ref 占位 */
-  getOrAdd(key: string, make: () => JsonSchema): JsonSchema {
-    const existing = this.schemas[key];
-    if (existing) {
-      return { $ref: `#/components/schemas/${key}` };
+  /**
+   * 取已存在的 $ref;不存在则用 make() 生成并登记。
+   * @param identity 类型身份(qualifiedName + 泛型实参),同一身份只构建一次
+   * @param displayName 期望的 schema 名(简单名[+«泛型»]);冲突时实际登记名可能带 `_N` 后缀
+   */
+  getOrAdd(identity: string, displayName: string, make: () => JsonSchema): JsonSchema {
+    const known = this.byIdentity.get(identity);
+    if (known) {
+      return refTo(known);
     }
-    if (this.inProgress.has(key)) {
-      return { $ref: `#/components/schemas/${key}` };
+    if (this.building.has(identity)) {
+      // 循环引用:用暂定名占位(make() 会围绕该名字自洽)
+      return refTo(this.pending.get(identity) ?? displayName);
     }
-    this.inProgress.add(key);
-    const schema = make();
-    this.schemas[key] = schema;
-    this.inProgress.delete(key);
-    return { $ref: `#/components/schemas/${key}` };
+
+    this.building.add(identity);
+    this.pending.set(identity, displayName);
+    try {
+      let schema = make();
+      let name = displayName;
+      const occupied = this.schemas[name];
+      if (occupied && stableStringify(occupied) !== stableStringify(schema)) {
+        const slot = this.allocateSuffixedName(displayName, schema);
+        name = slot.name;
+        // 改为后缀名后重建,使内部循环引用指向最终名字
+        this.pending.set(identity, name);
+        schema = make();
+        if (!slot.reused) {
+          this.warnings.push(`同名类型冲突:${identity} 的结构与已有模型 ${displayName} 不同,已登记为 ${name}`);
+        }
+      }
+      this.schemas[name] = schema;
+      this.byIdentity.set(identity, name);
+      return refTo(name);
+    } finally {
+      this.building.delete(identity);
+      this.pending.delete(identity);
+    }
+  }
+
+  /** 找第一个空闲或结构一致的 `name_N` 槽位(N ≥ 2);reused 表示复用了已有的同结构模型 */
+  private allocateSuffixedName(baseName: string, schema: JsonSchema): { name: string; reused: boolean } {
+    for (let n = 2; ; n++) {
+      const candidate = `${baseName}_${n}`;
+      const existing = this.schemas[candidate];
+      if (existing === undefined) {
+        return { name: candidate, reused: false };
+      }
+      if (stableStringify(existing) === stableStringify(schema)) {
+        return { name: candidate, reused: true };
+      }
+    }
   }
 }
 
@@ -58,6 +128,12 @@ export interface ResolveContext {
   registry: SchemaRegistry;
   /** 泛型形参绑定:T -> TypeRef */
   bindings?: Map<string, TypeRef>;
+  /**
+   * 当前解析位置的 Java 外层类型作用域链(**由内向外**,含当前类自身)。
+   * 类体内对简单名的引用优先命中成员(嵌套)类型,与 IDEA 版 PSI 解析口径一致;
+   * Controller 层解析用 typeScopeOf(controllerInfo) 传入。
+   */
+  scope?: readonly string[];
   /** 解析选项 */
   options?: ResolveOptions;
   /** .apifox-helper.properties 的字段规则(可空) */
@@ -102,7 +178,7 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
   }
 
   // 源码类型 → 依赖 jar 中的类型(按需解析 .class,结果回填缓存)
-  const info = resolveIndexedType(ctx.index, name);
+  const info = resolveScopedType(ctx.index, t.name, ctx.scope);
   if (!info) {
     return { type: "object", description: `未识别的类型: ${t.name}` };
   }
@@ -116,15 +192,23 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
       bindings.set(param, t.args[i]);
     }
   });
-  const key = schemaKey(info, t);
-  return ctx.registry.getOrAdd(key, () => classSchema(info, { ...ctx, bindings }));
+  return ctx.registry.getOrAdd(schemaIdentity(info, t), schemaName(info, t), () =>
+    classSchema(info, { ...ctx, bindings })
+  );
 }
 
-function schemaKey(info: ClassInfo, t: TypeRef): string {
-  if (!t.args.length) {
-    return info.simpleName;
-  }
-  return info.simpleName + "«" + t.args.map(typeToKeyText).join(",") + "»";
+/** 类型身份:全限定名 + 泛型实参(同一类型的不同泛型实例各自成模型) */
+function schemaIdentity(info: ClassInfo, t: TypeRef): string {
+  return info.qualifiedName + genericKeyText(t);
+}
+
+/** 期望的 schema 名:简单名 + 泛型实参 */
+function schemaName(info: ClassInfo, t: TypeRef): string {
+  return info.simpleName + genericKeyText(t);
+}
+
+function genericKeyText(t: TypeRef): string {
+  return t.args.length ? "«" + t.args.map(typeToKeyText).join(",") + "»" : "";
 }
 
 /**
@@ -165,14 +249,16 @@ function enumSchema(info: ClassInfo): JsonSchema {
 
 function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
   const fields: FieldInfo[] = info.fields.length ? info.fields : info.recordComponents;
+  // 字段类型在**本类的作用域**下解析:同名嵌套类型优先于顶层类型(与 Java/PSI 一致)
+  const classCtx: ResolveContext = { ...ctx, scope: typeScopeOf(info) };
 
   // 父类字段(含父类泛型绑定)
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
   if (info.superClass) {
     const supRef = parseTypeText(info.superClass);
-    // 与类型解析同口径:源码索引优先,未命中时从依赖 jar 取(框架基类的字段同样要合并)
-    const supInfo = resolveIndexedType(ctx.index, supRef.name);
+    // 与类型解析同口径:作用域内解析优先,源码索引其次,未命中时从依赖 jar 取(框架基类的字段同样要合并)
+    const supInfo = resolveScopedType(ctx.index, supRef.name, classCtx.scope);
     if (supInfo && supInfo.kind !== "enum") {
       const supBindings = new Map<string, TypeRef>();
       supInfo.typeParams.forEach((p, i) => {
@@ -180,7 +266,7 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
           supBindings.set(p, supRef.args[i]);
         }
       });
-      const supSchema = classSchema(supInfo, { ...ctx, bindings: supBindings });
+      const supSchema = classSchema(supInfo, { ...classCtx, bindings: supBindings });
       Object.assign(properties, supSchema.properties ?? {});
       required.push(...(supSchema.required ?? []));
     }
@@ -188,7 +274,7 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
 
   for (const field of fields) {
     // 规则引擎:字段级 .apifox-helper.properties(field.*)
-    const rule = fieldRuleEngine(field, info, ctx);
+    const rule = fieldRuleEngine(field, info, classCtx);
     if (rule.ignored) {
       continue;
     }
@@ -215,7 +301,7 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
         (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
         (fastName ? annStr(fastName.args, "name") : undefined) ??
         field.name);
-    const schema = resolveTypeText(field.typeText, ctx);
+    const schema = resolveTypeText(field.typeText, classCtx);
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
     const finalDesc = rule.appendDesc(desc, field, ctx);
     if (finalDesc) {
@@ -561,7 +647,7 @@ function enumTypeNameOf(field: FieldInfo, ctx: ResolveContext): string | undefin
       t = t.args[0];
       continue;
     }
-    const info = resolveIndexedType(ctx.index, name);
+    const info = resolveScopedType(ctx.index, name, ctx.scope);
     return info && info.kind === "enum" ? name : undefined;
   }
   return undefined;

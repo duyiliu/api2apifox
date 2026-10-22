@@ -1,5 +1,6 @@
 import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
 import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry } from "../java/schemaResolver";
+import { typeScopeOf } from "../java/typeIndex";
 import { HelperProperties } from "../config/helperProperties";
 
 export interface BuildOptions {
@@ -77,6 +78,9 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
   if (Object.keys(registry.schemas).length) {
     spec.components = { schemas: registry.schemas };
   }
+  if (registry.warnings.length) {
+    parse.warnings.push(...registry.warnings);
+  }
   if (fieldWarnings.length) {
     parse.warnings.push(...fieldWarnings);
   }
@@ -84,6 +88,10 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
 }
 
 function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: string, folderOf?: (ep: EndpointInfo) => string): Record<string, unknown> {
+  // 控制器自身的类作用域:接口签名中的简单名同样要优先命中 Controller 的成员类型
+  // (继承自父类/接口的方法按方法声明处类型的作用域解析)
+  const epScope = typeScopeOf(ctx.index.types.get(ep.declaringType ?? ep.controller));
+  const opCtx: ResolveContext = epScope ? { ...ctx, scope: epScope } : ctx;
   const op: Record<string, unknown> = {
     tags: [ep.tag],
     summary: ep.summary,
@@ -102,7 +110,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   }
 
   const parameters = ep.parameters.map((p) => {
-    const schema = resolveTypeText(p.typeText, ctx);
+    const schema = resolveTypeText(p.typeText, opCtx);
     applyParamConstraints(p, schema);
     const param: Record<string, unknown> = {
       name: p.name,
@@ -135,7 +143,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
         const schema = f.typeText.includes("MultipartFile")
           ? ({ type: "string", format: "binary", description: f.description } as JsonSchema)
           : (() => {
-              const s = resolveTypeText(f.typeText, ctx);
+              const s = resolveTypeText(f.typeText, opCtx);
               applyParamConstraints(f, s);
               return s;
             })();
@@ -153,7 +161,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
         content: { [ep.consumes?.[0] ?? "multipart/form-data"]: { schema } },
       };
     } else if (rb.typeText !== "__multipart__") {
-      const schema = resolveTypeText(rb.typeText, ctx);
+      const schema = resolveTypeText(rb.typeText, opCtx);
       const jsonBody: Record<string, unknown> = { schema };
       if (rb.description) {
         jsonBody.description = rb.description;
@@ -170,7 +178,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   const okResponse: Record<string, unknown> = { description: ep.responseDescription || "OK" };
   const innerReturn = responseInnerType(ep.returnType);
   if (innerReturn) {
-    okResponse.content = { [responseContentType]: { schema: resolveTypeText(innerReturn, ctx) } };
+    okResponse.content = { [responseContentType]: { schema: resolveTypeText(innerReturn, opCtx) } };
   }
   responses["200"] = okResponse;
 
@@ -178,7 +186,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   for (const extra of ep.extraResponses ?? []) {
     const resp: Record<string, unknown> = { description: extra.description || "" };
     if (extra.schemaText) {
-      resp.content = { [responseContentType]: { schema: resolveTypeText(extra.schemaText, ctx) } };
+      resp.content = { [responseContentType]: { schema: resolveTypeText(extra.schemaText, opCtx) } };
     }
     responses[extra.code] = resp;
   }

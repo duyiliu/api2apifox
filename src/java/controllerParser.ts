@@ -9,7 +9,7 @@ import {
   ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
 import { schemaExample, schemaDescription } from "./schemaResolver";
-import { ParsedFile, resolveIndexedType } from "./typeIndex";
+import { ParsedFile, resolveScopedType, typeScopeOf } from "./typeIndex";
 
 const SPRING_MAPPINGS: Record<string, string[]> = {
   GetMapping: ["GET"],
@@ -51,62 +51,38 @@ function toMimeType(raw: string): string {
   return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
 }
 
-/** 解析 REST 接口:Spring MVC Controller、OpenFeign 接口、JAX-RS 资源类、Actuator @Endpoint */
+/**
+ * 解析 REST 接口:Spring MVC Controller、OpenFeign 接口、JAX-RS 资源类、Actuator @Endpoint。
+ * 接口方法可声明在抽象父类或接口中(继承),按 Spring handler 类型及其父类/接口的口径展开;
+ * 单文件解析(无类型索引,如 CodeLens)时退化为仅解析本类声明的方法。
+ */
 export function parseControllers(files: ParsedFile[], rules?: HelperProperties, index?: TypeIndex): ParseResult {
   const endpoints: EndpointInfo[] = [];
   const ruleWarnings: string[] = [];
   const warnings: string[] = [];
+  // 继承解析需要回到父类型声明处读取方法;无类型索引时不做继承展开
+  const sites = index ? buildTypeSites(files) : undefined;
 
   for (const pf of files) {
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
-      const classDecl = childNode(typeDecl, "classDeclaration");
-      const interfaceDecl = childNode(typeDecl, "interfaceDeclaration");
-      const normal = classDecl ? childNode(classDecl, "normalClassDeclaration") : undefined;
-      const normalItf = interfaceDecl ? childNode(interfaceDecl, "normalInterfaceDeclaration") : undefined;
-      if (!normal && !normalItf) {
+      const site = typeSiteOf(pf, typeDecl);
+      if (!site) {
         continue;
       }
-      const declNode = (normal ?? normalItf) as CstNode;
-      const isInterface = !!normalItf;
-      const typeAnnotations = collectAnnotations(
-        [
-          ...childAll(classDecl, "classModifier"),
-          ...childAll(interfaceDecl, "classModifier"),
-          ...childAll(interfaceDecl, "interfaceModifier"),
-          ...childAll(declNode, "classModifier"),
-          ...childAll(declNode, "interfaceModifier"),
-        ].filter(isCstNode),
-        pf.source
-      );
-      const typeName = typeNameOf(declNode);
+      const { typeName, typeAnnotations } = site;
 
-      // 类型风格判定
-      const isSpringController = !!findAnn(typeAnnotations, "RestController", "Controller");
-      const isFeign = isInterface && !!findAnn(typeAnnotations, "FeignClient");
-      const pathAnn = findAnn(typeAnnotations, "Path");
-      const isJaxrs = !isSpringController && !isFeign && !!pathAnn;
-      const actuatorAnn = findAnn(typeAnnotations, "Endpoint");
-      const isActuator = !isSpringController && !isFeign && !isJaxrs && !!actuatorAnn;
-      if (!isSpringController && !isFeign && !isJaxrs && !isActuator) {
+      // 继承链:具体类型在首位,父类/接口按 BFS 在后(仅工作区源码内可定位的类型)
+      const chain = sites ? superTypeChain(site, sites) : [];
+      const hierarchy = [site, ...chain];
+
+      // 类型风格判定:具体类型优先,抽象基类标注 @RestController 时由父类兜底
+      const flavor = detectFlavor(site, chain);
+      if (!flavor) {
         continue;
       }
-      const flavor: EndpointFlavor = isSpringController ? "spring-mvc" : isFeign ? "feign" : isJaxrs ? "jaxrs" : "actuator";
 
-      // 类级路径前缀
-      let basePaths: string[] = [""];
-      if (isActuator) {
-        basePaths = ["/actuator/" + (annStr(actuatorAnn!.args, "id", "value") ?? typeName.toLowerCase())];
-      } else {
-        const classMapping = findAnn(typeAnnotations, "RequestMapping");
-        if (classMapping) {
-          basePaths = pathArgsOf(classMapping);
-        } else if (isFeign) {
-          const feignPath = annStr(findAnn(typeAnnotations, "FeignClient")!.args, "path");
-          basePaths = feignPath ? [feignPath] : [""];
-        } else if (isJaxrs) {
-          basePaths = pathAnn ? pathArgsOf(pathAnn) : [""];
-        }
-      }
+      // 类级路径前缀:继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径)
+      const basePaths = classBasePaths(hierarchy, flavor);
 
       // tag: @Tag(name) / @Api(tags[0]) / 类型名
       const tagAnn = findAnn(typeAnnotations, "Tag");
@@ -178,32 +154,25 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       const classConsumes = annArray(findAnn(typeAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType);
       const classProduces = annArray(findAnn(typeAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType);
 
-      // 收集方法(类/接口的包装节点与修饰符规则不同;Javadoc 均附着在最近的包装节点上)
-      const methodHits: { method: CstNode; wrapper: CstNode; modifierKey: string }[] = [];
-      if (isInterface) {
-        for (const member of childAll(childNode(declNode, "interfaceBody"), "interfaceMemberDeclaration").filter(isCstNode)) {
-          const m = childNode(member, "interfaceMethodDeclaration");
-          if (m) {
-            methodHits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier" });
-          }
-        }
-      } else {
-        for (const member of childAll(childNode(declNode, "classBody"), "classBodyDeclaration").filter(isCstNode)) {
-          const memberDecl = childNode(member, "classMemberDeclaration") ?? childNode(member, "memberDeclaration");
-          const m = childNode(memberDecl, "methodDeclaration");
-          if (m) {
-            methodHits.push({ method: m, wrapper: member, modifierKey: "methodModifier" });
-          }
-        }
-      }
+      // 收集方法:本类声明的 + 继承链上未被覆写的父类/接口方法(具体类型优先)
+      const methodHits = collectMethodHits(site, chain);
 
-      for (const { method, wrapper, modifierKey } of methodHits) {
-        const methodAnnotations = collectAnnotations(childAll(method, modifierKey).filter(isCstNode), pf.source);
+      const settledSignatures = new Set<string>();
+      for (const hit of methodHits) {
+        const { method, wrapper, modifierKey } = hit;
+        const source = hit.site.pf.source;
+        // 子类已声明同签名方法时,父类同名方法不再产出(覆写以具体类型为准)
+        const signature = methodSignature(hit.site, method);
+        if (settledSignatures.has(signature)) {
+          continue;
+        }
+        const methodAnnotations = collectAnnotations(childAll(method, modifierKey).filter(isCstNode), source);
 
         // @Operation(hidden=true)/@Api(hidden=true) 的接口跳过
         const operationAnn = findAnn(methodAnnotations, "Operation");
         const apiMethodAnn = findAnn(methodAnnotations, "Api");
         if (annBool(operationAnn?.args ?? {}, "hidden") === true || annBool(apiMethodAnn?.args ?? {}, "hidden") === true) {
+          settledSignatures.add(signature);
           continue;
         }
 
@@ -323,25 +292,30 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
           }
         }
         if (methodIgnored) {
+          settledSignatures.add(signature);
           continue;
         }
 
         const mappings = resolveMapping(methodAnnotations, flavor);
         if (!mappings.length) {
+          // 未声明路由(如子类覆写但映射注解留在父类),不占用签名,由父类声明继续产出
           continue;
         }
+        settledSignatures.add(signature);
         const consumes = annArray(findAnn(methodAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType).concat(classConsumes);
         const produces = annArray(findAnn(methodAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType).concat(classProduces);
 
         for (const m of mappings) {
           for (const mp of m.paths) {
             for (const bp of basePaths) {
-              const ep = buildEndpoint(pf, warnings, {
+              const ep = buildEndpoint(hit.site.pf, warnings, {
                 flavor,
                 verb: m.method,
                 path: joinPath(bp, mp),
                 tag: ruleFolder ?? tag,
                 controller: typeName,
+                declaringType: hit.site.typeName,
+                ownerPath: pf.fsPath,
                 methodName,
                 methodAnnotations,
                 method,
@@ -364,6 +338,274 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
   }
   warnings.push(...ruleWarnings);
   return { endpoints, warnings };
+}
+
+/**
+ * 顶层类型声明站点:继承解析需要回到声明处读取类级注解、方法与 Javadoc。
+ * 只登记顶层类型(与 parseControllers 的扫描范围一致)。
+ */
+interface TypeSite {
+  pf: ParsedFile;
+  /** typeDeclaration 包装节点(类级 Javadoc 挂靠处) */
+  carrier: CstNode;
+  /** normalClassDeclaration / normalInterfaceDeclaration */
+  inner: CstNode;
+  typeName: string;
+  isInterface: boolean;
+  typeAnnotations: AnnotationInfo[];
+}
+
+function typeSiteOf(pf: ParsedFile, typeDecl: CstNode): TypeSite | undefined {
+  const classDecl = childNode(typeDecl, "classDeclaration");
+  const interfaceDecl = childNode(typeDecl, "interfaceDeclaration");
+  const normal = classDecl ? childNode(classDecl, "normalClassDeclaration") : undefined;
+  const normalItf = interfaceDecl ? childNode(interfaceDecl, "normalInterfaceDeclaration") : undefined;
+  const inner = normal ?? normalItf;
+  if (!inner) {
+    return undefined;
+  }
+  const typeName = typeNameOf(inner);
+  if (!typeName) {
+    return undefined;
+  }
+  const typeAnnotations = collectAnnotations(
+    [
+      ...childAll(classDecl, "classModifier"),
+      ...childAll(interfaceDecl, "classModifier"),
+      ...childAll(interfaceDecl, "interfaceModifier"),
+      ...childAll(inner, "classModifier"),
+      ...childAll(inner, "interfaceModifier"),
+    ].filter(isCstNode),
+    pf.source
+  );
+  return { pf, carrier: typeDecl, inner, typeName, isInterface: !!normalItf, typeAnnotations };
+}
+
+/** 建立 简单名 -> 类型声明站点 的索引(同名以最后扫描到的为准,与类型索引口径一致) */
+function buildTypeSites(files: ParsedFile[]): Map<string, TypeSite> {
+  const sites = new Map<string, TypeSite>();
+  for (const pf of files) {
+    for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
+      const site = typeSiteOf(pf, typeDecl);
+      if (site) {
+        sites.set(site.typeName, site);
+      }
+    }
+  }
+  return sites;
+}
+
+/** 类型文本 -> 简单名(剥掉包名与泛型实参,如 java.util.List<String> -> List) */
+function typeTextName(text: string): string {
+  return simpleName(parseTypeText(text).name);
+}
+
+/** 直接父类型名:类取 extends 的类 + implements 的接口;接口取 extends 的接口 */
+function directSuperTypeNames(site: TypeSite): string[] {
+  const source = site.pf.source;
+  const names: string[] = [];
+  const pushInterfaceList = (holder: CstNode | undefined) => {
+    const list = childNode(holder, "interfaceTypeList");
+    if (!list) {
+      return;
+    }
+    for (const it of childAll(list, "interfaceType").filter(isCstNode)) {
+      const classType = childNode(it, "classType");
+      const name = classType ? typeTextName(nodeText(source, classType)) : "";
+      if (name && name !== "Object") {
+        names.push(name);
+      }
+    }
+  };
+  if (site.isInterface) {
+    pushInterfaceList(childNode(site.inner, "interfaceExtends"));
+  } else {
+    const ext = childNode(site.inner, "classExtends");
+    const classType = ext ? childNode(ext, "classType") : undefined;
+    const superName = classType ? typeTextName(nodeText(source, classType)) : "";
+    if (superName && superName !== "Object") {
+      names.push(superName);
+    }
+    pushInterfaceList(childNode(site.inner, "classImplements"));
+  }
+  return names;
+}
+
+/**
+ * 收集继承链(具体类型在前,父类/接口按 BFS 在后,去重)。
+ * 只含工作区源码内可定位的类型;依赖 jar 中的父类没有方法源码,自然跳过。
+ */
+function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): TypeSite[] {
+  const chain: TypeSite[] = [];
+  const visited = new Set<string>([root.typeName]);
+  let frontier: TypeSite[] = [root];
+  while (frontier.length) {
+    const next: TypeSite[] = [];
+    for (const site of frontier) {
+      for (const name of directSuperTypeNames(site)) {
+        if (visited.has(name)) {
+          continue;
+        }
+        const sup = sites.get(name);
+        if (!sup) {
+          continue;
+        }
+        visited.add(name);
+        chain.push(sup);
+        next.push(sup);
+      }
+    }
+    frontier = next;
+  }
+  return chain;
+}
+
+/** 类型风格判定:具体类型优先;抽象基类标注 @RestController/@Controller 时由父类兜底 */
+function detectFlavor(site: TypeSite, chain: TypeSite[]): EndpointFlavor | undefined {
+  const probe = (s: TypeSite): EndpointFlavor | undefined => {
+    if (findAnn(s.typeAnnotations, "RestController", "Controller")) {
+      return "spring-mvc";
+    }
+    if (s.isInterface && findAnn(s.typeAnnotations, "FeignClient")) {
+      return "feign";
+    }
+    if (findAnn(s.typeAnnotations, "Path")) {
+      return "jaxrs";
+    }
+    if (findAnn(s.typeAnnotations, "Endpoint")) {
+      return "actuator";
+    }
+    return undefined;
+  };
+  const own = probe(site);
+  if (own) {
+    return own;
+  }
+  for (const s of chain) {
+    const inherited = s.isInterface ? undefined : probe(s);
+    if (inherited === "spring-mvc") {
+      return inherited;
+    }
+  }
+  return undefined;
+}
+
+/** 类级路径前缀:取继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径,不叠加) */
+function classBasePaths(hierarchy: TypeSite[], flavor: EndpointFlavor): string[] {
+  if (flavor === "actuator") {
+    const endpointAnn = findAnn(hierarchy[0].typeAnnotations, "Endpoint");
+    return ["/actuator/" + (annStr(endpointAnn?.args ?? {}, "id", "value") ?? hierarchy[0].typeName.toLowerCase())];
+  }
+  if (flavor === "jaxrs") {
+    for (const s of hierarchy) {
+      const pathAnn = findAnn(s.typeAnnotations, "Path");
+      if (pathAnn) {
+        return pathArgsOf(pathAnn);
+      }
+    }
+    return [""];
+  }
+  // spring-mvc / feign
+  for (const s of hierarchy) {
+    const classMapping = findAnn(s.typeAnnotations, "RequestMapping");
+    if (classMapping) {
+      return pathArgsOf(classMapping);
+    }
+    if (flavor === "feign") {
+      const feign = findAnn(s.typeAnnotations, "FeignClient");
+      const feignPath = feign ? annStr(feign.args, "path") : undefined;
+      if (feignPath) {
+        return [feignPath];
+      }
+    }
+  }
+  return [""];
+}
+
+interface MethodHit {
+  method: CstNode;
+  wrapper: CstNode;
+  modifierKey: string;
+  /** 声明该方法的类型站点(继承方法为其父类/接口) */
+  site: TypeSite;
+}
+
+/** 取类型体内直接声明的方法(类/接口的包装节点与修饰符规则不同;Javadoc 附着在最近的包装节点上) */
+function declaredMethodsOf(site: TypeSite): MethodHit[] {
+  const hits: MethodHit[] = [];
+  if (site.isInterface) {
+    for (const member of childAll(childNode(site.inner, "interfaceBody"), "interfaceMemberDeclaration").filter(isCstNode)) {
+      const m = childNode(member, "interfaceMethodDeclaration");
+      if (m) {
+        hits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier", site });
+      }
+    }
+    return hits;
+  }
+  for (const member of childAll(childNode(site.inner, "classBody"), "classBodyDeclaration").filter(isCstNode)) {
+    const memberDecl = childNode(member, "classMemberDeclaration") ?? childNode(member, "memberDeclaration");
+    const m = childNode(memberDecl, "methodDeclaration");
+    if (m) {
+      hits.push({ method: m, wrapper: member, modifierKey: "methodModifier", site });
+    }
+  }
+  return hits;
+}
+
+/** 抽象父类的 private/static 方法不构成 Spring handler,也不会随继承暴露给子类 */
+function hasNonHandlerModifier(method: CstNode, modifierKey: string): boolean {
+  return childAll(method, modifierKey)
+    .filter(isCstNode)
+    .some((m) => !!m.children && ("Private" in m.children || "Static" in m.children));
+}
+
+/** 收集方法:本类声明的 + 继承链上的父类/接口方法(具体类型优先,后续按签名去重) */
+function collectMethodHits(root: TypeSite, chain: TypeSite[]): MethodHit[] {
+  const hits = declaredMethodsOf(root);
+  for (const sup of chain) {
+    for (const hit of declaredMethodsOf(sup)) {
+      if (!hasNonHandlerModifier(hit.method, hit.modifierKey)) {
+        hits.push(hit);
+      }
+    }
+  }
+  return hits;
+}
+
+/** 方法签名按参数类型身份(擦除泛型,保留包名与数组维度),用于区分同名重载并识别覆写 */
+function methodSignature(site: TypeSite, method: CstNode): string {
+  const { pf } = site;
+  const header = childNode(method, "methodHeader") ?? method;
+  const declarator = childNode(header, "methodDeclarator");
+  const paramList = childNode(declarator, "formalParameterList");
+  const packageName = /^\s*package\s+([\w.]+)\s*;/m.exec(pf.source)?.[1];
+  const imported = new Map<string, string>();
+  for (const match of pf.source.matchAll(/^\s*import\s+(?!static\s+)([\w.]+);/gm)) {
+    const qualified = match[1];
+    imported.set(simpleName(qualified), qualified);
+  }
+  const javaLang = new Set([
+    "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+    "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+    "Void",
+  ]);
+  const types: string[] = [];
+  for (const fp of childAll(paramList, "formalParameter").filter(isCstNode)) {
+    const regular = childNode(fp, "variableParaRegularParameter") ?? childNode(fp, "variableArityParameter");
+    const typeNode = regular ? childNode(regular, "unannType") : undefined;
+    if (!typeNode) {
+      types.push("?");
+      continue;
+    }
+    const ref = parseTypeText(nodeText(pf.source, typeNode));
+    const name = ref.name;
+    const resolvedName = name.includes(".")
+      ? name
+      : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
+    const varargs = !!regular && childNode(fp, "variableArityParameter") !== undefined;
+    types.push(`${resolvedName}${"[]".repeat(ref.dims + (varargs ? 1 : 0))}`);
+  }
+  return `${tokenImage(declarator, "Identifier") ?? ""}(${types.join(",")})`;
 }
 
 function truncate(s: string, n: number): string {
@@ -417,6 +659,10 @@ interface EndpointArgs {
   path: string;
   tag: string;
   controller: string;
+  /** 方法实际声明类型(继承接口为父类型名);缺省等于 controller */
+  declaringType?: string;
+  /** 具体 Controller 源文件(继承接口时与声明文件不同) */
+  ownerPath?: string;
   methodName: string;
   methodAnnotations: AnnotationInfo[];
   method: CstNode;
@@ -555,7 +801,9 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
       requestBody = { typeText, required: true, description };
     } else if (a.index) {
       // Spring 无注解的复杂 Bean:按 query 参数展开字段(如分页/条件查询对象 PatientQuery query)
-      const expansion = expandQueryBean(a.index, paramName, typeText);
+      // 继承方法的参数类型按声明处类型的作用域解析(成员类型遮蔽口径)
+      const declaring = a.declaringType ?? a.controller;
+      const expansion = expandQueryBean(a.index, paramName, typeText, typeScopeOf(a.index.types.get(declaring)));
       for (const w of expansion.warnings) {
         warnings.push(`${a.controller}.${a.methodName}: ${w}`);
       }
@@ -634,6 +882,8 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     responseDescription,
     fsPath: pf.fsPath,
     controller: a.controller,
+    ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
+    ...(a.declaringType && a.declaringType !== a.controller ? { declaringType: a.declaringType } : {}),
     flavor: a.flavor,
     extraResponses: collectExtraResponses(a.methodAnnotations),
     consumes: a.consumes.length ? a.consumes : undefined,
@@ -811,9 +1061,9 @@ interface QueryBeanExpansion {
  * Spring 对集合的常规绑定是重复同名参数,文档写 [0] 会误导为只能传一个元素。
  * 无法展开的字段(超出层级上限、循环引用)不再静默丢弃,统一通过 warnings 上报。
  */
-function expandQueryBean(index: TypeIndex, paramName: string, typeText: string): QueryBeanExpansion {
+function expandQueryBean(index: TypeIndex, paramName: string, typeText: string, controllerScope?: readonly string[]): QueryBeanExpansion {
   const t = parseTypeText(typeText);
-  const info = resolveIndexedType(index, t.name);
+  const info = resolveScopedType(index, t.name, controllerScope);
   if (!info || info.kind === "enum") {
     return { params: [], warnings: [] };
   }
@@ -828,6 +1078,8 @@ function expandQueryBean(index: TypeIndex, paramName: string, typeText: string):
    */
   const walk = (ci: ClassInfo, prefix: string, depth: number, pathTypes: Set<string>) => {
     const fields = ci.fields.length ? ci.fields : ci.recordComponents;
+    // 字段类型在本类作用域下解析:同名嵌套类型优先于顶层类型(与 Java/PSI 一致)
+    const scope = typeScopeOf(ci);
     for (const f of fields) {
       const name = prefix ? `${prefix}.${f.name}` : f.name;
       if (seen.has(name)) {
@@ -836,7 +1088,7 @@ function expandQueryBean(index: TypeIndex, paramName: string, typeText: string):
       const fRef = parseTypeText(f.typeText);
       const fSimple = simpleName(fRef.name);
       // 数组/集合(含 List<Dto>)保持原形态,不下钻
-      const sub = fRef.dims === 0 ? resolveIndexedType(index, fSimple) : undefined;
+      const sub = fRef.dims === 0 ? resolveScopedType(index, fRef.name, scope) : undefined;
       const nested = !!sub && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple);
       if (nested) {
         if (depth + 1 >= MAX_QUERY_BEAN_DEPTH) {
@@ -868,7 +1120,7 @@ function expandQueryBean(index: TypeIndex, paramName: string, typeText: string):
     }
     // 父类字段并入当前层级(不改前缀、不增加嵌套层数)
     if (ci.superClass) {
-      const sup = resolveIndexedType(index, parseTypeText(ci.superClass).name);
+      const sup = resolveScopedType(index, parseTypeText(ci.superClass).name, scope);
       if (sup && (sup.kind === "class" || sup.kind === "record")) {
         walk(sup, prefix, depth, pathTypes);
       }
