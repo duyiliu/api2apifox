@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { analyze, analyzeSubset, endpointAt } from "../pipeline";
+import { AnalyzeCache, analyze, analyzeSubset, endpointAt } from "../pipeline";
 import { SourceFile } from "../java/model";
 
 const SAMPLE_ROOT = path.join(__dirname, "..", "..", "sample");
@@ -344,4 +344,66 @@ public class TaskResource {
   // @HeaderParam 缺失会报错(JAX-RS 规范),无 @DefaultValue 保持必填
   const auth = op.parameters.find((p: any) => p.name === "X-Auth");
   assert.equal(auth.required, true);
+});
+
+function cacheFixture(): SourceFile[] {
+  return [
+    {
+      fsPath: "/mem/CacheAlphaController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/cache-alpha")
+public class CacheAlphaController {
+    @GetMapping("/one")
+    public String one() { return "one"; }
+}`,
+    },
+    {
+      fsPath: "/mem/CacheBetaController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/cache-beta")
+public class CacheBetaController {
+    @GetMapping("/one")
+    public String one() { return "one"; }
+}`,
+    },
+  ];
+}
+
+test("AnalyzeCache:相同文件与配置直接复用结果;文件内容变化即重算", () => {
+  const cache = new AnalyzeCache();
+  const files = cacheFixture();
+  const opts = { title: "cache", cacheKey: "v1" };
+  const first = cache.analyze(files, opts);
+  assert.equal(cache.analyze(files, opts), first, "同文件同配置应复用上一轮结果");
+
+  const changed = files.map((f) => (f.fsPath.includes("Alpha") ? { ...f, content: f.content.replace("/one", "/changed") } : f));
+  const afterContent = cache.analyze(changed, opts);
+  assert.notEqual(afterContent, first, "文件内容变化应重算");
+  assert.ok(afterContent.spec.paths["/cache-alpha/changed"]);
+  assert.equal(first.spec.paths["/cache-alpha/changed"], undefined);
+});
+
+test("AnalyzeCache:cacheKey 变化即重算", () => {
+  const cache = new AnalyzeCache();
+  const files = cacheFixture();
+  const first = cache.analyze(files, { title: "cache", cacheKey: "v1" });
+  const second = cache.analyze(files, { title: "cache", cacheKey: "v2" });
+  assert.notEqual(second, first);
+});
+
+test("AnalyzeCache:同内容不同顺序的 files 数组触发重算(顺序敏感)", () => {
+  const cache = new AnalyzeCache();
+  const files = cacheFixture();
+  const opts = { title: "cache", cacheKey: "v1" };
+  const first = cache.analyze(files, opts);
+  const reordered = cache.analyze([files[1], files[0]], opts);
+  assert.notEqual(reordered, first, "文件顺序变化应重算");
+  assert.deepEqual(
+    reordered.endpoints.map((e) => e.controller),
+    ["CacheBetaController", "CacheAlphaController"]
+  );
 });

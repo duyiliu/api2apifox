@@ -38,6 +38,11 @@ export interface AnalyzeOptions {
   folderOf?: (ep: EndpointInfo) => string;
   /** 源码未覆盖的类型,从依赖 jar 的 .class 按需解析(框架类识别) */
   jarLookup?: (simpleName: string) => ClassInfo | undefined;
+  /**
+   * 结果级缓存键:外部配置(如目录命名、依赖 jar 索引)无法从源码派生时由调用方汇总。
+   * 与 title/pageStyle/rules/enumFieldDoc 一起参与缓存失效判断。
+   */
+  cacheKey?: string;
 }
 
 export interface AnalyzeOutput {
@@ -104,31 +109,88 @@ export function analyzeSubset(files: SourceFile[], options: AnalyzeOptions, endp
   return run(files, options, endpointFilter);
 }
 
+/** 影响分析结果的配置指纹(函数型配置由调用方的 cacheKey 负责) */
+function optionsCacheKey(opts: AnalyzeOptions): string {
+  return JSON.stringify([
+    opts.title,
+    opts.pageStyle ?? "",
+    opts.enumFieldDoc ?? false,
+    opts.cacheKey ?? "",
+    opts.rules
+      ? {
+          files: opts.rules.files,
+          warnings: opts.rules.warnings,
+          entries: opts.rules.entries.map((e) => [e.key, e.cond ?? "", e.value, e.file, e.line]),
+        }
+      : null,
+  ]);
+}
+
 /**
  * 带缓存的解析器:同一会话内,内容未变的文件不重复解析。
  * java-parser 单文件毫秒级,缓存只是优化,不影响正确性。
  */
 export class AnalyzeCache {
   private readonly cache = new Map<string, { content: string; parsed: ParsedFile; version: number }>();
-  /** 文件集签名版本:每次写入缓存条目递增,供上层 memo 结果缓存判断是否需要失效 */
-  private nextVersion = 0;
+  /** 文件集代际:文件列表/顺序变化或任一文件重新解析时递增,作为结果缓存的 O(1) 签名 */
+  private epoch = 0;
+  /** 上一轮文件路径列表(含顺序),用于发现文件增删/重排 */
+  private lastPaths: string[] = [];
+  private lastResult?: { key: string; output: AnalyzeOutput };
+  private readonly filterIds = new WeakMap<(ep: EndpointInfo) => boolean, number>();
+  private nextFilterId = 0;
 
+  /** 写入缓存条目时记录解析版本(= 当前代际),供上层判断缓存是否被复用 */
   private remember(fsPath: string, content: string, parsed: ParsedFile): void {
-    this.cache.set(fsPath, { content, parsed, version: ++this.nextVersion });
+    this.epoch++;
+    this.cache.set(fsPath, { content, parsed, version: this.epoch });
+  }
+
+  private parsedOf(files: SourceFile[]): ParsedFile[] {
+    let changed = this.lastPaths.length !== files.length;
+    if (!changed) {
+      for (let i = 0; i < files.length; i++) {
+        if (this.lastPaths[i] !== files[i].fsPath) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (changed) {
+      this.lastPaths = files.map((f) => f.fsPath);
+      this.epoch++;
+    }
+    return files.map((f) => {
+      const hit = this.cache.get(f.fsPath);
+      if (hit && hit.content === f.content) {
+        return hit.parsed;
+      }
+      const parsed = parseJava(f.fsPath, f.content);
+      this.remember(f.fsPath, f.content, parsed);
+      return parsed;
+    });
+  }
+
+  private resultKey(opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): string {
+    let filterId = 0;
+    if (endpointFilter) {
+      const known = this.filterIds.get(endpointFilter);
+      if (known === undefined) {
+        filterId = ++this.nextFilterId;
+        this.filterIds.set(endpointFilter, filterId);
+      } else {
+        filterId = known;
+      }
+    }
+    return `${this.epoch}\u0000${optionsCacheKey(opts)}\u0000${filterId}`;
   }
 
   private runCached(files: SourceFile[], opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): AnalyzeOutput {
-    const parsed = files.map((f) => {
-      const hit = this.cache.get(f.fsPath);
-      let p: ParsedFile;
-      if (hit && hit.content === f.content) {
-        p = hit.parsed;
-      } else {
-        p = parseJava(f.fsPath, f.content);
-        this.remember(f.fsPath, f.content, p);
-      }
-      return p;
-    });
+    const parsed = this.parsedOf(files);
+    const key = this.resultKey(opts, endpointFilter);
+    if (this.lastResult && this.lastResult.key === key) {
+      return this.lastResult.output;
+    }
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
     const parseResult = parseControllers(parsed, opts.rules, index);
@@ -143,7 +205,9 @@ export class AnalyzeCache {
       folderOf: opts.folderOf,
     });
     const rawWarnings = [...new Set(parseResult.warnings)];
-    return { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
+    const output = { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
+    this.lastResult = { key, output };
+    return output;
   }
 
   analyze(files: SourceFile[], options: AnalyzeOptions | string): AnalyzeOutput {
@@ -157,7 +221,7 @@ export class AnalyzeCache {
     return this.runCached(files, opts, endpointFilter);
   }
 
-  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存,与 analyze 共用 CST */
+  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存并推进代际,防止结果缓存漏失效 */
   endpointsOfFile(fsPath: string, content: string): EndpointInfo[] {
     const hit = this.cache.get(fsPath);
     if (hit && hit.content === content) {
