@@ -24,6 +24,8 @@ const cache = new AnalyzeCache();
  * 显式 jar / 额外仓库目录配置变化、任一匹配 jar 的 mtime/size 变化即失效。
  */
 let jarIndexCache: { key: string; index: JarClassIndex | undefined } | undefined;
+/** 最近一次 jar 索引指纹,参与 AnalyzeCache 结果级缓存键;jar 变化时分析结果需重算 */
+let activeJarIndexKey = "";
 
 function jarIndexCacheKey(configSignature: string, jars: string[]): string {
   const parts: string[] = [configSignature];
@@ -76,6 +78,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   }
   // jar 集合与文件指纹未变时复用会话缓存,大仓保存刷新不再同步重读
   const key = jarIndexCacheKey(configSignature, jars);
+  activeJarIndexKey = key;
   if (jarIndexCache && jarIndexCache.key === key) {
     return jarIndexCache.index;
   }
@@ -233,6 +236,8 @@ export function activate(context: vscode.ExtensionContext): void {
       pageStyle: settings.pageTypeStyle,
       rules: await loadHelperProperties(),
       enumFieldDoc: settings.enumFieldDoc,
+      // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
+      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey].join("\u0000"),
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
       folderOf: (ep: { tag: string; controller: string }) => {
         const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
