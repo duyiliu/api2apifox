@@ -4,9 +4,17 @@
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
+[![npm: @duyiliu/api2apifox](https://img.shields.io/npm/v/%40duyiliu%2Fapi2apifox?label=CLI%20npm)](https://www.npmjs.com/package/@duyiliu/api2apifox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** 对标 IDEA 版 Apifox Helper 的 VS Code 扩展,同样适用于 Cursor 等 VS Code 内核编辑器。
+**解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** 对标 IDEA 版 Apifox Helper，提供两种形态：
+
+| 形态 | 适用场景 | 安装 |
+| --- | --- | --- |
+| **独立 CLI `api2apifox`** | AI Agent、CI、脚本化调用，不依赖 VS Code | `npm install -g @duyiliu/api2apifox` |
+| **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
+
+> **命名说明**：项目曾用名 Apifox Helper（故仓库名与部分配置项仍为 `apifox-helper` / `apifoxHelper.*`），现产品名为 **ApiGen for Apifox**，Marketplace 扩展 ID 为 `duyiliu.api2apifox`，CLI 包名为 `@duyiliu/api2apifox`。
 
 ## ✨ 特性亮点
 
@@ -15,29 +23,57 @@
 - **依赖 jar 类型还原**:自动发现本地 Maven 仓库,按需解析 `.class` 字节码,把源码之外的类型(如自定义 `ResponseDto<T>`、MyBatis-Plus 的 `Page`)还原为完整模型——字段、泛型、`@ApiModelProperty` 描述均可带出,与 IDEA 插件的 classpath 能力等效
 - **规则引擎兼容**:识别 `.apifox-helper.properties` 声明式规则(与 IDEA 版 Apifox Helper / easyyapi 兼容的子集),团队既有规则可直接复用
 - **细粒度同步**:整个项目 / 单个文件 / 单个接口,随取随传
+- **CLI 一等公民**:与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
 
-## 📦 安装
+## 📟 独立 CLI（AI Agent / CI / 脚本）
 
-- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
-
-### 独立 CLI（AI Agent / CI）
-
-无需 VS Code 即可扫描、导出和同步，CLI 包名为 `@duyiliu/api2apifox`，命令名为 `api2apifox`（要求 Node.js ≥ 20）：
+不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0 并同步到 Apifox。与扩展共用同一套解析与同步管线，能力完全等价。要求 Node.js ≥ 20。
 
 ```bash
-npm install -g @duyiliu/api2apifox
-api2apifox scan --project . --format json
-api2apifox export --project . --output openapi.gen.json --force
-api2apifox sync --project . --project-id 123456 --dry-run --format json
-API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
+npm install -g @duyiliu/api2apifox        # 或免安装:npx @duyiliu/api2apifox ...
 ```
 
-真正同步必须交互确认或显式传入 `--yes`；Token 推荐通过 `API2APIFOX_TOKEN` 提供，不允许写入 `.api2apifox.json`。首次导入需要创建目录、接口和模型，等待上限默认 300000 毫秒，可用 `--timeout-ms` 调整；若返回 `REQUEST_TIMEOUT`，请先查询目标项目确认结果再重试。完整参数和配置示例见 [`packages/cli/README.md`](packages/cli/README.md)。
+### 常用命令
+
+```bash
+api2apifox scan --project . --format json                    # 扫描并输出接口清单
+api2apifox export --project . --output openapi.gen.json      # 导出 OpenAPI 3.0 文件
+api2apifox export --project . --stdout                       # OpenAPI 直接输出到 stdout
+api2apifox sync --project . --dry-run --format json          # 同步预演(不写入)
+API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
+api2apifox config --project . --format json                  # 查看生效配置
+```
+
+### 范围与筛选
+
+```bash
+api2apifox scan --file path/to/UserController.java
+api2apifox scan --endpoint "GET /api/users" --format json
+api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
+```
+
+- `--file` / `--endpoint` 可重复，为**解析后过滤**；要减少扫描量请用 `--include` / `--exclude`（注意二者是整体替换默认列表，不是追加）。
+- `--dependency-repo <dir>` / `--dependency-jar <path>` 可补充 Maven 仓库与依赖 jar。
+
+### 配置文件与 AI 调用约定
+
+项目根目录可创建 `.api2apifox.json`（`projectId`、`apiBaseUrl`、`include`/`exclude`、冲突策略、`pageTypeStyle` 等）；配置优先级：**CLI 参数 > `API2APIFOX_*` 环境变量 > `.api2apifox.json` > 默认值**。
+
+- Token **不允许**写入配置文件，请用 `API2APIFOX_TOKEN`（及 `API2APIFOX_PROJECT_ID`）环境变量。
+- `--format json` 时 stdout 只输出一个 JSON 信封，按 `ok` / `error.code` 分支；`--quiet` 隐藏非致命告警。
+- 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误。
+- 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
 
 > CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
 
-## 🚀 快速上手
+完整参数表见 [`packages/cli/README.md`](packages/cli/README.md)。
+
+## 📦 安装扩展（VS Code / Cursor）
+
+- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
+- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
+
+## 🚀 快速上手（扩展）
 
 1. 用 VS Code / Cursor 打开一个 Spring Boot 工程
 2. 点击活动栏的 **ApiGen for Apifox** 图标,打开顶部**设置中心**,填入并验证 Apifox 访问令牌,再选择目标项目(也可执行命令 `ApiGen for Apifox: 选择 Apifox 项目`)
@@ -119,14 +155,14 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 
 </details>
 
-## 🖥 接口列表视图
+## 🖥 接口列表视图（扩展）
 
 - **浏览**:侧边栏「接口列表」按接口目录分组展示工作区解析出的所有接口,目录 key 含 `/` 时逐级嵌套(如 `测评工作站/测评量表-CARS`);目录默认收起,手动展开/收起后刷新保持;保存 Java 文件后自动刷新(侧边栏不可见时延迟到下次可见)
 - **快速过滤**:点击标题栏漏斗图标输入关键词(支持 URL 路径、中文描述、HTTP 方法、Controller 类名等),支持多词组合(空格分隔),实时保留匹配项并高亮关键字;过滤激活时常驻一行 `🔍 "关键字" · 命中数/总数`,一键清除
 - **搜索并跳转**:放大镜图标弹出 QuickPick,模糊匹配接口,回车直接跳转到源码定义
 - **批量勾选**:过滤状态下「全选」仅勾选当前命中接口;若存在过滤隐藏的已选项,同步时会明确选择“仅当前过滤”或“全部已选”;勾选按 Apifox 项目隔离并跨会话保持
 
-### 同步命令
+### 同步命令（VS Code 命令）
 
 | 命令 | 说明 |
 | --- | --- |
@@ -206,6 +242,8 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布
+
+> 仓库根目录的 `work/` 存放内部设计文档与任务笔记（如 `.apifox-helper.properties` 支持的设计稿），不参与扩展/CLI 发布。
 
 ```bash
 npm install
