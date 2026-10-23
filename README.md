@@ -8,6 +8,8 @@
 
 **解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** 对标 IDEA 版 Apifox Helper 的 VS Code 扩展,同样适用于 Cursor 等 VS Code 内核编辑器。
 
+> **命名说明**：项目曾用名 Apifox Helper（故仓库名与部分配置项仍为 `apifox-helper` / `apifoxHelper.*`），现产品名为 **ApiGen for Apifox**，Marketplace 扩展 ID 为 `duyiliu.api2apifox`，CLI 包名为 `@duyiliu/api2apifox`。
+
 ## ✨ 特性亮点
 
 - **零配置**:打开 Java 工程即可解析,不需要 JDK、不需要 LSP、不需要启动应用
@@ -204,6 +206,8 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布
+
+> 仓库根目录的 `work/` 存放内部设计文档与任务笔记（如 `.apifox-helper.properties` 支持的设计稿），不参与扩展/CLI 发布。
 
 ```bash
 npm install
