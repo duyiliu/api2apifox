@@ -131,7 +131,7 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
  * java-parser 单文件毫秒级,缓存只是优化,不影响正确性。
  */
 export class AnalyzeCache {
-  private readonly cache = new Map<string, { content: string; parsed: ParsedFile }>();
+  private readonly cache = new Map<string, { content: string; parsed: ParsedFile; version: number }>();
   /** 文件集代际:文件列表/顺序变化或任一文件重新解析时递增,作为结果缓存的 O(1) 签名 */
   private epoch = 0;
   /** 上一轮文件路径列表(含顺序),用于发现文件增删/重排 */
@@ -140,9 +140,10 @@ export class AnalyzeCache {
   private readonly filterIds = new WeakMap<(ep: EndpointInfo) => boolean, number>();
   private nextFilterId = 0;
 
+  /** 写入缓存条目时记录解析版本(= 当前代际),供上层判断缓存是否被复用 */
   private remember(fsPath: string, content: string, parsed: ParsedFile): void {
-    this.cache.set(fsPath, { content, parsed });
     this.epoch++;
+    this.cache.set(fsPath, { content, parsed, version: this.epoch });
   }
 
   private parsedOf(files: SourceFile[]): ParsedFile[] {
@@ -220,7 +221,7 @@ export class AnalyzeCache {
     return this.runCached(files, opts, endpointFilter);
   }
 
-  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);回写缓存时推进代际,避免结果缓存漏失效 */
+  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存并推进代际,防止结果缓存漏失效 */
   endpointsOfFile(fsPath: string, content: string): EndpointInfo[] {
     const hit = this.cache.get(fsPath);
     if (hit && hit.content === content) {
