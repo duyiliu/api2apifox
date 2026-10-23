@@ -6,6 +6,7 @@ import { errorMessage, ensureToken, selectProject, syncToApifox } from "./apifox
 import { setToken } from "./config/secret";
 import { getSettings } from "./config/settings";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
+import { fileSetFingerprint } from "./config/fileFingerprint";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
@@ -24,6 +25,48 @@ const cache = new AnalyzeCache();
  * 显式 jar / 额外仓库目录配置变化、任一匹配 jar 的 mtime/size 变化即失效。
  */
 let jarIndexCache: { key: string; index: JarClassIndex | undefined } | undefined;
+
+const MAX_POMS = 200;
+
+/**
+ * Maven 仓库发现结果与工作区 pom.xml 列表的会话缓存:
+ * dependencyRepos / 工作区根未变时不再重复扫描 IDEA 配置、读取 ~/.m2 或 findFiles。
+ * pom 路径由文件监听器在新增/删除/改名时失效;内容变化不影响路径列表,坐标仍每次重读。
+ */
+let mavenReposCache: { key: string; repos: string[] } | undefined;
+let pomFilesCache: { key: string; files: vscode.Uri[] } | undefined;
+
+async function cachedMavenRepos(configured: string[]): Promise<string[]> {
+  const key = configured.join("\n");
+  if (mavenReposCache?.key === key) {
+    return mavenReposCache.repos;
+  }
+  const repos = await discoverMavenRepos(configured);
+  mavenReposCache = { key, repos };
+  return repos;
+}
+
+async function cachedPomFiles(): Promise<vscode.Uri[]> {
+  const key = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath).join("\n");
+  if (pomFilesCache?.key === key) {
+    return pomFilesCache.files;
+  }
+  const files = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
+  pomFilesCache = { key, files };
+  return files;
+}
+
+/** pom.xml 新增/删除/改名后失效路径列表缓存;内容变化无需失效(坐标每次重读) */
+function invalidatePomFilesCache(): void {
+  pomFilesCache = undefined;
+}
+
+/**
+ * rules 文件的会话缓存:路径集合 + 各文件 size/mtime 未变时直接复用解析结果,
+ * 避免每次保存 Java 文件刷新树都逐文件重读。properties.additional 已加载/已引用的
+ * 文件一并纳入指纹,引用文件变化或缺失文件重新出现时同样失效。
+ */
+let helperPropertiesCache: { key: string; props: HelperProperties } | undefined;
 
 function jarIndexCacheKey(configSignature: string, jars: string[]): string {
   const parts: string[] = [configSignature];
@@ -54,10 +97,9 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
     }
   }
   // 2. 仓库 + 工作区 pom 坐标
-  const repos = await discoverMavenRepos(settings.dependencyRepos);
+  const repos = await cachedMavenRepos(settings.dependencyRepos);
   if (repos.length) {
-    const MAX_POMS = 200;
-    const poms = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
+    const poms = await cachedPomFiles();
     if (poms.length >= MAX_POMS) {
       vscode.window.showWarningMessage(`pom.xml 数量达到上限 ${MAX_POMS},部分模块的依赖 jar 未纳入识别(可用 dependencyJars 显式补充)`);
     }
@@ -102,18 +144,32 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
   }
   // 隐藏目录/副本内的同名 rules 会因路径更深而覆盖工作区根配置,先剔除
   const uris = withoutIgnoredSources(await vscode.workspace.findFiles("**/.apifox-helper.properties", "**/node_modules/**", 100));
-  if (!uris.length) {
+  const paths = uris.map((uri) => uri.fsPath.replace(/\\/g, "/"));
+  if (!paths.length) {
+    helperPropertiesCache = undefined;
     return undefined;
   }
+  // 指纹含上次 properties.additional 已加载/已引用的文件:引用文件新增或变化都会重新读取
+  const watched = new Set(paths);
+  for (const file of helperPropertiesCache?.props.watchedFiles ?? helperPropertiesCache?.props.files ?? []) {
+    watched.add(file);
+  }
+  const cacheKey = fileSetFingerprint(watched);
+  if (helperPropertiesCache?.key === cacheKey) {
+    return helperPropertiesCache.props;
+  }
   const contents: { path: string; content: string }[] = [];
+  let readAll = true;
   for (const uri of uris) {
     try {
       contents.push({ path: uri.fsPath.replace(/\\/g, "/"), content: await fs.promises.readFile(uri.fsPath, "utf8") });
     } catch {
-      // 忽略不可读文件
+      // 忽略不可读文件;本次不写缓存,下次刷新重试
+      readAll = false;
     }
   }
   if (!contents.length) {
+    helperPropertiesCache = undefined;
     return undefined;
   }
   // 更深的路径视为更具体的模块,后加载(优先级高);同级按文件名
@@ -126,6 +182,9 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
       return undefined;
     }
   });
+  helperPropertiesCache = readAll
+    ? { key: fileSetFingerprint([...paths, ...(props.watchedFiles ?? props.files)]), props }
+    : undefined;
   return props;
 }
 
@@ -163,13 +222,24 @@ function withoutIgnoredSources(uris: vscode.Uri[], keepCheckoutOf?: vscode.Uri):
 
 export function activate(context: vscode.ExtensionContext): void {
   const secrets = context.secrets;
-  // 扩展停用时释放 jar 索引持有的 fd
+  // 扩展停用时释放 jar 索引持有的 fd 并清空会话缓存
   context.subscriptions.push({
     dispose: () => {
       jarIndexCache?.index?.dispose();
       jarIndexCache = undefined;
+      mavenReposCache = undefined;
+      pomFilesCache = undefined;
+      helperPropertiesCache = undefined;
     },
   });
+
+  // pom.xml 路径列表缓存:新增/删除/改名时失效(避免新模块依赖漏识别)
+  const pomWatcher = vscode.workspace.createFileSystemWatcher("**/pom.xml");
+  context.subscriptions.push(
+    pomWatcher,
+    pomWatcher.onDidCreate(invalidatePomFilesCache),
+    pomWatcher.onDidDelete(invalidatePomFilesCache)
+  );
 
   const makeClient = async (): Promise<ApifoxClient | undefined> => {
     const settings = getSettings();

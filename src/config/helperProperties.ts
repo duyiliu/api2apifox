@@ -30,6 +30,8 @@ export interface HelperProperties {
   warnings: string[];
   /** 文件路径列表(含 properties.additional 展开) */
   files: string[];
+  /** 参与加载的文件(含不可读的 properties.additional 引用),用于会话缓存失效判断 */
+  watchedFiles?: string[];
 }
 
 const BACKTICK = "```";
@@ -161,6 +163,7 @@ export function loadPropertiesFiles(
   const entries: HelperPropEntry[] = [];
   const warnings: string[] = [];
   const visited = new Set<string>();
+  const watched = new Set<string>();
   const loaded: string[] = [];
 
   const queue = [...files];
@@ -170,6 +173,7 @@ export function loadPropertiesFiles(
       continue;
     }
     visited.add(cur.path);
+    watched.add(cur.path);
     if (cur.content === "" && readFile && isPlausibleFile(cur.path)) {
       const content = readFile(cur.path);
       if (content === undefined) {
@@ -193,7 +197,7 @@ export function loadPropertiesFiles(
     }
   }
 
-  return { entries, warnings, files: loaded };
+  return { entries, warnings, files: loaded, watchedFiles: [...watched] };
 }
 
 /** 路径像真实文件(非调用方为占位构造的空串路径)才尝试读取 */

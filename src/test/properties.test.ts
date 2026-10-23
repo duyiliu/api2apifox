@@ -140,6 +140,8 @@ test("loadPropertiesFiles:additional 指向不存在文件时告警且不炸", (
   const r = loadPropertiesFiles(files, () => undefined);
   assert.ok(r.warnings.some((w) => w.includes("missing.properties")));
   assert.equal(r.entries.length, 1); // 仅 properties.additional 自身
+  // 不可读的引用文件也纳入 watchedFiles:文件后续出现时能触发会话缓存失效
+  assert.deepEqual(r.watchedFiles, ["D:/proj/.apifox-helper.properties", "D:/proj/missing.properties"]);
 });
 
 test("loadPropertiesFiles:循环引用不挂死", () => {
