@@ -109,7 +109,13 @@ export function analyzeSubset(files: SourceFile[], options: AnalyzeOptions, endp
  * java-parser 单文件毫秒级,缓存只是优化,不影响正确性。
  */
 export class AnalyzeCache {
-  private readonly cache = new Map<string, { content: string; parsed: ParsedFile }>();
+  private readonly cache = new Map<string, { content: string; parsed: ParsedFile; version: number }>();
+  /** 文件集签名版本:每次写入缓存条目递增,供上层 memo 结果缓存判断是否需要失效 */
+  private nextVersion = 0;
+
+  private remember(fsPath: string, content: string, parsed: ParsedFile): void {
+    this.cache.set(fsPath, { content, parsed, version: ++this.nextVersion });
+  }
 
   private runCached(files: SourceFile[], opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): AnalyzeOutput {
     const parsed = files.map((f) => {
@@ -119,7 +125,7 @@ export class AnalyzeCache {
         p = hit.parsed;
       } else {
         p = parseJava(f.fsPath, f.content);
-        this.cache.set(f.fsPath, { content: f.content, parsed: p });
+        this.remember(f.fsPath, f.content, p);
       }
       return p;
     });
@@ -151,10 +157,14 @@ export class AnalyzeCache {
     return this.runCached(files, opts, endpointFilter);
   }
 
-  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重) */
+  /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存,与 analyze 共用 CST */
   endpointsOfFile(fsPath: string, content: string): EndpointInfo[] {
     const hit = this.cache.get(fsPath);
-    const parsed = hit && hit.content === content ? hit.parsed : parseJava(fsPath, content);
+    if (hit && hit.content === content) {
+      return parseControllers([hit.parsed]).endpoints;
+    }
+    const parsed = parseJava(fsPath, content);
+    this.remember(fsPath, content, parsed);
     return parseControllers([parsed]).endpoints;
   }
 }
