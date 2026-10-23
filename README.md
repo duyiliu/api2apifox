@@ -10,8 +10,8 @@
 
 | 形态 | 适用场景 | 安装 |
 | --- | --- | --- |
-| **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
 | **独立 CLI `api2apifox`** | AI Agent、CI、脚本化调用，不依赖 VS Code | `npm install -g @duyiliu/api2apifox` |
+| **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
 
 > **命名说明**：项目曾用名 Apifox Helper（故仓库名与部分配置项仍为 `apifox-helper` / `apifoxHelper.*`），现产品名为 **ApiGen for Apifox**，Marketplace 扩展 ID 为 `duyiliu.api2apifox`，CLI 包名为 `@duyiliu/api2apifox`。
 
@@ -23,11 +23,6 @@
 - **规则引擎兼容**:识别 `.apifox-helper.properties` 声明式规则(与 IDEA 版 Apifox Helper / easyyapi 兼容的子集),团队既有规则可直接复用
 - **细粒度同步**:整个项目 / 单个文件 / 单个接口,随取随传
 - **CLI 一等公民**:与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
-
-## 📦 安装扩展（VS Code / Cursor）
-
-- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 📟 独立 CLI（AI Agent / CI / 脚本）
 
@@ -71,6 +66,11 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 > CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
 
 完整参数表见 [`packages/cli/README.md`](packages/cli/README.md)。
+
+## 📦 安装扩展（VS Code / Cursor）
+
+- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
+- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手（扩展）
 
