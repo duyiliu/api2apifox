@@ -4,6 +4,7 @@
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
+[![npm: @duyiliu/api2apifox](https://img.shields.io/npm/v/%40duyiliu%2Fapi2apifox?label=CLI%20npm)](https://www.npmjs.com/package/@duyiliu/api2apifox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** 对标 IDEA 版 Apifox Helper，提供两种形态：
@@ -70,7 +71,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 ## 📦 安装扩展（VS Code / Cursor）
 
 - **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载 `api2apifox-<版本>.vsix`(如 `api2apifox-0.2.23.vsix`),执行命令 `Extensions: Install from VSIX...` 安装
+- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手（扩展）
 
@@ -154,14 +155,14 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 </details>
 
-## 🖥 接口列表视图
+## 🖥 接口列表视图（扩展）
 
 - **浏览**:侧边栏「接口列表」按接口目录分组展示工作区解析出的所有接口,目录 key 含 `/` 时逐级嵌套(如 `测评工作站/测评量表-CARS`);目录默认收起,手动展开/收起后刷新保持;保存 Java 文件后自动刷新(侧边栏不可见时延迟到下次可见)
 - **快速过滤**:点击标题栏漏斗图标输入关键词(支持 URL 路径、中文描述、HTTP 方法、Controller 类名等),支持多词组合(空格分隔),实时保留匹配项并高亮关键字;过滤激活时常驻一行 `🔍 "关键字" · 命中数/总数`,一键清除
 - **搜索并跳转**:放大镜图标弹出 QuickPick,模糊匹配接口,回车直接跳转到源码定义
 - **批量勾选**:过滤状态下「全选」仅勾选当前命中接口;若存在过滤隐藏的已选项,同步时会明确选择“仅当前过滤”或“全部已选”;勾选按 Apifox 项目隔离并跨会话保持
 
-### 同步命令
+### 同步命令（VS Code 命令）
 
 | 命令 | 说明 |
 | --- | --- |
