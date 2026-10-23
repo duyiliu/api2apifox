@@ -69,7 +69,16 @@ export async function findProjectFiles(
     followSymbolicLinks: false,
   });
   files.sort((a, b) => a.localeCompare(b));
-  return maxFiles === undefined ? files : files.slice(0, maxFiles);
+  const probe = createGitEntryProbe((candidate) => fs.existsSync(candidate));
+  const scopedFiles: string[] = [];
+  for (const file of files) {
+    throwIfAborted(signal);
+    const dir = path.dirname(file);
+    if (!isInHiddenDirectory(dir, projectRoot) && !isSkippedCheckout(dir, projectRoot, probe.hasGitEntry)) {
+      scopedFiles.push(file);
+    }
+  }
+  return maxFiles === undefined ? scopedFiles : scopedFiles.slice(0, maxFiles);
 }
 
 export function throwIfAborted(signal?: AbortSignal): void {

@@ -98,6 +98,7 @@ export class ApifoxClient {
   private async request<T>(method: string, path: string, json?: unknown): Promise<T> {
     const url = this.baseUrl.replace(/\/+$/, "") + path;
     let res: Response;
+    let text: string;
     try {
       res = await fetch(url, {
         method,
@@ -107,8 +108,13 @@ export class ApifoxClient {
           "Content-Type": "application/json",
         },
         body: json === undefined ? undefined : JSON.stringify(json),
-        signal: this.signal ? AbortSignal.any([this.signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
+        signal: combineAbortSignals(
+          this.signal ? [this.signal, AbortSignal.timeout(this.timeoutMs)] : [AbortSignal.timeout(this.timeoutMs)]
+        ),
       });
+      // Fetch resolves once headers arrive; body consumption can still time out or fail.
+      // Keep it in the same mapping path so CLI callers receive REQUEST_TIMEOUT/NETWORK_FAILED.
+      text = await res.text();
     } catch (err) {
       if (this.signal?.aborted) {
         const cancelled = new Error("操作已取消");
@@ -120,8 +126,6 @@ export class ApifoxClient {
       }
       throw new ApifoxApiError(formatNetworkFailure(url, err), 0);
     }
-
-    const text = await res.text();
 
     // Apifox 网关对不存在的路由返回 302 跳转帮助页,fetch 跟随后是 200 HTML,会造成“假成功”;
     // 显式识别重定向,给出可定位的错误而不是静默空结果。
@@ -147,6 +151,42 @@ export class ApifoxClient {
     }
     return (payload?.data ?? payload) as T;
   }
+}
+
+/** Merge signals while preserving the Node.js >=20 CLI contract on versions before AbortSignal.any(). */
+function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(signals);
+  }
+
+  const controller = new AbortController();
+  const listeners: { signal: AbortSignal; listener: () => void }[] = [];
+  let settled = false;
+  const cleanup = () => {
+    for (const { signal, listener } of listeners) {
+      signal.removeEventListener("abort", listener);
+    }
+    listeners.length = 0;
+  };
+  const abortFrom = (source: AbortSignal) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cleanup();
+    controller.abort(source.reason);
+  };
+
+  for (const signal of signals) {
+    if (signal.aborted) {
+      abortFrom(signal);
+      break;
+    }
+    const listener = () => abortFrom(signal);
+    listeners.push({ signal, listener });
+    signal.addEventListener("abort", listener, { once: true });
+  }
+  return controller.signal;
 }
 
 function humanizeError(status: number, payload?: { message?: string; code?: number | string }): string {

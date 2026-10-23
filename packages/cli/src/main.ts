@@ -37,7 +37,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
     let warnings: string[] = [];
     switch (options.command) {
       case "config":
-        result = configResult(resolved);
+        result = configResult(resolved, options.projectSource);
         warnings = diagnosticMessages(resolved.diagnostics);
         break;
       case "scan": {
@@ -204,11 +204,11 @@ async function confirmSync(
   }
 }
 
-function configResult(resolved: ResolvedConfigResult): Record<string, unknown> {
+function configResult(resolved: ResolvedConfigResult, projectSource: "default" | "cli"): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(resolved.config)) {
-    if (key === "projectRoot" || key === "title") {
-      fields[key] = { value, source: key === "projectRoot" ? "cli/default" : "default/file/cli" };
+    if (key === "projectRoot") {
+      fields[key] = { value, source: projectSource };
     } else {
       fields[key] = { value, source: resolved.sources[key as keyof typeof resolved.sources] };
     }
@@ -250,7 +250,7 @@ function outputSuccess(options: CliOptions, result: unknown, warnings: string[],
     writeJson(envelope);
     return;
   }
-  writeText(formatTextResult(options.command, result, warnings));
+  writeText(formatTextResult(options.command, result, options.quiet ? [] : warnings));
 }
 
 function outputFailure(
@@ -336,7 +336,8 @@ const FILTER_HELP = `  --file <path>             只保留该源文件（相对�
 
 const COMMON_HELP = `  --project <dir>           项目根目录，默认当前目录
   --config <file>           配置文件，默认 <project>/.api2apifox.json
-  --format text|json        输出格式，默认 text；json 时 stdout 只输出一个 JSON 信封`;
+  --format text|json        输出格式，默认 text；json 时 stdout 只输出一个 JSON 信封
+  --quiet                   text 模式隐藏非致命警告；json 信封内容不变`;
 
 const HELP_FLAG = `  -h, --help                显示帮助`;
 

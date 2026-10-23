@@ -23,7 +23,7 @@
 
 ### 独立 CLI（AI Agent / CI）
 
-无需 VS Code 即可扫描、导出和同步，CLI 包名为 `@duyiliu/api2apifox`，命令名为 `api2apifox`：
+无需 VS Code 即可扫描、导出和同步，CLI 包名为 `@duyiliu/api2apifox`，命令名为 `api2apifox`（要求 Node.js ≥ 20）：
 
 ```bash
 npm install -g @duyiliu/api2apifox

@@ -36,7 +36,7 @@ export type ConfigSource = "default" | `file:${string}` | `env:${string}` | "cli
 
 export interface ResolvedConfigResult {
   config: ResolvedConfig;
-  sources: Record<keyof Omit<ResolvedConfig, "projectRoot" | "title">, ConfigSource>;
+  sources: Record<keyof Omit<ResolvedConfig, "projectRoot">, ConfigSource>;
   configFile?: string;
   token?: string;
   tokenSource?: `env:${string}` | "cli";

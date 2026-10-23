@@ -348,7 +348,7 @@ api2apifox config --project . --format json
 
 - `--format text`：面向人类，进度和结果均可读。
 - `--format json`：stdout 只输出一个最终 JSON 对象，禁止进度条、颜色和普通日志。
-- JSON 模式下诊断日志写 stderr；默认 `--quiet` 时 stderr 只保留致命错误。
+- text 模式下 `--quiet` 隐藏成功结果中的非致命警告，但保留主要结果；JSON 模式始终在信封 `warnings` 中返回警告。`--quiet` 不隐藏致命错误：text 错误写入 stderr，JSON 错误保留在失败信封中。
 - `NO_COLOR` 或非 TTY 环境自动关闭 ANSI 颜色。
 - 所有 JSON 字段使用稳定英文 key，message 可使用中文。
 
@@ -633,7 +633,7 @@ src/vscode/
 | `--project <dir>` | 当前目录 | 项目根目录 |
 | `--config <file>` | `.api2apifox.json` | 配置文件 |
 | `--format text|json` | TTY 为 text，非 TTY 仍默认 text | 输出格式，AI 应显式使用 json |
-| `--quiet` | false | 抑制非必要 stderr 日志 |
+| `--quiet` | false | text 模式隐藏非致命警告；不改变 JSON 信封 |
 | `--no-color` | 自动 | 禁用颜色 |
 | `--file <path>` | 无 | 只输出/同步目标文件中的接口，可重复 |
 | `--endpoint <METHOD PATH>` | 无 | 精确选择接口，可重复 |

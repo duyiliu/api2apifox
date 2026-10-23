@@ -9,6 +9,7 @@ export interface CliOptions {
   help: boolean;
   version: boolean;
   project: string;
+  projectSource: "default" | "cli";
   configFile?: string;
   format: "text" | "json";
   quiet: boolean;
@@ -89,6 +90,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     help: parsed.values.help ?? false,
     version: parsed.values.version ?? false,
     project: parsed.values.project ?? ".",
+    projectSource: hasOption(rest, "--project") ? "cli" : "default",
     configFile: parsed.values.config,
     format,
     quiet: parsed.values.quiet ?? false,
@@ -109,6 +111,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     dependencyJars: parsed.values["dependency-jar"] ?? [],
     timeoutMs: parsed.values["timeout-ms"] === undefined ? undefined : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
   };
+}
+
+function hasOption(args: string[], name: string): boolean {
+  return args.some((arg) => arg === name || arg.startsWith(`${name}=`));
 }
 
 function isCommand(value: string): value is CommandName {

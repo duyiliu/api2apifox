@@ -107,7 +107,8 @@ export function resolveConfig(
     (Object.keys(defaults) as (keyof ResolvedConfig)[])
       .filter((key): key is SourceKey => key !== "projectRoot" && key !== "title")
       .map((key) => [key, "default"])
-  ) as Record<SourceKey, ConfigSource>;
+  ) as Record<string, ConfigSource>;
+  sources.title = "default";
   const config: ResolvedConfig = { ...defaults };
 
   const helper = isRecord(fileConfig.helperProperties) ? fileConfig.helperProperties : {};
@@ -129,6 +130,7 @@ export function resolveConfig(
   applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
   if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
     config.title = fileConfig.title.trim();
+    sources.title = fileSource;
   } else if (fileConfig.title !== undefined) {
     invalid("title 必须是非空字符串", diagnostics);
   }
@@ -147,6 +149,7 @@ export function resolveConfig(
   }
   if (overrides.title?.trim()) {
     config.title = overrides.title.trim();
+    sources.title = "cli";
   }
 
   validateResolvedConfig(config, diagnostics);
@@ -158,7 +161,7 @@ export function resolveConfig(
   const tokenSource = overrides.token ? "cli" : env.API2APIFOX_TOKEN ? "env:API2APIFOX_TOKEN" : undefined;
   return {
     config,
-    sources,
+    sources: sources as ResolvedConfigResult["sources"],
     configFile: fs.existsSync(configPath) ? configPath : undefined,
     token,
     tokenSource,

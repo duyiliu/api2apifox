@@ -2,6 +2,8 @@
 
 不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0，并同步到 Apifox。适合 AI Agent、CI 和本地脚本。
 
+要求 Node.js `>=20`。
+
 ## 安装
 
 ```bash
@@ -106,6 +108,8 @@ $env:API2APIFOX_PROJECT_ID = "123456"
 ## AI 调用约定
 
 使用 `--format json` 时，stdout 只包含一个 JSON 信封；根据 `ok`、`error.code` 和进程退出码进行分支。`export --stdout` 会直接输出 OpenAPI 本体，因此不能与 `--format json` 一起使用。
+
+`--quiet` 在 text 模式下隐藏非致命警告，但保留主要结果；JSON 模式仍在信封的 `warnings` 中返回完整警告。
 
 稳定退出码：
 
