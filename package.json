@@ -462,7 +462,7 @@
     "compile": "node esbuild.js",
     "typecheck": "tsc --noEmit",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test \"out/test/*.test.js\"",
+    "test": "npm run build:test && node scripts/run-tests.mjs",
     "build:cli": "npm run build --workspace @duyiliu/api2apifox",
     "typecheck:cli": "npm run typecheck --workspace @duyiliu/api2apifox",
     "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies",
