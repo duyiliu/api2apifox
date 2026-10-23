@@ -166,8 +166,8 @@ test("JarClassIndex:按需解析 zip 内 .class", () => {
   fs.writeFileSync(zipPath, buildZip([
     { name: "com/x/Demo.class", data: buildDemoClassExplicit(), deflate: true },
   ]));
+  const idx = JarClassIndex.build([zipPath]);
   try {
-    const idx = JarClassIndex.build([zipPath]);
     const info = idx.lookup("Demo")!;
     assert.ok(info);
     assert.equal(info.qualifiedName, "com.x.Demo");
@@ -176,6 +176,8 @@ test("JarClassIndex:按需解析 zip 内 .class", () => {
     assert.equal(nameField.annotations[0].args.value, "姓名");
     assert.equal(idx.lookup("不存在"), undefined);
   } finally {
+    // 索引持有 jar fd,Windows 上未关闭会阻塞 unlink
+    idx.dispose();
     fs.unlinkSync(zipPath);
   }
 });
@@ -186,17 +188,21 @@ const EXT_JAR = "D:/repository/ext/plus/extreme-common-core/2.2.0/extreme-common
 
 test("真实 jar:ResponseDto 解析(本机存在才执行)", { skip: !fs.existsSync(EXT_JAR) }, () => {
   const idx = JarClassIndex.build([EXT_JAR]);
-  const info = idx.lookup("ResponseDto")!;
-  assert.ok(info, "应找到 ResponseDto");
-  assert.equal(info.kind, "class");
-  assert.ok(info.typeParams.includes("T"));
-  const names = info.fields.map((f) => f.name);
-  assert.ok(names.includes("data"), names.join(","));
+  try {
+    const info = idx.lookup("ResponseDto")!;
+    assert.ok(info, "应找到 ResponseDto");
+    assert.equal(info.kind, "class");
+    assert.ok(info.typeParams.includes("T"));
+    const names = info.fields.map((f) => f.name);
+    assert.ok(names.includes("data"), names.join(","));
+  } finally {
+    idx.dispose();
+  }
 });
 
-test("自动发现:无需配置即可找到本机 Maven 仓库(存在 IDEA 配置时)", { skip: !fs.existsSync(EXT_JAR) }, (t) => {
+test("自动发现:无需配置即可找到本机 Maven 仓库(存在 IDEA 配置时)", { skip: !fs.existsSync(EXT_JAR) }, async (t) => {
   const { discoverMavenRepos } = require("../java/jarIndex");
-  const repos = discoverMavenRepos([]);
+  const repos = await discoverMavenRepos([]);
   t.diagnostic("发现仓库: " + repos.join(" | "));
   assert.ok(repos.some((r: string) => r.replace(/\\/g, "/") === "D:/repository"), "应自动发现 D:/repository: " + repos.join(","));
 });

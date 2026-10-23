@@ -462,7 +462,7 @@
     "compile": "node esbuild.js",
     "typecheck": "tsc --noEmit",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test out/test/utils.test.js out/test/client.test.js out/test/analyze.test.js out/test/features.test.js out/test/properties.test.js out/test/rules.test.js out/test/jar.test.js out/test/treeFilter.test.js out/test/folderTree.test.js out/test/scanScope.test.js out/test/syncPreflight.test.js out/test/syncReport.test.js out/test/coreConfig.test.js out/test/projectAnalyzer.test.js out/test/webview.test.js",
+    "test": "npm run build:test && node --test \"out/test/*.test.js\"",
     "build:cli": "npm run build --workspace @duyiliu/api2apifox",
     "typecheck:cli": "npm run typecheck --workspace @duyiliu/api2apifox",
     "package": "npm run typecheck && npm run compile && npx @vscode/vsce package --no-dependencies",
@@ -479,6 +479,7 @@
     "typescript": "^5.5.0"
   },
   "dependencies": {
+    "fast-glob": "^3.3.3",
     "java-parser": "^2.1.1"
   }
 }

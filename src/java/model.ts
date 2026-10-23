@@ -101,6 +101,8 @@ export interface EndpointInfo {
   /** 归属 tag(通常为 Controller 名或 @Tag) */
   tag: string;
   operationId: string;
+  /** Java 方法名(告警按 `Controller.methodName:` 前缀归属;operationId 为 `Controller_methodName` 口径) */
+  methodName?: string;
   summary?: string;
   description?: string;
   parameters: ParameterInfo[];

@@ -1,17 +1,6 @@
 import * as vscode from "vscode";
 import { SyncReport } from "../ui/syncResult";
-
-/** 生成 Webview CSP nonce(每次渲染随机,内联 script 携带后方可执行) */
-function getNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  for (const b of bytes) {
-    text += chars[b % chars.length];
-  }
-  return text;
-}
+import { getNonce } from "../ui/nonce";
 
 /**
  * 同步结果面板:与设置中心同级的 Webview 视图。
@@ -77,8 +66,9 @@ export class SyncResultPanel {
             this._postMessage({ command: "copied", label: message.label });
             break;
           case "openProject":
-            if (Number(message.projectId) > 0) {
-              await vscode.env.openExternal(vscode.Uri.parse(`https://app.apifox.com/project/${message.projectId}`));
+            // 跳转地址由报告构建方按 apiBaseUrl 推导(私有化部署为 undefined,按钮已隐藏)
+            if (this._pending?.projectUrl) {
+              await vscode.env.openExternal(vscode.Uri.parse(this._pending.projectUrl));
             }
             break;
           case "openSource": {
@@ -86,8 +76,13 @@ export class SyncResultPanel {
             if (!fsPath) {
               break;
             }
+            // 只允许打开工作区内文件(fsPath 来自本端生成的报告,这里做兜底校验)
+            const fileUri = vscode.Uri.file(fsPath);
+            if (!vscode.workspace.getWorkspaceFolder(fileUri)) {
+              break;
+            }
             try {
-              const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fsPath));
+              const doc = await vscode.workspace.openTextDocument(fileUri);
               const editor = await vscode.window.showTextDocument(doc, { preview: true });
               const offset = Number(message.startOffset);
               if (Number.isFinite(offset) && offset >= 0) {
@@ -538,7 +533,7 @@ export class SyncResultPanel {
       setText("metaScope", report.scope);
       setText("metaTime", report.finishedAt);
       setText("metaConflict", report.conflict);
-      el("btnOpenProject").classList.toggle("hidden", !(report.projectId > 0));
+      el("btnOpenProject").classList.toggle("hidden", !report.projectUrl);
       renderResultBanner();
       renderSummary();
       renderEndpoints();
@@ -561,16 +556,22 @@ export class SyncResultPanel {
       return lines.join("\\n");
     }
 
+    // 表格单元格转义:接口名/路径含 | 或换行会破坏 Markdown 表结构
+    // 注意:此处位于 HTML 模板字符串内,反斜杠需双写(发出到 webview 的 JS 才是单斜杠)
+    function mdCell(v) {
+      return String(v == null ? "" : v).replace(/\\|/g, "\\\\|").replace(/[\\r\\n]+/g, " ");
+    }
+
     function markdown() {
       if (!report) { return ""; }
       const lines = ["## 同步结果", "", "- 目标：" + report.target, "- 范围：" + report.scope, "- 时间：" + report.finishedAt, "- 冲突策略：" + report.conflict, ""];
       lines.push("| 分类 | 新增 | 更新 | 忽略 | 失败 | 合计 |", "| --- | ---: | ---: | ---: | ---: | ---: |");
       for (const row of report.summary) {
-        lines.push("| " + row.category + " | " + row.created + " | " + row.updated + " | " + row.ignored + " | " + row.failed + " | " + row.total + " |");
+        lines.push("| " + mdCell(row.category) + " | " + row.created + " | " + row.updated + " | " + row.ignored + " | " + row.failed + " | " + row.total + " |");
       }
       lines.push("", "| 接口名称 | 方法 | 路径 | 目录 |", "| --- | --- | --- | --- |");
       for (const row of visibleEndpoints()) {
-        lines.push("| " + row.name + " | " + row.method + " | " + row.path + " | " + row.folder + " |");
+        lines.push("| " + mdCell(row.name) + " | " + mdCell(row.method) + " | " + mdCell(row.path) + " | " + mdCell(row.folder) + " |");
       }
       if ((report.errors || []).length) {
         lines.push("", "**错误**");
@@ -625,7 +626,7 @@ export class SyncResultPanel {
     el("btnCopySummary").addEventListener("click", () => copy(summaryTsv(), "汇总"));
     el("btnCopyEndpoints").addEventListener("click", () => copy(endpointTsv(), "接口清单"));
     el("btnCopyMarkdown").addEventListener("click", () => copy(markdown(), "Markdown"));
-    el("btnOpenProject").addEventListener("click", () => vscode.postMessage({ command: "openProject", projectId: report ? report.projectId : 0 }));
+    el("btnOpenProject").addEventListener("click", () => vscode.postMessage({ command: "openProject" }));
 
     window.addEventListener("message", (event) => {
       const message = event.data;

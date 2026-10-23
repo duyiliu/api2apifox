@@ -158,6 +158,8 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 
+> 设置中心保存的项目绑定(`projectId`/`projectName`/`teamName`/`apiBaseUrl` 等)写入**工作区** `.vscode/settings.json`,会随仓库提交共享给团队(便于成员共用同一目标项目);访问令牌始终存在系统 SecretStorage,不落任何文件。
+
 ## 📄 .apifox-helper.properties 支持
 
 支持 IDEA 版 Apifox Helper(easyyapi 规则引擎)的**声明式规则子集**,文件放工作区/模块根目录即可,无需额外配置:

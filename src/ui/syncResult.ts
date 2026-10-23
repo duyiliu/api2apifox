@@ -40,6 +40,8 @@ export interface SyncEndpointRow {
 export interface SyncReport {
   /** 目标项目 ID（0 表示未绑定，面板不提供跳转） */
   projectId: number;
+  /** 项目 Web 跳转地址(仅公网可推导;私有化部署缺省,面板隐藏跳转按钮) */
+  projectUrl?: string;
   /** 目标：团队 / 项目（ID: x） */
   target: string;
   /** 本次同步范围，如“整个工作区” */
@@ -61,6 +63,8 @@ export interface BuildSyncReportInput {
   endpoints: EndpointInfo[];
   target: string;
   projectId: number;
+  /** 项目 Web 跳转地址(由调用方按 apiBaseUrl 推导,见 projectWebUrl) */
+  projectUrl?: string;
   scope: string;
   endpointConflictBehavior: string;
   schemaConflictBehavior: string;
@@ -121,6 +125,25 @@ function relativePath(file: string, root: string): string {
   return normalized.startsWith(root + "/") ? normalized.slice(root.length + 1) : normalized;
 }
 
+/**
+ * 公网 Apifox 的项目 Web 控制台地址。
+ * 私有化部署(apiBaseUrl 非官方域名)无法推导,返回 undefined,面板据此隐藏跳转按钮。
+ */
+export function projectWebUrl(apiBaseUrl: string, projectId: number): string | undefined {
+  if (!(projectId > 0)) {
+    return undefined;
+  }
+  try {
+    const host = new URL(apiBaseUrl).hostname.toLowerCase();
+    if (host === "api.apifox.com" || host === "apifox.com" || host === "www.apifox.com") {
+      return `https://app.apifox.com/project/${projectId}`;
+    }
+  } catch {
+    // 非法 URL 由上游配置校验拦截,这里按无法推导处理
+  }
+  return undefined;
+}
+
 export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
   const root = (input.workspaceRoot ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
   const endpoints: SyncEndpointRow[] = input.endpoints.map((ep) => ({
@@ -136,6 +159,7 @@ export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
 
   return {
     projectId: input.projectId,
+    projectUrl: input.projectUrl,
     target: input.target,
     scope: input.scope,
     finishedAt: formatSyncTime(input.finishedAt ?? new Date()),

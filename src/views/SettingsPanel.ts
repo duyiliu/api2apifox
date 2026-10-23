@@ -3,18 +3,7 @@ import { getToken, setToken } from "../config/secret";
 import { getSettings } from "../config/settings";
 import { ApifoxClient } from "../apifox/client";
 import { errorMessage, TOKEN_HELP_URL } from "../apifox/uploader";
-
-/** 生成 Webview CSP nonce(每次渲染随机,内联 script 携带后方可执行) */
-function getNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  for (const b of bytes) {
-    text += chars[b % chars.length];
-  }
-  return text;
-}
+import { getNonce } from "../ui/nonce";
 
 export class SettingsPanel {
   public static currentPanel: SettingsPanel | undefined;

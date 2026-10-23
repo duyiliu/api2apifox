@@ -47,25 +47,30 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
     folderOf,
     jarLookup: dependency.index ? (name: string) => dependency.index!.lookup(name) : undefined,
   };
-  const output = hasFilter
-    ? analyzeSubset(scanned.files, options, (endpoint) => {
-        const fileMatch = fileSelectors.size === 0 || fileSelectors.has(normalizeFsPath(endpoint.fsPath)) ||
-          (!!endpoint.ownerFsPath && fileSelectors.has(normalizeFsPath(endpoint.ownerFsPath)));
-        const endpointMatch = endpointSelectors.size === 0 || endpointSelectors.has(`${endpoint.method.toUpperCase()} ${normalizeEndpointPath(endpoint.path)}`);
-        return fileMatch && endpointMatch;
-      })
-    : analyze(scanned.files, options);
+  try {
+    const output = hasFilter
+      ? analyzeSubset(scanned.files, options, (endpoint) => {
+          const fileMatch = fileSelectors.size === 0 || fileSelectors.has(normalizeFsPath(endpoint.fsPath)) ||
+            (!!endpoint.ownerFsPath && fileSelectors.has(normalizeFsPath(endpoint.ownerFsPath)));
+          const endpointMatch = endpointSelectors.size === 0 || endpointSelectors.has(`${endpoint.method.toUpperCase()} ${normalizeEndpointPath(endpoint.path)}`);
+          return fileMatch && endpointMatch;
+        })
+      : analyze(scanned.files, options);
 
-  const dependencyWarnings = [...dependency.warnings, ...(dependency.index?.warnings ?? [])];
-  const warnings = [...new Set([...(helperProperties?.warnings ?? []), ...dependencyWarnings, ...output.warnings])];
-  return {
-    ...output,
-    warnings,
-    projectRoot: config.projectRoot,
-    scannedFiles: scanned.scannedFiles,
-    skippedFiles: scanned.skippedFiles,
-    diagnostics: scanned.diagnostics,
-  };
+    const dependencyWarnings = [...dependency.warnings, ...(dependency.index?.warnings ?? [])];
+    const warnings = [...new Set([...(helperProperties?.warnings ?? []), ...dependencyWarnings, ...output.warnings])];
+    return {
+      ...output,
+      warnings,
+      projectRoot: config.projectRoot,
+      scannedFiles: scanned.scannedFiles,
+      skippedFiles: scanned.skippedFiles,
+      diagnostics: scanned.diagnostics,
+    };
+  } finally {
+    // JarClassIndex 持有各 jar 的 fd,解析完成后必须释放
+    dependency.index?.dispose();
+  }
 }
 
 async function loadProjectHelperProperties(config: ResolvedConfig, signal?: AbortSignal): Promise<HelperProperties | undefined> {
@@ -76,10 +81,8 @@ async function loadProjectHelperProperties(config: ResolvedConfig, signal?: Abor
   const contents: { path: string; content: string }[] = [];
   for (const file of files) {
     throwIfAborted(signal);
-    const dir = path.dirname(file);
-    if (dir.split(path.sep).some((segment) => segment.startsWith(".")) && path.resolve(dir) !== path.resolve(config.projectRoot)) {
-      continue;
-    }
+    // findProjectFiles 已按相对项目根过滤隐藏目录与嵌套 checkout;
+    // 不能再按绝对路径分段判断,否则根路径自身带点目录(如 ~/.config/proj)时会误杀子模块规则文件
     try {
       contents.push({ path: normalizeFsPath(file), content: await fs.promises.readFile(file, "utf8") });
     } catch {
@@ -116,7 +119,7 @@ async function buildProjectJarIndex(
     }
   }
 
-  const repos = discoverMavenRepos(
+  const repos = await discoverMavenRepos(
     config.dependencyRepos.map((repo) => (path.isAbsolute(repo) ? repo : path.resolve(config.projectRoot, repo)))
   );
   if (repos.length) {
@@ -130,7 +133,7 @@ async function buildProjectJarIndex(
         warnings.push(`pom.xml 不可读:${pom}`);
       }
     }
-    const resolved = resolveDependencyJars(repos, coordinates);
+    const resolved = await resolveDependencyJars(repos, coordinates);
     jars.push(...resolved.jars);
     warnings.push(...resolved.warnings);
   }

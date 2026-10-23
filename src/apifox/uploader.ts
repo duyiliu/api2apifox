@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, describeErrorChain, ImportResult } from "./client";
-import { getToken } from "../config/secret";
+import { getToken, setToken } from "../config/secret";
 import { saveProjectId, ApifoxSettings } from "../config/settings";
 import { AnalyzeOutput } from "../pipeline";
 
@@ -33,8 +33,8 @@ export async function ensureToken(secrets: vscode.SecretStorage): Promise<string
   if (!token) {
     return undefined;
   }
-  await secrets.store("apifoxHelper.token", token);
-  return token;
+  await setToken(secrets, token);
+  return token.trim();
 }
 
 interface TeamQuickPickItem extends vscode.QuickPickItem {

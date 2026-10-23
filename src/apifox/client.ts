@@ -62,21 +62,32 @@ export class ApifoxClient {
 
   /**
    * 当前令牌可见的全部项目:先取团队,再逐团队取项目合并。
-   * 单个团队拉取失败不影响其余团队(仅跳过并在结果中缺失)。
+   * 单个团队拉取失败不影响其余团队(仅跳过并在结果中缺失);
+   * 全部失败时抛出首个错误,避免把接口异常误判为"令牌下没有项目"。
    */
   async listProjects(): Promise<ApifoxProject[]> {
     const teams = await this.listTeams();
+    let failed = 0;
+    let firstError: unknown;
     const results = await Promise.all(
       teams.map(async (team) => {
         try {
           const projects = await this.listTeamProjects(team.id);
           return projects.map((p) => ({ ...p, teamName: team.name }));
-        } catch {
+        } catch (err) {
+          failed++;
+          firstError ??= err;
           return [] as ApifoxProject[];
         }
       })
     );
-    return results.flat();
+    const projects = results.flat();
+    if (!projects.length && failed > 0 && teams.length > 0) {
+      throw firstError instanceof Error
+        ? firstError
+        : new ApifoxApiError(`${failed} 个团队的项目列表拉取失败`, 0);
+    }
+    return projects;
   }
 
   /**

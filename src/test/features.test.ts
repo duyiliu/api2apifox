@@ -290,6 +290,34 @@ public class HeaderDefaultController {
   assert.equal(opB.parameters[0].required, false);
 });
 
+test("Spring 无注解简单参数:引用类型可选,原生类型缺失无法绑定按必填处理", () => {
+  const files: SourceFile[] = [
+    {
+      fsPath: "/mem/SimpleParamController.java",
+      content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/simple")
+public class SimpleParamController {
+    @GetMapping("/a")
+    public String a(String keyword) { return keyword; }
+
+    @GetMapping("/b")
+    public String b(int page) { return String.valueOf(page); }
+}
+`,
+    },
+  ];
+  const out = analyze(files, { title: "demo" });
+  const opA = out.spec.paths["/api/simple/a"].get as Record<string, any>;
+  assert.equal(opA.parameters[0].in, "query");
+  assert.equal(opA.parameters[0].required, false);
+  const opB = out.spec.paths["/api/simple/b"].get as Record<string, any>;
+  assert.equal(opB.parameters[0].required, true);
+});
+
 test("JAX-RS:@QueryParam 无 @DefaultValue 时同样可选(缺失仅取 null)", () => {
   const files: SourceFile[] = [
     {

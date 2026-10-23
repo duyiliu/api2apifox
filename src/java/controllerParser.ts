@@ -572,18 +572,36 @@ function collectMethodHits(root: TypeSite, chain: TypeSite[]): MethodHit[] {
   return hits;
 }
 
+interface FileScope {
+  /** package 声明(可能缺省) */
+  packageName?: string;
+  /** 简单名 -> 普通 import 全限定名(static import 不参与类型解析) */
+  imported: Map<string, string>;
+}
+
+const fileScopeCache = new WeakMap<ParsedFile, FileScope>();
+
+/** 文件级作用域(包名 + import)按 ParsedFile 缓存:签名归一化对每个方法都要查 */
+function fileScopeOf(pf: ParsedFile): FileScope {
+  let scope = fileScopeCache.get(pf);
+  if (!scope) {
+    const imported = new Map<string, string>();
+    for (const match of pf.source.matchAll(/^\s*import\s+(?!static\s+)([\w.]+);/gm)) {
+      imported.set(simpleName(match[1]), match[1]);
+    }
+    scope = { packageName: /^\s*package\s+([\w.]+)\s*;/m.exec(pf.source)?.[1], imported };
+    fileScopeCache.set(pf, scope);
+  }
+  return scope;
+}
+
 /** 方法签名按参数类型身份(擦除泛型,保留包名与数组维度),用于区分同名重载并识别覆写 */
 function methodSignature(site: TypeSite, method: CstNode): string {
   const { pf } = site;
   const header = childNode(method, "methodHeader") ?? method;
   const declarator = childNode(header, "methodDeclarator");
   const paramList = childNode(declarator, "formalParameterList");
-  const packageName = /^\s*package\s+([\w.]+)\s*;/m.exec(pf.source)?.[1];
-  const imported = new Map<string, string>();
-  for (const match of pf.source.matchAll(/^\s*import\s+(?!static\s+)([\w.]+);/gm)) {
-    const qualified = match[1];
-    imported.set(simpleName(qualified), qualified);
-  }
+  const { packageName, imported } = fileScopeOf(pf);
   const javaLang = new Set([
     "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
     "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
@@ -786,12 +804,13 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
         { name: "sort", in: "query", typeText: "List<String>", required: false, description: "排序,如 name,asc", annotations: [] }
       );
     } else if (isSimpleTypeText(typeText)) {
-      // 无注解的简单类型:Spring 默认按 query 参数处理
+      // 无注解的简单类型:Spring 默认按 query 参数处理且视为可选(缺失绑定 null/缺省值);
+      // 原生类型(int/long 等)缺失时无法赋值,实际表现为必填
       parameters.push({
         name: paramName,
         in: "query",
         typeText,
-        required: a.flavor !== "jaxrs",
+        required: isPrimitiveJavaType(typeText),
         description,
         example,
         annotations,
@@ -874,6 +893,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     path: finalPath,
     tag: a.tag,
     operationId: `${a.controller}_${a.methodName}`,
+    methodName: a.methodName,
     summary,
     description,
     parameters,
@@ -955,7 +975,7 @@ function collectImplicitParams(annotations: AnnotationInfo[]): ImplicitParam[] {
 
 /** 把 "@ApiImplicitParam(...)" 等(可能带嵌套限定前缀)的注解原文解析回 AnnotationInfo */
 function parseAnnotationText(raw: string): AnnotationInfo {
-  const trimmed = raw.trim().replace(/^_nested_/, "").replace(/_annotation/, "");
+  const trimmed = raw.trim().replace(/^_nested_/, "").replace(/_annotation$/, "");
   const m = /^@?(?:[\w.]*\.)?(\w+)\(([\s\S]*)\)$/.exec(trimmed);
   if (!m) {
     return { name: trimmed.replace(/^@/, ""), raw, args: {} };
@@ -1156,6 +1176,11 @@ function joinPath(base: string, sub: string): string {
       .map((s) => s.replace(/^\/+|\/+$/g, ""))
       .join("/");
   return p.replace(/\/{2,}/g, "/") || "/";
+}
+
+/** Java 原生类型(不含包装类与数组):query 参数缺失时无法绑定 null,按必填处理 */
+function isPrimitiveJavaType(typeText: string): boolean {
+  return /^(boolean|byte|short|int|long|char|float|double)$/.test(typeText.trim());
 }
 
 /** Spring 默认按 query 处理的简单类型(含常见日期类型;类型文本可能是限定名,取最后一段判断) */

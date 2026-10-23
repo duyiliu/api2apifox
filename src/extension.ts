@@ -10,11 +10,11 @@ import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
-import { analyze, analyzeSubset, AnalyzeCache, endpointAt } from "./pipeline";
+import { AnalyzeCache, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
-import { buildSyncReport } from "./ui/syncResult";
+import { buildSyncReport, projectWebUrl } from "./ui/syncResult";
 
 const cache = new AnalyzeCache();
 
@@ -54,7 +54,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
     }
   }
   // 2. 仓库 + 工作区 pom 坐标
-  const repos = discoverMavenRepos(settings.dependencyRepos);
+  const repos = await discoverMavenRepos(settings.dependencyRepos);
   if (repos.length) {
     const MAX_POMS = 200;
     const poms = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
@@ -70,7 +70,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
       }
     }
     if (coords.length) {
-      const { jars: resolved } = resolveDependencyJars(repos, coords);
+      const { jars: resolved } = await resolveDependencyJars(repos, coords);
       jars.push(...resolved);
     }
   }
@@ -79,12 +79,17 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   if (jarIndexCache && jarIndexCache.key === key) {
     return jarIndexCache.index;
   }
+  // 索引持有各 jar 的 fd,被替换前先释放
+  jarIndexCache?.index?.dispose();
   if (!jars.length) {
     jarIndexCache = { key, index: undefined };
     return undefined;
   }
   const idx = JarClassIndex.build(jars);
   const result = idx.size ? idx : undefined;
+  if (!result) {
+    idx.dispose();
+  }
   jarIndexCache = { key, index: result };
   return result;
 }
@@ -158,6 +163,13 @@ function withoutIgnoredSources(uris: vscode.Uri[], keepCheckoutOf?: vscode.Uri):
 
 export function activate(context: vscode.ExtensionContext): void {
   const secrets = context.secrets;
+  // 扩展停用时释放 jar 索引持有的 fd
+  context.subscriptions.push({
+    dispose: () => {
+      jarIndexCache?.index?.dispose();
+      jarIndexCache = undefined;
+    },
+  });
 
   const makeClient = async (): Promise<ApifoxClient | undefined> => {
     const settings = getSettings();
@@ -310,6 +322,7 @@ export function activate(context: vscode.ExtensionContext): void {
           endpoints: analyzed.endpoints,
           target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
           projectId: settings.projectId,
+          projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
           scope: options.scopeLabel,
           endpointConflictBehavior: settings.endpointConflictBehavior,
           schemaConflictBehavior: settings.schemaConflictBehavior,
@@ -642,7 +655,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
       }, { scopeLabel: `目录「${node.key}」`, confirm: true });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
@@ -690,7 +703,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
       }, { scopeLabel, confirm: true, selection });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
@@ -703,7 +716,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return analyzeSubset(
+        return cache.analyzeSubset(
           allFiles,
           await analyzeOptions(),
           (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
@@ -858,7 +871,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
+        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
       }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
     })
   );
@@ -894,7 +907,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await doSync("未发现可同步的接口", async (token) => {
         const allFiles = await collectFiles(undefined, token, target);
         const source = allFiles ?? files;
-        return analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
+        return cache.analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
       }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
     })
   );
@@ -906,7 +919,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!files) {
         return;
       }
-      const analyzed = analyze(files, await analyzeOptions());
+      const analyzed = cache.analyze(files, await analyzeOptions());
       const folder = vscode.workspace.workspaceFolders?.[0];
       if (!folder) {
         return;
@@ -969,17 +982,31 @@ export function activate(context: vscode.ExtensionContext): void {
 
 /** 简化版 glob 判断(仅用于 CodeLens 粗过滤,精度不够时宁可多解析) */
 function matchGlobLoose(glob: string, relPath: string): boolean {
-  const re = new RegExp(
-    "^" +
-      glob
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*\*/g, "\u0000")
-        .replace(/\*/g, "[^/]*")
-        .replace(/\u0000/g, ".*")
-        .replace(/\?/g, ".") +
-      "$"
-  );
-  return re.test(relPath);
+  return expandBraces(glob).some((g) => {
+    const re = new RegExp(
+      "^" +
+        g
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*\*/g, "\u0000")
+          .replace(/\*/g, "[^/]*")
+          .replace(/\u0000/g, ".*")
+          .replace(/\?/g, ".") +
+        "$"
+    );
+    return re.test(relPath);
+  });
+}
+
+/** 展开 {a,b} 花括号(vscode 的 include/exclude glob 支持该语法,递归处理嵌套) */
+function expandBraces(pattern: string): string[] {
+  const m = /\{([^{}]+)\}/.exec(pattern);
+  if (!m) {
+    return [pattern];
+  }
+  const [full, body] = m;
+  return body
+    .split(",")
+    .flatMap((alt) => expandBraces(pattern.slice(0, m.index) + alt + pattern.slice(m.index + full.length)));
 }
 
 let helperOutputChannel: vscode.OutputChannel | undefined;

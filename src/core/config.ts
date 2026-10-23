@@ -195,10 +195,14 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
       invalid(`未知配置字段:${key}`, diagnostics, configPath);
     }
   }
-  if (config.helperProperties !== undefined && isRecord(config.helperProperties)) {
-    for (const key of Object.keys(config.helperProperties)) {
-      if (key !== "enabled" && key !== "enumFieldDoc") {
-        invalid(`未知配置字段:helperProperties.${key}`, diagnostics, configPath);
+  if (config.helperProperties !== undefined) {
+    if (!isRecord(config.helperProperties) || Array.isArray(config.helperProperties)) {
+      invalid("helperProperties 必须是对象", diagnostics, configPath);
+    } else {
+      for (const key of Object.keys(config.helperProperties)) {
+        if (key !== "enabled" && key !== "enumFieldDoc") {
+          invalid(`未知配置字段:helperProperties.${key}`, diagnostics, configPath);
+        }
       }
     }
   }

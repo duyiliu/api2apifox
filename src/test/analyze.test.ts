@@ -123,6 +123,15 @@ test("缺注解的 JavaBean 参数产生告警且未生成接口体", () => {
   assert.equal(op.requestBody, undefined);
 });
 
+test("analyzeSubset 保留所选控制器自身的 Controller.method 告警", () => {
+  // patchUser 的告警是 "UserController.patchUser: ..." 形态,过滤必须按 methodName 匹配回该接口
+  const subset = analyzeSubset(loadSample(), { title: "demo" }, (ep) => ep.controller === "UserController");
+  assert.ok(
+    subset.warnings.some((w) => w.includes("patchUser")),
+    "选中接口自身的告警应保留: " + subset.warnings.join("|")
+  );
+});
+
 test("analyzeSubset 只保留与所选接口相关的告警,未选控制器告警不泄露", () => {
   const subset = analyzeSubset(loadSample(), { title: "demo" }, (ep) => ep.controller === "OrderController");
   assert.ok(subset.endpoints.every((e) => e.controller === "OrderController"));

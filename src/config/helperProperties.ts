@@ -3,7 +3,7 @@
  * (.apifox-helper.properties / properties.additional 链式加载)。
  *
  * 兼容 IDEA 版 Apifox Helper(easyyapi)的 properties 语法子集:
- *  - 行分隔:key=value / key:value / key value
+ *  - 行分隔:key=value / key:value(不支持空格分隔,值内可含任意文本,避免 key 被误切)
  *  - 注释:# 或 ! 开头(行首)
  *  - 续行:行尾以奇数个 \ 结尾,下一行拼接到 value
  *  - 多行值:以 ``` 结尾开启,以单独一行 ``` 结束(去首尾空行)

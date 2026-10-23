@@ -31,55 +31,112 @@ const EOCD_SIG = 0x06054b50;
 const CDE_SIG = 0x02014b50;
 const LFH_SIG = 0x04034b50;
 
-/** 读取 jar 的全部条目元数据(central directory;不解压) */
-export function readZipEntries(buf: Buffer): ZipEntryMeta[] {
-  // 1. 从尾部找 EOCD
+/** 在缓冲区尾部定位 EOCD 记录(zip 注释最长 64KB),返回缓冲区内的偏移 */
+function findEocdIndex(tail: Buffer): number {
   const minTail = 22;
-  const maxComment = 0xffff;
-  const start = Math.max(0, buf.length - minTail - maxComment);
-  let eocd = -1;
-  for (let i = buf.length - minTail; i >= start; i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) {
-      eocd = i;
-      break;
+  const start = Math.max(0, tail.length - minTail - 0xffff);
+  for (let i = tail.length - minTail; i >= start; i--) {
+    if (tail.readUInt32LE(i) === EOCD_SIG) {
+      return i;
     }
   }
-  if (eocd < 0) {
-    throw new Error("zip: 未找到 EOCD");
-  }
-  const total = buf.readUInt16LE(eocd + 10);
-  const cdOffset = buf.readUInt32LE(eocd + 16);
+  return -1;
+}
 
-  // 2. central directory
+/** 解析 central directory 缓冲区(cd 起点即目录起点) */
+function parseCentralDirectory(cd: Buffer, total: number): ZipEntryMeta[] {
   const out: ZipEntryMeta[] = [];
-  let p = cdOffset;
+  let p = 0;
   for (let k = 0; k < total; k++) {
-    if (buf.readUInt32LE(p) !== CDE_SIG) {
+    if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
       break;
     }
-    const method = buf.readUInt16LE(p + 10);
-    const compressedSize = buf.readUInt32LE(p + 20);
-    const nameLen = buf.readUInt16LE(p + 28);
-    const extraLen = buf.readUInt16LE(p + 30);
-    const commentLen = buf.readUInt16LE(p + 32);
-    const localOffset = buf.readUInt32LE(p + 42);
-    const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
+    const method = cd.readUInt16LE(p + 10);
+    const compressedSize = cd.readUInt32LE(p + 20);
+    const nameLen = cd.readUInt16LE(p + 28);
+    const extraLen = cd.readUInt16LE(p + 30);
+    const commentLen = cd.readUInt16LE(p + 32);
+    const localOffset = cd.readUInt32LE(p + 42);
+    const name = cd.toString("utf8", p + 46, p + 46 + nameLen);
     out.push({ name, method, compressedSize, localOffset });
     p += 46 + nameLen + extraLen + commentLen;
   }
   return out;
 }
 
-/** 读取 jar 中单个条目的数据 */
-export function readZipEntry(buf: Buffer, entry: ZipEntryMeta): Buffer {
-  const lp = entry.localOffset;
-  if (buf.readUInt32LE(lp) !== LFH_SIG) {
+/**
+ * jar 文件的定位读取器:持有一个 fd,按 offset 读小片段。
+ * 单个依赖 jar 常达数十 MB,索引全程不再整读进内存;dispose 释放 fd。
+ */
+class ZipSource {
+  private constructor(private readonly fd: number, readonly size: number) {}
+
+  static open(jarPath: string): ZipSource {
+    const fd = fs.openSync(jarPath, "r");
+    try {
+      return new ZipSource(fd, fs.fstatSync(fd).size);
+    } catch (err) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // 关闭失败忽略
+      }
+      throw err;
+    }
+  }
+
+  /** 读取 [offset, offset+length);文件尾部不足时返回实际读到的长度 */
+  readonly read = (offset: number, length: number): Buffer => {
+    const b = Buffer.allocUnsafe(length);
+    const n = fs.readSync(this.fd, b, 0, length, offset);
+    return n === length ? b : b.subarray(0, n);
+  };
+
+  close(): void {
+    try {
+      fs.closeSync(this.fd);
+    } catch {
+      // 重复关闭忽略
+    }
+  }
+}
+
+/** 经定位读取获取 jar 的全部条目(只读 EOCD 尾区 + central directory 区) */
+function readDirectory(src: ZipSource): Map<string, ZipEntryMeta> {
+  const tailSize = Math.min(src.size, 22 + 0xffff);
+  const tail = src.read(src.size - tailSize, tailSize);
+  const eocd = findEocdIndex(tail);
+  if (eocd < 0) {
+    throw new Error("zip: 未找到 EOCD");
+  }
+  const total = tail.readUInt16LE(eocd + 10);
+  const cdSize = tail.readUInt32LE(eocd + 12);
+  const cdOffset = tail.readUInt32LE(eocd + 16);
+  const cd = src.read(cdOffset, cdSize);
+  return new Map(parseCentralDirectory(cd, total).map((e) => [e.name, e]));
+}
+
+/** 读取 jar 的全部条目元数据(内存中完整 zip 缓冲区;不解压) */
+export function readZipEntries(buf: Buffer): ZipEntryMeta[] {
+  const eocd = findEocdIndex(buf);
+  if (eocd < 0) {
+    throw new Error("zip: 未找到 EOCD");
+  }
+  const total = buf.readUInt16LE(eocd + 10);
+  const cdSize = buf.readUInt32LE(eocd + 12);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  return parseCentralDirectory(buf.subarray(cdOffset, cdOffset + cdSize), total);
+}
+
+/** 通过定位读取回调取单个条目数据(read 返回 [offset, offset+length) 的内容) */
+export function readZipEntryFrom(read: (offset: number, length: number) => Buffer, entry: ZipEntryMeta): Buffer {
+  const head = read(entry.localOffset, 30);
+  if (head.length < 30 || head.readUInt32LE(0) !== LFH_SIG) {
     throw new Error(`zip: local header 校验失败(${entry.name})`);
   }
-  const nameLen = buf.readUInt16LE(lp + 26);
-  const extraLen = buf.readUInt16LE(lp + 28);
-  const dataStart = lp + 30 + nameLen + extraLen;
-  const raw = buf.subarray(dataStart, dataStart + entry.compressedSize);
+  const nameLen = head.readUInt16LE(26);
+  const extraLen = head.readUInt16LE(28);
+  const raw = read(entry.localOffset + 30 + nameLen + extraLen, entry.compressedSize);
   if (entry.method === 0) {
     return Buffer.from(raw);
   }
@@ -87,6 +144,11 @@ export function readZipEntry(buf: Buffer, entry: ZipEntryMeta): Buffer {
     return zlib.inflateRawSync(raw);
   }
   throw new Error(`zip: 不支持的压缩方式 ${entry.method}(${entry.name})`);
+}
+
+/** 读取 jar 中单个条目的数据(内存中完整 zip 缓冲区) */
+export function readZipEntry(buf: Buffer, entry: ZipEntryMeta): Buffer {
+  return readZipEntryFrom((offset, length) => buf.subarray(offset, offset + length), entry);
 }
 
 /* ---------------- .class → ClassInfo ---------------- */
@@ -153,34 +215,34 @@ interface EntryRef {
 export class JarClassIndex {
   private readonly bySimple = new Map<string, EntryRef>();
   private readonly cache = new Map<string, ClassInfo | null>();
-  private readonly jarCache = new Map<string, { buf: Buffer; entries: Map<string, ZipEntryMeta> } | null>();
+  private readonly jarCache = new Map<string, { src: ZipSource; entries: Map<string, ZipEntryMeta> } | null>();
   /** 解析失败的条目(jar 缺失/损坏),用于诊断 */
   readonly warnings: string[] = [];
 
   static build(jarPaths: string[]): JarClassIndex {
     const idx = new JarClassIndex();
     for (const jp of jarPaths) {
-      try {
-        const buf = fs.readFileSync(jp);
-        for (const e of readZipEntries(buf)) {
-          if (!e.name.endsWith(".class")) {
-            continue;
-          }
-          if (e.name.endsWith("module-info.class") || e.name.endsWith("package-info.class")) {
-            continue;
-          }
-          const base = e.name.slice(0, -".class".length);
-          const simple = base.slice(base.lastIndexOf("/") + 1).split("$").pop() ?? base;
-          if (!simple || !/^[A-Za-z_]\w*$/.test(simple)) {
-            continue;
-          }
-          // 源码优先:同名条目保留首个(先注册的 jar 优先);通常各 jar 类名不冲突
-          if (!idx.bySimple.has(simple)) {
-            idx.bySimple.set(simple, { jarPath: jp, entryName: e.name });
-          }
+      // jarOf 只读 central directory 区(fd 定位读),不整读 jar;失败已计入 warnings
+      const jar = idx.jarOf(jp);
+      if (!jar) {
+        continue;
+      }
+      for (const e of jar.entries.values()) {
+        if (!e.name.endsWith(".class")) {
+          continue;
         }
-      } catch (err) {
-        idx.warnings.push(`读取 jar 失败 ${jp}:${err instanceof Error ? err.message : String(err)}`);
+        if (e.name.endsWith("module-info.class") || e.name.endsWith("package-info.class")) {
+          continue;
+        }
+        const base = e.name.slice(0, -".class".length);
+        const simple = base.slice(base.lastIndexOf("/") + 1).split("$").pop() ?? base;
+        if (!simple || !/^[A-Za-z_]\w*$/.test(simple)) {
+          continue;
+        }
+        // 源码优先:同名条目保留首个(先注册的 jar 优先);通常各 jar 类名不冲突
+        if (!idx.bySimple.has(simple)) {
+          idx.bySimple.set(simple, { jarPath: jp, entryName: e.name });
+        }
       }
     }
     return idx;
@@ -190,16 +252,20 @@ export class JarClassIndex {
     return this.bySimple.size;
   }
 
-  private jarOf(jarPath: string): { buf: Buffer; entries: Map<string, ZipEntryMeta> } | null {
+  private jarOf(jarPath: string): { src: ZipSource; entries: Map<string, ZipEntryMeta> } | null {
     if (this.jarCache.has(jarPath)) {
       return this.jarCache.get(jarPath) ?? null;
     }
     try {
-      const buf = fs.readFileSync(jarPath);
-      const entries = new Map(readZipEntries(buf).map((e) => [e.name, e]));
-      const val = { buf, entries };
-      this.jarCache.set(jarPath, val);
-      return val;
+      const src = ZipSource.open(jarPath);
+      try {
+        const val = { src, entries: readDirectory(src) };
+        this.jarCache.set(jarPath, val);
+        return val;
+      } catch (err) {
+        src.close();
+        throw err;
+      }
     } catch (err) {
       this.warnings.push(`读取 jar 失败 ${jarPath}:${err instanceof Error ? err.message : String(err)}`);
       this.jarCache.set(jarPath, null);
@@ -225,7 +291,7 @@ export class JarClassIndex {
         this.cache.set(simpleName, null);
         return undefined;
       }
-      const classBytes = readZipEntry(jar.buf, entry);
+      const classBytes = readZipEntryFrom(jar.src.read, entry);
       const info = toClassInfo(parseClassFile(classBytes));
       this.cache.set(simpleName, info);
       return info;
@@ -234,6 +300,15 @@ export class JarClassIndex {
       this.cache.set(simpleName, null);
       return undefined;
     }
+  }
+
+  /** 释放所有持有的 jar fd;索引被替换/丢弃前调用,避免长会话 fd 泄漏 */
+  dispose(): void {
+    for (const jar of this.jarCache.values()) {
+      jar?.src.close();
+    }
+    this.jarCache.clear();
+    this.cache.clear();
   }
 }
 
@@ -252,14 +327,14 @@ export interface PomCoordinate {
  *  4. ~/.m2/settings.xml 的 localRepository
  *  5. 默认 ~/.m2/repository
  */
-export function discoverMavenRepos(configured: string[]): string[] {
+export async function discoverMavenRepos(configured: string[]): Promise<string[]> {
   const repos: string[] = [];
-  const push = (p: string) => {
+  const push = async (p: string) => {
     if (!p) {
       return;
     }
     try {
-      if (fs.existsSync(p) && fs.statSync(p).isDirectory() && !repos.includes(p)) {
+      if ((await fs.promises.stat(p)).isDirectory() && !repos.includes(p)) {
         repos.push(p);
       }
     } catch {
@@ -268,33 +343,33 @@ export function discoverMavenRepos(configured: string[]): string[] {
   };
   // 1. 用户配置
   for (const r of configured) {
-    push(r);
+    await push(r);
   }
   // 2/3. JetBrains(IDEA 等)配置目录
   for (const dir of jetbrainsOptionDirs()) {
     let products: string[] = [];
     try {
-      products = fs.readdirSync(dir);
+      products = await fs.promises.readdir(dir);
     } catch {
       continue;
     }
     for (const prod of products) {
       const optBase = path.join(dir, prod, "options");
       // MAVEN_REPOSITORY 路径宏(IDEA 里覆盖本地仓库时写入)
-      const macros = readTextSafe(path.join(optBase, "path.macros.xml"));
+      const macros = await readTextSafe(path.join(optBase, "path.macros.xml"));
       if (macros) {
         const m = /<macro\s+name="MAVEN_REPOSITORY"\s+value="([^"]+)"/.exec(macros);
         if (m) {
-          push(m[1]);
+          await push(m[1]);
         }
       }
       // Maven 索引登记的本地仓库
-      const indices = readTextSafe(path.join(optBase, "mavenIndicesState.xml"));
+      const indices = await readTextSafe(path.join(optBase, "mavenIndicesState.xml"));
       if (indices) {
         for (const em of indices.matchAll(/<entry key="([^"]+)">/g)) {
           const v = em[1];
           if (v && !/^https?:/i.test(v)) {
-            push(v);
+            await push(v);
           }
         }
       }
@@ -302,15 +377,15 @@ export function discoverMavenRepos(configured: string[]): string[] {
   }
   // 4. ~/.m2/settings.xml 的 localRepository
   const settings = path.join(os.homedir(), ".m2", "settings.xml");
-  const settingsText = readTextSafe(settings);
+  const settingsText = await readTextSafe(settings);
   if (settingsText) {
     const m = /<localRepository>([^<]+)<\/localRepository>/.exec(settingsText);
     if (m) {
-      push(m[1].trim());
+      await push(m[1].trim());
     }
   }
   // 5. 默认 ~/.m2/repository
-  push(path.join(os.homedir(), ".m2", "repository"));
+  await push(path.join(os.homedir(), ".m2", "repository"));
   return repos;
 }
 
@@ -327,9 +402,9 @@ function jetbrainsOptionDirs(): string[] {
   return out;
 }
 
-function readTextSafe(p: string): string | undefined {
+async function readTextSafe(p: string): Promise<string | undefined> {
   try {
-    return fs.readFileSync(p, "utf8");
+    return await fs.promises.readFile(p, "utf8");
   } catch {
     return undefined;
   }
@@ -381,16 +456,56 @@ function versionCompare(a: string, b: string): number {
   return 0;
 }
 
-/** 在仓库中定位坐标对应的 jar(每个 artifact 取最新版本) */
+/** 异步定位读取 jar 内 META-INF/maven 内嵌 pom.xml(只读目录区与目标条目) */
+async function readEmbeddedPomXml(jarPath: string): Promise<string | undefined> {
+  const fh = await fs.promises.open(jarPath, "r");
+  try {
+    const readAt = async (offset: number, length: number): Promise<Buffer> => {
+      const b = Buffer.allocUnsafe(length);
+      const { bytesRead } = await fh.read(b, 0, length, offset);
+      return bytesRead === length ? b : b.subarray(0, bytesRead);
+    };
+    const size = (await fh.stat()).size;
+    const tailSize = Math.min(size, 22 + 0xffff);
+    const tail = await readAt(size - tailSize, tailSize);
+    const eocd = findEocdIndex(tail);
+    if (eocd < 0) {
+      return undefined;
+    }
+    const total = tail.readUInt16LE(eocd + 10);
+    const cdSize = tail.readUInt32LE(eocd + 12);
+    const cdOffset = tail.readUInt32LE(eocd + 16);
+    const cd = await readAt(cdOffset, cdSize);
+    const pom = parseCentralDirectory(cd, total).find((e) =>
+      /^META-INF\/maven\/[^/]+\/[^/]+\/pom\.xml$/.test(e.name)
+    );
+    if (!pom) {
+      return undefined;
+    }
+    const head = await readAt(pom.localOffset, 30);
+    if (head.length < 30 || head.readUInt32LE(0) !== LFH_SIG) {
+      throw new Error(`zip: local header 校验失败(${pom.name})`);
+    }
+    const raw = await readAt(pom.localOffset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28), pom.compressedSize);
+    const data = pom.method === 0 ? Buffer.from(raw) : pom.method === 8 ? zlib.inflateRawSync(raw) : undefined;
+    if (!data) {
+      throw new Error(`zip: 不支持的压缩方式 ${pom.method}(${pom.name})`);
+    }
+    return data.toString("utf8");
+  } finally {
+    await fh.close().catch(() => undefined);
+  }
+}
+
 /**
  * 解析依赖 jar 集合:直接依赖(工作区 pom 坐标)+ 传递依赖(jar 内嵌
  * META-INF/maven 下的 pom.xml 声明的依赖,迭代 2 轮,总量封顶)。
  */
-export function resolveDependencyJars(
+export async function resolveDependencyJars(
   repos: string[],
   pomCoords: PomCoordinate[],
   opts: { maxRounds?: number; maxJars?: number } = {}
-): { jars: string[]; warnings: string[] } {
+): Promise<{ jars: string[]; warnings: string[] }> {
   const maxRounds = opts.maxRounds ?? 2;
   const maxJars = opts.maxJars ?? 120;
   const collected: string[] = [];
@@ -400,7 +515,7 @@ export function resolveDependencyJars(
 
   let roundCoords = pomCoords;
   for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
-    const jars = findJarsForCoordinates(repos, roundCoords);
+    const jars = await findJarsForCoordinates(repos, roundCoords);
     const fresh = jars.filter((j) => !collectedSet.has(j));
     for (const j of fresh) {
       if (collected.length >= maxJars) {
@@ -417,11 +532,9 @@ export function resolveDependencyJars(
     const next: PomCoordinate[] = [];
     for (const j of jars) {
       try {
-        const buf = fs.readFileSync(j);
-        const entries = readZipEntries(buf);
-        const pomEntry = entries.find((e) => /^META-INF\/maven\/[^/]+\/[^/]+\/pom\.xml$/.test(e.name));
-        if (pomEntry) {
-          for (const c of parsePomDependencies(readZipEntry(buf, pomEntry).toString("utf8"))) {
+        const pomXml = await readEmbeddedPomXml(j);
+        if (pomXml) {
+          for (const c of parsePomDependencies(pomXml)) {
             const key = `${c.groupId}:${c.artifactId}`;
             if (!knownCoords.has(key)) {
               knownCoords.add(key);
@@ -441,7 +554,8 @@ export function resolveDependencyJars(
   return { jars: collected, warnings };
 }
 
-export function findJarsForCoordinates(repos: string[], coords: PomCoordinate[]): string[] {
+/** 在仓库中定位坐标对应的 jar(每个 artifact 取最新版本) */
+export async function findJarsForCoordinates(repos: string[], coords: PomCoordinate[]): Promise<string[]> {
   const jars: string[] = [];
   const seen = new Set<string>();
   for (const c of coords) {
@@ -452,17 +566,23 @@ export function findJarsForCoordinates(repos: string[], coords: PomCoordinate[])
       const artifactDir = path.join(repo, ...c.groupId.split("."), c.artifactId);
       let list: string[];
       try {
-        list = fs.readdirSync(artifactDir);
+        list = await fs.promises.readdir(artifactDir);
       } catch {
         continue;
       }
-      const vers = list.filter((v) => {
-        try {
-          return fs.statSync(path.join(artifactDir, v)).isDirectory() && !/^\./.test(v);
-        } catch {
-          return false;
+      const vers: string[] = [];
+      for (const v of list) {
+        if (/^\./.test(v)) {
+          continue;
         }
-      });
+        try {
+          if ((await fs.promises.stat(path.join(artifactDir, v))).isDirectory()) {
+            vers.push(v);
+          }
+        } catch {
+          // 条目不可访问,跳过
+        }
+      }
       if (vers.length) {
         artifactDirHit = artifactDir;
         versions = vers;
@@ -477,9 +597,9 @@ export function findJarsForCoordinates(repos: string[], coords: PomCoordinate[])
     for (let i = versions.length - 1; i >= 0; i--) {
       const vDir = path.join(artifactDirHit, versions[i]);
       try {
-        const jar = fs
-          .readdirSync(vDir)
-          .find((f) => f === `${c.artifactId}-${versions[i]}.jar` && !f.includes("sources") && !f.includes("javadoc"));
+        const jar = (await fs.promises.readdir(vDir)).find(
+          (f) => f === `${c.artifactId}-${versions[i]}.jar` && !f.includes("sources") && !f.includes("javadoc")
+        );
         if (jar) {
           const full = path.join(vDir, jar);
           if (!seen.has(full)) {

@@ -49,9 +49,8 @@ export interface AnalyzeOutput {
 export function filterWarningsForEndpoints(warnings: string[], kept: EndpointInfo[]): string[] {
   const keptControllers = new Set(kept.map((e) => e.controller));
   const keptOperations = new Set(kept.map((e) => `${e.controller}.${e.operationId}`));
-  const keptMethodNames = new Set(
-    kept.map((e) => `${e.controller}.${(e as unknown as { methodName?: string }).methodName || e.operationId}`)
-  );
+  // 告警正文按 Controller.methodName 书写(controllerParser 的 warnings),operationId 口径兜底
+  const keptMethodNames = new Set(kept.map((e) => `${e.controller}.${e.methodName ?? e.operationId}`));
 
   return warnings.filter((w) => {
     // 形式 1: "UserController.patchUser: ..."
@@ -112,8 +111,7 @@ export function analyzeSubset(files: SourceFile[], options: AnalyzeOptions, endp
 export class AnalyzeCache {
   private readonly cache = new Map<string, { content: string; parsed: ParsedFile }>();
 
-  analyze(files: SourceFile[], options: AnalyzeOptions | string): AnalyzeOutput {
-    const opts = typeof options === "string" ? { title: options } : options;
+  private runCached(files: SourceFile[], opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): AnalyzeOutput {
     const parsed = files.map((f) => {
       const hit = this.cache.get(f.fsPath);
       let p: ParsedFile;
@@ -128,7 +126,9 @@ export class AnalyzeCache {
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
     const parseResult = parseControllers(parsed, opts.rules, index);
-    const deduped = { ...parseResult, endpoints: dedupeEndpoints(parseResult.endpoints) };
+    const all = dedupeEndpoints(parseResult.endpoints);
+    const kept = endpointFilter ? all.filter(endpointFilter) : all;
+    const deduped = { ...parseResult, endpoints: kept };
     const { spec } = buildOpenApi(deduped, index, {
       title: opts.title,
       pageStyle: opts.pageStyle,
@@ -136,7 +136,19 @@ export class AnalyzeCache {
       enumFieldDoc: opts.enumFieldDoc,
       folderOf: opts.folderOf,
     });
-    return { spec, endpoints: deduped.endpoints, warnings: [...new Set(parseResult.warnings)] };
+    const rawWarnings = [...new Set(parseResult.warnings)];
+    return { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
+  }
+
+  analyze(files: SourceFile[], options: AnalyzeOptions | string): AnalyzeOutput {
+    const opts = typeof options === "string" ? { title: options } : options;
+    return this.runCached(files, opts);
+  }
+
+  /** 只构建满足条件的接口子集;与 analyze 共用 CST 缓存,勾选/单文件同步不再全量重解析 */
+  analyzeSubset(files: SourceFile[], options: AnalyzeOptions | string, endpointFilter: (ep: EndpointInfo) => boolean): AnalyzeOutput {
+    const opts = typeof options === "string" ? { title: options } : options;
+    return this.runCached(files, opts, endpointFilter);
   }
 
   /** 单文件轻量解析(CodeLens 用,不做类型解析与去重) */

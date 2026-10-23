@@ -46,6 +46,12 @@ test("apiBaseUrl 只允许 http/https", () => {
   assert.throws(() => resolveConfig(root), /只允许 http 或 https/);
 });
 
+test("helperProperties 必须是对象,非对象值报 CONFIG_INVALID", () => {
+  const root = temporaryProject();
+  fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ helperProperties: true }));
+  assert.throws(() => resolveConfig(root), /helperProperties 必须是对象/);
+});
+
 test("严格拒绝未知配置字段", () => {
   const root = temporaryProject();
   fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ projectID: 42 }));
