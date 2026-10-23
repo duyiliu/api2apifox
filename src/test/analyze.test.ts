@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { analyze, analyzeSubset } from "../pipeline";
+import { analyze, analyzeSubset, AnalyzeCache } from "../pipeline";
 import { SourceFile } from "../java/model";
 
 const SAMPLE_ROOT = path.join(__dirname, "..", "..", "sample");
@@ -690,3 +690,29 @@ test("跨包覆写的基本类型参数不拼包名,只保留子类路由", () =
   }
 });
 
+
+test("endpointsOfFile 回写解析缓存:后续 analyze 复用同一 CST 且版本不变", () => {
+  const file: SourceFile = {
+    fsPath: "/mem/CacheProbeController.java",
+    content: `package com.example;
+      import org.springframework.web.bind.annotation.*;
+      @RestController
+      @RequestMapping("/probe")
+      public class CacheProbeController {
+        @GetMapping("/ping")
+        public String ping() { return "pong"; }
+      }`,
+  };
+  const cache = new AnalyzeCache();
+  assert.equal(cache.endpointsOfFile(file.fsPath, file.content).length, 1);
+
+  const entries = (cache as unknown as { cache: Map<string, { parsed: unknown; version: number }> }).cache;
+  const afterLens = entries.get(file.fsPath);
+  assert.ok(afterLens, "CodeLens 解析结果应回写缓存");
+
+  cache.analyze([file], { title: "cache" });
+  const afterAnalyze = entries.get(file.fsPath);
+  assert.ok(afterAnalyze);
+  assert.equal(afterAnalyze!.parsed, afterLens!.parsed, "后续 analyze 不应重新解析同内容文件");
+  assert.equal(afterAnalyze!.version, afterLens!.version, "缓存命中不应分配新版本");
+});
