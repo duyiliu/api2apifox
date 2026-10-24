@@ -60,19 +60,21 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
   const endpoints: EndpointInfo[] = [];
   const ruleWarnings: string[] = [];
   const warnings: string[] = [];
-  // 继承解析需要回到父类型声明处读取方法;无类型索引时不做继承展开
+  // 继承解析需要回到父类型声明处读取方法;无类型索引时不做继承展开。
+  // byFile 复用建索引时已算好的站点,避免每个类型重复走 findAll+注解收集
   const sites = index ? buildTypeSites(files) : undefined;
 
   for (const pf of files) {
-    for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
-      const site = typeSiteOf(pf, typeDecl);
-      if (!site) {
-        continue;
-      }
+    const fileSites = sites
+      ? sites.byFile.get(pf) ?? []
+      : findAll(pf.cst, "typeDeclaration")
+          .map((d) => typeSiteOf(pf, d))
+          .filter((s): s is TypeSite => !!s);
+    for (const site of fileSites) {
       const { typeName, typeAnnotations } = site;
 
       // 继承链:具体类型在首位,父类/接口按 BFS 在后(仅工作区源码内可定位的类型)
-      const chain = sites ? superTypeChain(site, sites) : [];
+      const chain = sites ? superTypeChain(site, sites.byName) : [];
       const hierarchy = [site, ...chain];
 
       // 类型风格判定:具体类型优先,抽象基类标注 @RestController 时由父类兜底
@@ -91,7 +93,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         (tagAnn && annStr(tagAnn.args, "name", "value")) ||
         (apiAnn && annArray(apiAnn.args, "tags", "value")[0]) ||
         typeName;
-      const classJavadoc = parseJavadoc(nodeJavadoc(typeDecl));
+      const classJavadoc = parseJavadoc(nodeJavadoc(site.carrier));
       // 类级 ignore 规则命中 → 整类不产接口
       let typeIgnored = false;
 
@@ -99,7 +101,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       if (rules) {
         const classCtx: RuleContext = {
           annotations: typeAnnotations,
-          javadocRaw: nodeJavadoc(typeDecl),
+          javadocRaw: nodeJavadoc(site.carrier),
           subject: `类 ${typeName}`,
         };
         // ignore:命中则整类跳过
@@ -381,18 +383,25 @@ function typeSiteOf(pf: ParsedFile, typeDecl: CstNode): TypeSite | undefined {
   return { pf, carrier: typeDecl, inner, typeName, isInterface: !!normalItf, typeAnnotations };
 }
 
-/** 建立 简单名 -> 类型声明站点 的索引(同名以最后扫描到的为准,与类型索引口径一致) */
-function buildTypeSites(files: ParsedFile[]): Map<string, TypeSite> {
-  const sites = new Map<string, TypeSite>();
+/** 建立 简单名 -> 类型声明站点 的索引(同名以最后扫描到的为准,与类型索引口径一致);byFile 供主循环复用,免于二次 CST 扫描与注解收集 */
+function buildTypeSites(files: ParsedFile[]): { byName: Map<string, TypeSite>; byFile: Map<ParsedFile, TypeSite[]> } {
+  const byName = new Map<string, TypeSite>();
+  const byFile = new Map<ParsedFile, TypeSite[]>();
   for (const pf of files) {
+    let list = byFile.get(pf);
+    if (!list) {
+      list = [];
+      byFile.set(pf, list);
+    }
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
       const site = typeSiteOf(pf, typeDecl);
       if (site) {
-        sites.set(site.typeName, site);
+        byName.set(site.typeName, site);
+        list.push(site);
       }
     }
   }
-  return sites;
+  return { byName, byFile };
 }
 
 /** 类型文本 -> 简单名(剥掉包名与泛型实参,如 java.util.List<String> -> List) */

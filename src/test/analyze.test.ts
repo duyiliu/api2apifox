@@ -716,3 +716,32 @@ test("endpointsOfFile 回写解析缓存:后续 analyze 复用同一 CST 且版�
   assert.equal(afterAnalyze!.parsed, afterLens!.parsed, "后续 analyze 不应重新解析同内容文件");
   assert.equal(afterAnalyze!.version, afterLens!.version, "缓存命中不应分配新版本");
 });
+
+test("AnalyzeCache:文件集变化时清理不在新集合内的解析缓存", () => {
+  const fileOf = (name: string) => ({
+    fsPath: `/mem/${name}.java`,
+    content: `package com.example;
+      import org.springframework.web.bind.annotation.*;
+      @RestController
+      @RequestMapping("/${name.toLowerCase()}")
+      public class ${name} {
+        @GetMapping("/ping")
+        public String ping() { return "pong"; }
+      }`,
+  });
+  const a = fileOf("PruneA");
+  const b = fileOf("PruneB");
+  const cache = new AnalyzeCache();
+  const entries = (cache as unknown as { cache: Map<string, unknown> }).cache;
+
+  cache.analyze([a, b], { title: "cache" });
+  assert.equal(entries.size, 2);
+
+  cache.analyze([a], { title: "cache" });
+  assert.equal(entries.size, 1, "已移出文件集的解析缓存应被清理");
+  assert.ok(entries.has(a.fsPath));
+  assert.ok(!entries.has(b.fsPath));
+
+  cache.analyze([a, b], { title: "cache" });
+  assert.equal(entries.size, 2, "文件回到集合后可正常重新解析");
+});

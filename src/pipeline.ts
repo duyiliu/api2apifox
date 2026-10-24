@@ -159,6 +159,13 @@ export class AnalyzeCache {
     if (changed) {
       this.lastPaths = files.map((f) => f.fsPath);
       this.epoch++;
+      // 文件集变化时清掉不在新集合内的解析缓存:已删除/移出扫描范围的文件不会再被引用,避免长会话无界增长
+      const alive = new Set(this.lastPaths);
+      for (const key of this.cache.keys()) {
+        if (!alive.has(key)) {
+          this.cache.delete(key);
+        }
+      }
     }
     return files.map((f) => {
       const hit = this.cache.get(f.fsPath);
