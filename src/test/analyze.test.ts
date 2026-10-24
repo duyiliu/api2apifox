@@ -634,6 +634,93 @@ test("泛型继承与自递归字段保留已绑定的嵌套类型身份", () =>
   assert.deepEqual(Object.keys(schemas[refName(child.properties!.inherited)].properties!), ["actual"]);
 });
 
+test("泛型基类 Controller 的继承方法按具体类型实例化参数/返回值/请求体", () => {
+  const result = analyzeJavaSources({
+    User: "public class User { private String username; }",
+    BaseController: `import org.springframework.web.bind.annotation.*;
+      public abstract class BaseController<T> {
+        @GetMapping("/{id}") public T get(@PathVariable("id") Long id) { return null; }
+        @PostMapping public T create(@RequestBody T body) { return null; }
+        @GetMapping("/list") public java.util.List<T> list(@RequestParam String keyword) { return null; }
+      }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/users")
+      public class UserController extends BaseController<User> { }`,
+  });
+  const schemas = result.spec.components?.schemas ?? {};
+  const refName = (schema: any) => schema.$ref?.split("/").pop();
+  assert.equal(refName((result.spec.paths["/users/{id}"].get as any).responses["200"].content["*/*"].schema), "User");
+  assert.equal(refName((result.spec.paths["/users"].post as any).requestBody.content["application/json"].schema), "User");
+  assert.equal(refName((result.spec.paths["/users"].post as any).responses["200"].content["*/*"].schema), "User");
+  const listSchema = (result.spec.paths["/users/list"].get as any).responses["200"].content["*/*"].schema;
+  assert.equal(listSchema.type, "array");
+  assert.equal(refName(listSchema.items), "User");
+  // 未绑定的裸 T 不应再出现在接口签名里
+  assert.equal(schemas["T"], undefined);
+  assert.ok(!result.warnings.some((w) => w.includes("未绑定")), result.warnings.join("|"));
+});
+
+test("多级继承与嵌套泛型实参逐级替换", () => {
+  const result = analyzeJavaSources({
+    User: "public class User { private String username; }",
+    Base: `import org.springframework.web.bind.annotation.*;
+      public abstract class Base<T> {
+        @GetMapping("/one") public T one() { return null; }
+        @GetMapping("/all") public java.util.List<T> all() { return null; }
+      }`,
+    Middle: `import org.springframework.web.bind.annotation.*;
+      public abstract class Middle<T> extends Base<java.util.List<T>> {
+        @PostMapping("/middle") public T middle(@RequestBody T body) { return null; }
+      }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/users")
+      public class UserController extends Middle<User> { }`,
+    ListController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/list-users")
+      public class ListController extends Base<java.util.List<User>> { }`,
+  });
+  const refName = (schema: any) => schema.$ref?.split("/").pop();
+  const responseOf = (url: string) => (result.spec.paths[url].get as any).responses["200"].content["*/*"].schema;
+  // UserController → Middle<User> → Base<List<User>>:Base 的 T 是 List<User>
+  const one = responseOf("/users/one");
+  assert.equal(one.type, "array");
+  assert.equal(refName(one.items), "User");
+  const all = responseOf("/users/all");
+  assert.equal(all.type, "array");
+  assert.equal(all.items.type, "array");
+  assert.equal(refName(all.items.items), "User");
+  // Middle 的 T 仍是 User
+  const middle = (result.spec.paths["/users/middle"].post as any);
+  assert.equal(refName(middle.requestBody.content["application/json"].schema), "User");
+  assert.equal(refName(middle.responses["200"].content["*/*"].schema), "User");
+  // 直接继承 Base<List<User>> 的嵌套泛型实参
+  const direct = responseOf("/list-users/one");
+  assert.equal(direct.type, "array");
+  assert.equal(refName(direct.items), "User");
+  assert.ok(!result.warnings.some((w) => w.includes("未绑定")), result.warnings.join("|"));
+});
+
+test("无法绑定的继承泛型形参产生明确告警并保留原类型", () => {
+  const result = analyzeJavaSources({
+    Base: `import org.springframework.web.bind.annotation.*;
+      public abstract class Base<T> {
+        @GetMapping("/raw") public T raw(@RequestBody T body) { return null; }
+      }`,
+    RawController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/raw")
+      public class RawController extends Base { }`,
+  });
+  const warning = result.warnings.find((w) => w.includes("泛型形参 T 未绑定"));
+  assert.ok(warning, result.warnings.join("|"));
+  assert.ok(warning!.includes("RawController.raw"), warning);
+  assert.ok(warning!.includes("Base"), warning);
+  // 仍会产出接口(不静默丢弃),类型文本保留 T 并由告警提示
+  const raw = result.endpoints.find((e) => e.operationId === "RawController_raw");
+  assert.ok(raw);
+  assert.equal(raw!.returnType, "T");
+  assert.equal(raw!.requestBody?.typeText, "T");
+});
+
 test("泛型包装按调用处解析同名嵌套实参且保留集合与多层泛型绑定", () => {
   const result = analyzeJavaSources({
     Envelope: "public class Envelope<T> { private T data; private java.util.List<T> items; private Box<T> box; }",
