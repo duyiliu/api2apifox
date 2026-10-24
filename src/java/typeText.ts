@@ -11,6 +11,8 @@ export interface TypeRef {
   dims: number;
   /** 通配符形式:"?"、"extends"、"super" */
   wildcard?: "?" | "extends" | "super";
+  /** 内部标记:该名字是尚未绑定的泛型形参(不参与文本还原与 schema 命名) */
+  unbound?: boolean;
 }
 
 export function parseTypeText(text: string): TypeRef {

@@ -770,6 +770,87 @@ test("泛型父类方法被具体类型覆写时按绑定后签名去重", () =>
   assert.equal(response.$ref, "#/components/schemas/User");
 });
 
+test("继承实参按子类声明作用域解析,不被父类同名成员类型抢占", () => {
+  const result = analyzeJavaSources({
+    ApiUser: `package api;
+      public class User { private String apiOnly; }`,
+    Base: `package base;
+      import org.springframework.web.bind.annotation.*;
+      public abstract class BaseController<T> {
+        public static class User { private String baseOnly; }
+        @PostMapping("/save") public T save(@RequestBody T body) { return null; }
+      }`,
+    UserController: `package api;
+      import base.BaseController;
+      import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/api")
+      public class UserController extends BaseController<User> {
+        @Override @PostMapping("/save2") public User save(@RequestBody User body) { return null; }
+      }`,
+  });
+  // 覆写按绑定后的签名配对,只保留子类路由
+  assert.deepEqual(result.endpoints.map((e) => `${e.method} ${e.path}`).sort(), ["POST /api/save2"]);
+  const schemas = result.spec.components?.schemas ?? {};
+  const deref = (schema: any) => schemas[schema.$ref.split("/").pop()];
+  const request = (result.spec.paths["/api/save2"].post as any).requestBody.content["application/json"].schema;
+  const response = (result.spec.paths["/api/save2"].post as any).responses["200"].content["*/*"].schema;
+  assert.ok("apiOnly" in deref(request).properties!, JSON.stringify(deref(request)));
+  assert.ok("apiOnly" in deref(response).properties!, JSON.stringify(deref(response)));
+  assert.ok(!("baseOnly" in deref(response).properties!));
+});
+
+test("未绑定形参标记不污染无关模型字段的同名真实类型", () => {
+  const result = analyzeJavaSources({
+    X: "public class X { private String realOnly; }",
+    Result: "public class Result { private X x; }",
+    Base: `import org.springframework.web.bind.annotation.*;
+      public abstract class Base<T> {
+        @GetMapping("/result") public Result result(@RequestBody T body) { return null; }
+      }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/users")
+      public class UserController<X> extends Base<X> { }`,
+  });
+  const ep = result.endpoints.find((e) => e.operationId === "UserController_result")!;
+  assert.deepEqual(ep.unboundTypeVars, ["X"]);
+  assert.ok(result.warnings.some((w) => w.includes("泛型形参 X 未绑定")), result.warnings.join("|"));
+  // 端点签名中的未绑定 X 仍是 object
+  const body = (result.spec.paths["/users/result"].get as any).requestBody.content["application/json"].schema;
+  assert.equal(body.$ref, undefined);
+  assert.equal(body.type, "object");
+  // 但 Result 字段声明的 X 仍指向真实模型
+  const schemas = result.spec.components?.schemas ?? {};
+  const resultSchema = schemas[(result.spec.paths["/users/result"].get as any).responses["200"].content["*/*"].schema.$ref.split("/").pop()];
+  assert.equal(resultSchema.properties!.x.$ref, "#/components/schemas/X");
+  assert.deepEqual(Object.keys(schemas["X"].properties!), ["realOnly"]);
+});
+
+test("泛型接口 extends/implements 的继承实参传递到方法签名", () => {
+  const result = analyzeJavaSources({
+    User: "public class User { private String username; }",
+    BaseApi: `import org.springframework.web.bind.annotation.*;
+      public interface BaseApi<T> {
+        @PostMapping("/save") T save(@RequestBody T body);
+      }`,
+    UserApi: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/api")
+      public interface UserApi extends BaseApi<User> { }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/ctrl")
+      public class UserController implements BaseApi<User> {
+        @Override @PostMapping("/save2") User save(@RequestBody User body);
+      }`,
+  });
+  assert.deepEqual(result.endpoints.map((e) => `${e.method} ${e.path}`).sort(), ["POST /api/save", "POST /ctrl/save2"]);
+  const refName = (schema: any) => schema.$ref?.split("/").pop();
+  for (const url of ["/api/save", "/ctrl/save2"]) {
+    const op = (result.spec.paths[url] as any).post;
+    assert.equal(refName(op.requestBody.content["application/json"].schema), "User", url);
+    assert.equal(refName(op.responses["200"].content["*/*"].schema), "User", url);
+  }
+  assert.ok(!result.warnings.some((w) => w.includes("未绑定")), result.warnings.join("|"));
+});
+
 test("泛型包装按调用处解析同名嵌套实参且保留集合与多层泛型绑定", () => {
   const result = analyzeJavaSources({
     Envelope: "public class Envelope<T> { private T data; private java.util.List<T> items; private Box<T> box; }",

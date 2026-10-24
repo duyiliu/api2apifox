@@ -49,6 +49,11 @@ function refTo(name: string): JsonSchema {
   return { $ref: `#/components/schemas/${name}` };
 }
 
+/** 未绑定的泛型形参不能落到同名具体类型上 */
+function unboundSchema(name: string): JsonSchema {
+  return { type: "object", description: `未绑定的泛型形参: ${name}` };
+}
+
 /**
  * components/schemas 注册表。
  * 以「类型身份」(qualifiedName + 泛型实参)去重:同一类型只生成一份定义;
@@ -170,9 +175,10 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     return resolveType(bound, { ...ctx, bindings });
   }
 
-  // 未绑定的泛型形参不能落到同名具体类型上(如 root<X> extends Base<X> 的 X)
-  if (ctx.unboundVars?.has(name)) {
-    return { type: "object", description: `未绑定的泛型形参: ${name}` };
+  // 未绑定的泛型形参不能落到同名具体类型上(如 root<X> extends Base<X> 的 X);
+  // 绑定进来的未绑定形参带 unbound 标记,进入模型后仍能识别
+  if (t.unbound || ctx.unboundVars?.has(name)) {
+    return unboundSchema(name);
   }
 
   const builtin = builtinSchema(name, t, ctx);
@@ -203,7 +209,9 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     }
   });
   return ctx.registry.getOrAdd(schemaIdentity(info, instance), schemaName(info, instance), () =>
-    classSchema(info, { ...ctx, bindings })
+    // 模型内部按自身声明作用域解析字段:端点签名里的未绑定变量不能污染无关字段
+    // (绑定值中的未绑定形参已带 unbound 标记,仍能正确输出)
+    classSchema(info, { ...ctx, bindings, unboundVars: undefined })
   );
 }
 
@@ -216,6 +224,9 @@ function bindTypeArgument(t: TypeRef, ctx: ResolveContext, resolving = new Set<s
     return { ...resolved, dims: resolved.dims + t.dims, wildcard: t.wildcard ?? resolved.wildcard };
   }
   const name = simpleName(t.name);
+  if (ctx.unboundVars?.has(name)) {
+    return { ...t, name, unbound: true, args: t.args.map((arg) => bindTypeArgument(arg, ctx, resolving)) };
+  }
   const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
     ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
   const info = builtin ? undefined : resolveScopedType(ctx.index, t.name, ctx.scope);

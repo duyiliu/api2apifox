@@ -33,6 +33,13 @@ const HTTP_STATUS_BY_NAME: Record<string, string> = {
   INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
 };
 
+/** java.lang 类型无需拼包名(继承实参作用域解析与签名归一化共用) */
+const JAVA_LANG_TYPES = new Set([
+  "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+  "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+  "Void",
+]);
+
 const MEDIA_TYPE_CONSTANTS: Record<string, string> = {
   APPLICATION_JSON: "application/json",
   APPLICATION_JSON_UTF8: "application/json;charset=UTF-8",
@@ -473,6 +480,27 @@ function directSuperTypes(site: TypeSite): SuperTypeRef[] {
   return supers;
 }
 
+/**
+ * 把类型实参中的简单名按声明处文件的包/import 解析为全限定名。
+ * 继承实参写在子类源码里,必须按子类作用域解析;若留待父类作用域解析,
+ * 父类中同名成员类型会抢占子类实际引用的类型。
+ * 泛型形参保持原样(不引包名),已限定名与基本类型直接保留。
+ */
+function qualifyTypeRef(ref: TypeRef, pf: ParsedFile, vars: ReadonlySet<string>): TypeRef {
+  const qualifiedArgs = ref.args.map((arg) => qualifyTypeRef(arg, pf, vars));
+  // 裸通配符 `?` 在 TypeRef 中以 Object 表示,不能被拼成包名
+  if (ref.wildcard === "?" && ref.name === "Object" && !ref.args.length) {
+    return { ...ref, args: qualifiedArgs };
+  }
+  const name = ref.name;
+  if (name.includes(".") || vars.has(name) || JAVA_LANG_TYPES.has(name) || /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name)) {
+    return { ...ref, args: qualifiedArgs };
+  }
+  const { packageName, imported } = fileScopeOf(pf);
+  const qualified = imported.get(name) ?? (packageName ? `${packageName}.${name}` : name);
+  return { ...ref, name: qualified, args: qualifiedArgs };
+}
+
 /** 继承链节:父类型声明 + 到达它时解析出的泛型形参绑定(如 Base<Patient> → T = Patient) */
 interface ChainLink {
   site: TypeSite;
@@ -514,7 +542,7 @@ function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): ChainLink
             unboundVars.add(param);
             return;
           }
-          const substituted = substituteTypeVars(arg, link.bindings);
+          const substituted = qualifyTypeRef(substituteTypeVars(arg, link.bindings), link.site.pf, visibleVars);
           collectTypeVarNames(substituted, visibleVars, unboundVars);
           bindings.set(param, substituted);
         });
@@ -679,11 +707,6 @@ function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, 
   const declarator = childNode(header, "methodDeclarator");
   const paramList = childNode(declarator, "formalParameterList");
   const { packageName, imported } = fileScopeOf(pf);
-  const javaLang = new Set([
-    "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
-    "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
-    "Void",
-  ]);
   const types: string[] = [];
   for (const fp of childAll(paramList, "formalParameter").filter(isCstNode)) {
     const regular = childNode(fp, "variableParaRegularParameter") ?? childNode(fp, "variableArityParameter");
@@ -696,7 +719,7 @@ function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, 
     const name = ref.name;
     const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
       ? name
-      : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
+      : imported.get(name) ?? (JAVA_LANG_TYPES.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
     const varargs = !!regular && childNode(fp, "variableArityParameter") !== undefined;
     types.push(`${resolvedName}${"[]".repeat(ref.dims + (varargs ? 1 : 0))}`);
   }
