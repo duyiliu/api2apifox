@@ -158,7 +158,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
       }
       op.requestBody = {
         required: rb.required,
-        content: { [ep.consumes?.[0] ?? "multipart/form-data"]: { schema } },
+        content: buildContent(ep.consumes, "multipart/form-data", { schema }),
       };
     } else if (rb.typeText !== "__multipart__") {
       const schema = resolveTypeText(rb.typeText, opCtx);
@@ -168,17 +168,16 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
       }
       op.requestBody = {
         required: rb.required,
-        content: { [ep.consumes?.[0] ?? "application/json"]: jsonBody },
+        content: buildContent(ep.consumes, "application/json", jsonBody),
       };
     }
   }
 
   const responses: Record<string, unknown> = {};
-  const responseContentType = ep.produces?.[0] ?? "*/*";
   const okResponse: Record<string, unknown> = { description: ep.responseDescription || "OK" };
   const innerReturn = responseInnerType(ep.returnType);
   if (innerReturn) {
-    okResponse.content = { [responseContentType]: { schema: resolveTypeText(innerReturn, opCtx) } };
+    okResponse.content = buildContent(ep.produces, "*/*", { schema: resolveTypeText(innerReturn, opCtx) });
   }
   responses["200"] = okResponse;
 
@@ -186,13 +185,26 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   for (const extra of ep.extraResponses ?? []) {
     const resp: Record<string, unknown> = { description: extra.description || "" };
     if (extra.schemaText) {
-      resp.content = { [responseContentType]: { schema: resolveTypeText(extra.schemaText, opCtx) } };
+      resp.content = buildContent(ep.produces, "*/*", { schema: resolveTypeText(extra.schemaText, opCtx) });
     }
     responses[extra.code] = resp;
   }
   op.responses = responses;
 
   return op;
+}
+
+/**
+ * 按声明的媒体类型生成 content 条目;多个媒体类型各自一份(同一个 schema 内容)。
+ * 未声明时回退到默认类型(请求 application/json 或 multipart/form-data,响应 *\/*)。
+ */
+function buildContent(mediaTypes: string[] | undefined, fallback: string, body: Record<string, unknown>): Record<string, unknown> {
+  const types = mediaTypes?.length ? mediaTypes : [fallback];
+  const content: Record<string, unknown> = {};
+  for (const type of types) {
+    content[type] ??= { ...body };
+  }
+  return content;
 }
 
 /** 参数上的 Bean Validation 注解 -> schema 约束 */

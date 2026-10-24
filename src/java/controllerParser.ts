@@ -43,12 +43,34 @@ const MEDIA_TYPE_CONSTANTS: Record<string, string> = {
   TEXT_PLAIN: "text/plain",
   TEXT_HTML: "text/html",
   TEXT_XML: "text/xml",
+  // Spring MediaType 同时提供 "*_VALUE" 形式的常量(如 MediaType.APPLICATION_XML_VALUE)
+  APPLICATION_JSON_VALUE: "application/json",
+  APPLICATION_JSON_UTF8_VALUE: "application/json;charset=UTF-8",
+  APPLICATION_XML_VALUE: "application/xml",
+  APPLICATION_FORM_URLENCODED_VALUE: "application/x-www-form-urlencoded",
+  APPLICATION_OCTET_STREAM_VALUE: "application/octet-stream",
+  MULTIPART_FORM_DATA_VALUE: "multipart/form-data",
+  TEXT_PLAIN_VALUE: "text/plain",
+  TEXT_HTML_VALUE: "text/html",
+  TEXT_XML_VALUE: "text/xml",
 };
 
 /** 把 "MediaType.APPLICATION_JSON"/"application/json" 统一映射为 mime */
 function toMimeType(raw: string): string {
   const last = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
   return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
+}
+
+/** 去重并保持声明顺序(方法级在前,类级在后) */
+function uniqueMediaTypes(values: string[]): string[] {
+  const out: string[] = [];
+  for (const value of values) {
+    const mime = value.trim();
+    if (mime && !out.includes(mime)) {
+      out.push(mime);
+    }
+  }
+  return out;
 }
 
 /**
@@ -152,9 +174,8 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         }
       }
 
-      // JAX-RS 类级 @Consumes/@Produces 对所有方法生效(方法级优先)
-      const classConsumes = annArray(findAnn(typeAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType);
-      const classProduces = annArray(findAnn(typeAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType);
+      // 类级媒体类型:JAX-RS @Consumes/@Produces + Spring 类级 @RequestMapping(继承链最近声明)
+      const classMedia = classMediaTypesOf(hierarchy);
 
       // 收集方法:本类声明的 + 继承链上未被覆写的父类/接口方法(具体类型优先)
       const methodHits = collectMethodHits(site, chain);
@@ -304,8 +325,26 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
           continue;
         }
         settledSignatures.add(signature);
-        const consumes = annArray(findAnn(methodAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType).concat(classConsumes);
-        const produces = annArray(findAnn(methodAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType).concat(classProduces);
+        // 方法级媒体类型:JAX-RS @Consumes/@Produces + Spring @XxxMapping(consumes/produces)。
+        // JAX-RS 规范为方法级覆盖类级;Spring 的合并语义为方法级与类级条件取并集。
+        const jaxrsMethodMedia = jaxrsMediaTypesOf(methodAnnotations);
+        const springMethodMedia = springMediaTypesOf(methodAnnotations);
+        const consumes = flavor === "jaxrs"
+          ? (jaxrsMethodMedia.consumes.length ? jaxrsMethodMedia.consumes : classMedia.jaxrs.consumes)
+          : uniqueMediaTypes([
+              ...jaxrsMethodMedia.consumes,
+              ...springMethodMedia.consumes,
+              ...classMedia.jaxrs.consumes,
+              ...classMedia.spring.consumes,
+            ]);
+        const produces = flavor === "jaxrs"
+          ? (jaxrsMethodMedia.produces.length ? jaxrsMethodMedia.produces : classMedia.jaxrs.produces)
+          : uniqueMediaTypes([
+              ...jaxrsMethodMedia.produces,
+              ...springMethodMedia.produces,
+              ...classMedia.jaxrs.produces,
+              ...classMedia.spring.produces,
+            ]);
 
         for (const m of mappings) {
           for (const mp of m.paths) {
@@ -678,6 +717,56 @@ function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor): 
   }
   const paths = pathArgsOf(mapping);
   return verbs.map((method) => ({ method, paths }));
+}
+
+interface MediaTypes {
+  consumes: string[];
+  produces: string[];
+}
+
+interface ClassMediaTypes {
+  jaxrs: MediaTypes;
+  spring: MediaTypes;
+}
+
+/** JAX-RS @Consumes/@Produces */
+function jaxrsMediaTypesOf(annotations: AnnotationInfo[]): MediaTypes {
+  return {
+    consumes: annArray(findAnn(annotations, "Consumes")?.args ?? {}, "value").map(toMimeType),
+    produces: annArray(findAnn(annotations, "Produces")?.args ?? {}, "value").map(toMimeType),
+  };
+}
+
+/** 方法/类上的 Spring 映射注解声明的 consumes / produces(@RequestMapping 与 @GetMapping 等派生注解) */
+function springMediaTypesOf(annotations: AnnotationInfo[]): MediaTypes {
+  const mapping = findAnn(annotations, ...SPRING_MAPPING_NAMES);
+  if (!mapping) {
+    return { consumes: [], produces: [] };
+  }
+  return {
+    consumes: annArray(mapping.args, "consumes").map(toMimeType),
+    produces: annArray(mapping.args, "produces").map(toMimeType),
+  };
+}
+
+/**
+ * 类级媒体类型:JAX-RS @Consumes/@Produces 取具体类型声明;
+ * Spring 类级映射取继承链上最近的 @RequestMapping(与 classBasePaths 的 findMergedAnnotation 口径一致)。
+ */
+function classMediaTypesOf(hierarchy: TypeSite[]): ClassMediaTypes {
+  const jaxrs = jaxrsMediaTypesOf(hierarchy[0].typeAnnotations);
+  let spring: MediaTypes = { consumes: [], produces: [] };
+  for (const site of hierarchy) {
+    const classMapping = findAnn(site.typeAnnotations, "RequestMapping");
+    if (classMapping) {
+      spring = {
+        consumes: annArray(classMapping.args, "consumes").map(toMimeType),
+        produces: annArray(classMapping.args, "produces").map(toMimeType),
+      };
+      break;
+    }
+  }
+  return { jaxrs, spring };
 }
 
 interface EndpointArgs {
