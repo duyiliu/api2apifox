@@ -165,7 +165,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         const { method, wrapper, modifierKey } = hit;
         const source = hit.site.pf.source;
         // 子类已声明同签名方法时,父类同名方法不再产出(覆写以具体类型为准)
-        const signature = methodSignature(hit.site, method);
+        const signature = methodSignature(hit.site, method, hit.bindings);
         if (settledSignatures.has(signature)) {
           continue;
         }
@@ -330,7 +330,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
                 ruleDescAppend,
                 index,
                 typeBindings: hit.bindings,
-                typeParams: hit.site.typeParams,
+                typeParams: hit.typeVars,
               });
               if (ep) {
                 endpoints.push(ep);
@@ -477,6 +477,8 @@ function directSuperTypes(site: TypeSite): SuperTypeRef[] {
 interface ChainLink {
   site: TypeSite;
   bindings: Map<string, TypeRef>;
+  /** 链上仍未绑定的类型形参(含从更上层传入的,如 root<X> extends Base<X> 的 X) */
+  unboundVars: Set<string>;
 }
 
 /**
@@ -488,7 +490,7 @@ interface ChainLink {
 function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): ChainLink[] {
   const chain: ChainLink[] = [];
   const visited = new Set<string>([root.typeName]);
-  let frontier: ChainLink[] = [{ site: root, bindings: new Map() }];
+  let frontier: ChainLink[] = [{ site: root, bindings: new Map(), unboundVars: new Set(root.typeParams) }];
   while (frontier.length) {
     const next: ChainLink[] = [];
     for (const link of frontier) {
@@ -502,13 +504,21 @@ function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): ChainLink
         }
         visited.add(sup.name);
         const bindings = new Map<string, TypeRef>();
+        const unboundVars = new Set<string>();
+        // 当前声明处可见的形参:自己的 + 从上层沿绑定传下来的未绑定形参
+        const visibleVars = new Set([...link.site.typeParams, ...link.unboundVars]);
         supSite.typeParams.forEach((param, i) => {
           const arg = sup.args[i];
-          if (arg) {
-            bindings.set(param, substituteTypeVars(arg, link.bindings));
+          if (!arg) {
+            // 裸类型继承(如 extends Base):形参仍未绑定
+            unboundVars.add(param);
+            return;
           }
+          const substituted = substituteTypeVars(arg, link.bindings);
+          collectTypeVarNames(substituted, visibleVars, unboundVars);
+          bindings.set(param, substituted);
         });
-        const nextLink: ChainLink = { site: supSite, bindings };
+        const nextLink: ChainLink = { site: supSite, bindings, unboundVars };
         chain.push(nextLink);
         next.push(nextLink);
       }
@@ -588,16 +598,23 @@ interface MethodHit {
   site: TypeSite;
   /** 到达声明类型时的泛型形参绑定(具体 Controller 自身为空) */
   bindings: Map<string, TypeRef>;
+  /** 方法签名中需按未绑定形参处理的变量名(声明类型形参 + 链上未绑定形参) */
+  typeVars: string[];
 }
 
 /** 取类型体内直接声明的方法(类/接口的包装节点与修饰符规则不同;Javadoc 附着在最近的包装节点上) */
-function declaredMethodsOf(site: TypeSite, bindings: Map<string, TypeRef> = new Map()): MethodHit[] {
+function declaredMethodsOf(
+  site: TypeSite,
+  bindings: Map<string, TypeRef> = new Map(),
+  unboundVars: ReadonlySet<string> = new Set()
+): MethodHit[] {
+  const typeVars = [...new Set([...site.typeParams, ...unboundVars])];
   const hits: MethodHit[] = [];
   if (site.isInterface) {
     for (const member of childAll(childNode(site.inner, "interfaceBody"), "interfaceMemberDeclaration").filter(isCstNode)) {
       const m = childNode(member, "interfaceMethodDeclaration");
       if (m) {
-        hits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier", site, bindings });
+        hits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier", site, bindings, typeVars });
       }
     }
     return hits;
@@ -606,7 +623,7 @@ function declaredMethodsOf(site: TypeSite, bindings: Map<string, TypeRef> = new 
     const memberDecl = childNode(member, "classMemberDeclaration") ?? childNode(member, "memberDeclaration");
     const m = childNode(memberDecl, "methodDeclaration");
     if (m) {
-      hits.push({ method: m, wrapper: member, modifierKey: "methodModifier", site, bindings });
+      hits.push({ method: m, wrapper: member, modifierKey: "methodModifier", site, bindings, typeVars });
     }
   }
   return hits;
@@ -623,7 +640,7 @@ function hasNonHandlerModifier(method: CstNode, modifierKey: string): boolean {
 function collectMethodHits(root: TypeSite, chain: ChainLink[]): MethodHit[] {
   const hits = declaredMethodsOf(root);
   for (const link of chain) {
-    for (const hit of declaredMethodsOf(link.site, link.bindings)) {
+    for (const hit of declaredMethodsOf(link.site, link.bindings, link.unboundVars)) {
       if (!hasNonHandlerModifier(hit.method, hit.modifierKey)) {
         hits.push(hit);
       }
@@ -656,7 +673,7 @@ function fileScopeOf(pf: ParsedFile): FileScope {
 }
 
 /** 方法签名按参数类型身份(擦除泛型,保留包名与数组维度),用于区分同名重载并识别覆写 */
-function methodSignature(site: TypeSite, method: CstNode): string {
+function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, TypeRef> = new Map()): string {
   const { pf } = site;
   const header = childNode(method, "methodHeader") ?? method;
   const declarator = childNode(header, "methodDeclarator");
@@ -675,7 +692,7 @@ function methodSignature(site: TypeSite, method: CstNode): string {
       types.push("?");
       continue;
     }
-    const ref = parseTypeText(nodeText(pf.source, typeNode));
+    const ref = substituteTypeVars(parseTypeText(nodeText(pf.source, typeNode)), bindings);
     const name = ref.name;
     const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
       ? name
@@ -1005,6 +1022,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     controller: a.controller,
     ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
     ...(a.declaringType && a.declaringType !== a.controller ? { declaringType: a.declaringType } : {}),
+    ...(unboundVars.size ? { unboundTypeVars: [...unboundVars].sort() } : {}),
     flavor: a.flavor,
     extraResponses: collectExtraResponses(a.methodAnnotations),
     consumes: a.consumes.length ? a.consumes : undefined,

@@ -91,7 +91,11 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
   // 控制器自身的类作用域:接口签名中的简单名同样要优先命中 Controller 的成员类型
   // (继承自父类/接口的方法按方法声明处类型的作用域解析)
   const epScope = typeScopeOf(ctx.index.types.get(ep.declaringType ?? ep.controller));
-  const opCtx: ResolveContext = epScope ? { ...ctx, scope: epScope } : ctx;
+  const opCtx: ResolveContext = {
+    ...ctx,
+    ...(epScope ? { scope: epScope } : {}),
+    ...(ep.unboundTypeVars?.length ? { unboundVars: new Set(ep.unboundTypeVars) } : {}),
+  };
   const op: Record<string, unknown> = {
     tags: [ep.tag],
     summary: ep.summary,

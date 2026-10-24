@@ -121,6 +121,8 @@ export interface EndpointInfo {
   ownerFsPath?: string;
   /** 方法实际声明类型(继承接口为父类型名;用于按声明处作用域解析签名中的类型) */
   declaringType?: string;
+  /** 签名中仍未绑定的泛型形参名(用于避免把同名具体类型误当作真实模型) */
+  unboundTypeVars?: string[];
   /** spring-mvc / jaxrs / feign / actuator */
   flavor: EndpointFlavor;
   /** 额外响应(@ApiResponse/@ResponseStatus 等) */

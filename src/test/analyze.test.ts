@@ -721,6 +721,55 @@ test("无法绑定的继承泛型形参产生明确告警并保留原类型", ()
   assert.equal(raw!.requestBody?.typeText, "T");
 });
 
+test("经中间泛型类传递的未绑定形参仍告警且不引用同名具体模型", () => {
+  const result = analyzeJavaSources({
+    // 同名顶层类型存在时,未绑定的形参 X 不能被误解析成它
+    X: "public class X { private String concreteOnly; }",
+    Base: `import org.springframework.web.bind.annotation.*;
+      public abstract class Base<T> {
+        @GetMapping("/value") public T value(@RequestBody T body) { return null; }
+      }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/users")
+      public class UserController<X> extends Base<X> { }`,
+  });
+  const ep = result.endpoints.find((e) => e.operationId === "UserController_value");
+  assert.ok(ep);
+  assert.equal(ep!.returnType, "X");
+  assert.equal(ep!.requestBody?.typeText, "X");
+  assert.deepEqual(ep!.unboundTypeVars, ["X"]);
+  const warning = result.warnings.find((w) => w.includes("泛型形参 X 未绑定"));
+  assert.ok(warning, result.warnings.join("|"));
+  assert.ok(warning!.includes("UserController.value"), warning);
+  // 响应体按未识别对象输出,不能落到同名具体模型 X 的 $ref
+  const response = (result.spec.paths["/users/value"].get as any).responses["200"].content["*/*"].schema;
+  assert.equal(response.$ref, undefined);
+  assert.equal(response.type, "object");
+  assert.equal(result.spec.components?.schemas?.X, undefined);
+});
+
+test("泛型父类方法被具体类型覆写时按绑定后签名去重", () => {
+  const result = analyzeJavaSources({
+    User: "public class User { private String username; }",
+    Base: `import org.springframework.web.bind.annotation.*;
+      @RequestMapping("/base")
+      public abstract class Base<T> {
+        @GetMapping("/old") public T foo(@RequestBody T body) { return null; }
+      }`,
+    UserController: `import org.springframework.web.bind.annotation.*;
+      @RestController @RequestMapping("/users")
+      public class UserController extends Base<User> {
+        @Override @GetMapping("/new") public User foo(@RequestBody User body) { return null; }
+      }`,
+  });
+  assert.deepEqual(result.endpoints.map((e) => `${e.method} ${e.path}`).sort(), ["GET /users/new"]);
+  const ep = result.endpoints[0];
+  assert.equal(ep.returnType, "User");
+  assert.equal(ep.requestBody?.typeText, "User");
+  const response = (result.spec.paths["/users/new"].get as any).responses["200"].content["*/*"].schema;
+  assert.equal(response.$ref, "#/components/schemas/User");
+});
+
 test("泛型包装按调用处解析同名嵌套实参且保留集合与多层泛型绑定", () => {
   const result = analyzeJavaSources({
     Envelope: "public class Envelope<T> { private T data; private java.util.List<T> items; private Box<T> box; }",

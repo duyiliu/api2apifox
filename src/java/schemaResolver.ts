@@ -127,6 +127,8 @@ export interface ResolveContext {
   registry: SchemaRegistry;
   /** 泛型形参绑定:T -> TypeRef */
   bindings?: Map<string, TypeRef>;
+  /** 方法签名中仍未绑定的泛型形参:不按同名真实类型解析,按未识别对象输出 */
+  unboundVars?: ReadonlySet<string>;
   /**
    * 当前解析位置的完整 Java 成员类型路径(**由内向外**,如 Outer.Inner → Outer)。
    * 类体内对简单名的引用优先命中成员(嵌套)类型,与 IDEA 版 PSI 解析口径一致;
@@ -166,6 +168,11 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     const bindings = new Map(ctx.bindings);
     bindings.delete(name);
     return resolveType(bound, { ...ctx, bindings });
+  }
+
+  // 未绑定的泛型形参不能落到同名具体类型上(如 root<X> extends Base<X> 的 X)
+  if (ctx.unboundVars?.has(name)) {
+    return { type: "object", description: `未绑定的泛型形参: ${name}` };
   }
 
   const builtin = builtinSchema(name, t, ctx);
