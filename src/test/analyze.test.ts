@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import Ajv from "ajv";
 import { test } from "node:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -785,31 +786,88 @@ class Nested { private String x; }
     },
   ];
   const res = analyze(sources, { title: "t" });
-  const wrapper = res.spec.components!.schemas["Wrapper"];
+  const schemas = res.spec.components!.schemas;
+  const wrapper = schemas["Wrapper"];
   assert.deepEqual(wrapper.properties!.nested.allOf, [{ $ref: "#/components/schemas/Nested" }]);
   assert.equal(wrapper.properties!.nested.$ref, undefined);
   assert.equal(wrapper.properties!.nested.description, "嵌套对象");
   assert.equal(wrapper.properties!.nested.example, "sample");
   assert.equal(wrapper.properties!.nested.minimum, 1);
-  // Optional<DTO> 的 nullable 也是 $ref 兄弟字段,即使没有描述/约束也必须包进 allOf
-  assert.deepEqual(wrapper.properties!.optional, {
-    allOf: [{ $ref: "#/components/schemas/Nested" }],
-    nullable: true,
-    type: "object",
-  });
-  assert.deepEqual(wrapper.properties!.optionalList.items, {
-    allOf: [{ $ref: "#/components/schemas/Nested" }],
-    nullable: true,
-    type: "object",
-  });
+  // Optional<DTO> 不能仅用 allOf + nullable(allOf 仍强制非 null DTO):
+  // 复制为非 nullable 约束的独立组件,并保留 $ref 类型身份
+  const nullableRef = "#/components/schemas/NestedNullable";
+  assert.equal(wrapper.properties!.optional.$ref, nullableRef);
+  assert.equal(wrapper.properties!.optionalList.items!.$ref, nullableRef);
+  const nullableSchema = schemas["NestedNullable"];
+  assert.equal(nullableSchema.type, "object");
+  assert.equal(nullableSchema.nullable, true);
+  assert.equal(nullableSchema.allOf, undefined);
+  assert.deepEqual(Object.keys(nullableSchema.properties!), ["x"]);
   // 响应类型同样覆盖 Optional<DTO>
   const optionalResponse = (res.spec.paths["/refs/optional"].get as Record<string, any>)
     .responses["200"].content["*/*"].schema;
-  assert.deepEqual(optionalResponse, {
-    allOf: [{ $ref: "#/components/schemas/Nested" }],
-    nullable: true,
-    type: "object",
+  assert.equal(optionalResponse.$ref, nullableRef);
+
+  // OpenAPI 3.0.3 语义:ref 需解引用;allOf 必须所有子 schema 接受 null;
+  // nullable 仅与同层显式 type 一起生效。
+  const acceptsNull = (schema: Record<string, any> | undefined): boolean => {
+    if (!schema) {
+      return false;
+    }
+    if (typeof schema.$ref === "string") {
+      return acceptsNull(schemas[schema.$ref.split("/").pop()!] as Record<string, any>);
+    }
+    if (Array.isArray(schema.allOf) && !schema.allOf.every(acceptsNull)) {
+      return false;
+    }
+    return schema.nullable === true && typeof schema.type === "string";
+  };
+  assert.equal(acceptsNull(wrapper.properties!.optional as Record<string, any>), true);
+  assert.equal(acceptsNull(wrapper.properties!.optionalList.items as Record<string, any>), true);
+  assert.equal(acceptsNull(optionalResponse as Record<string, any>), true);
+  assert.equal(acceptsNull(schemas["Nested"] as Record<string, any>), false, "基础 DTO 不应因此变成可空");
+
+  // 用 JSON Schema 校验器按 OAS 3.0 规则把 nullable+type 展开为 type:[T,null] 后验证实例:
+  // 新表示接受 null;旧的 allOf + nullable 仍会被被引用的非 null DTO 拒绝。
+  const toJsonSchema = (node: unknown): unknown => {
+    if (Array.isArray(node)) {
+      return node.map(toJsonSchema);
+    }
+    if (!node || typeof node !== "object") {
+      return node;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key !== "nullable") {
+        out[key] = toJsonSchema(value);
+      }
+    }
+    const record = node as Record<string, unknown>;
+    if (record.nullable === true && typeof record.type === "string") {
+      out.type = [record.type, "null"];
+    }
+    return out;
+  };
+  const jsonSchemas = Object.fromEntries(
+    Object.entries(schemas).map(([name, schema]) => [name, toJsonSchema(schema)])
+  );
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  const validateOptional = ajv.compile({
+    ...(toJsonSchema(nullableSchema) as Record<string, unknown>),
+    components: { schemas: jsonSchemas },
   });
+  assert.equal(validateOptional(null), true, "Optional<DTO> 必须接受 null");
+  assert.equal(validateOptional({ x: "ok" }), true);
+  assert.equal(validateOptional("not-object"), false);
+  const validateOldAllOf = ajv.compile({
+    ...(toJsonSchema({
+      allOf: [{ $ref: "#/components/schemas/Nested" }],
+      type: "object",
+      nullable: true,
+    }) as Record<string, unknown>),
+    components: { schemas: jsonSchemas },
+  });
+  assert.equal(validateOldAllOf(null), false, "allOf 包装仍会拒绝 null,故不能使用该表示");
   // 无额外元数据时保持简洁 $ref,不扩大文档体积
   assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
 
@@ -862,6 +920,16 @@ public class RestrictedController {
   @RequestMapping("/path-only")
   public String pathOnly() { return null; }
 }
+
+@RestController
+@RequestMapping(path = "/api/intersect", method = { RequestMethod.GET, RequestMethod.POST })
+public class IntersectController {
+  @PostMapping("/only-post")
+  public String onlyPost() { return null; }
+
+  @RequestMapping("/path-only")
+  public String pathOnly() { return null; }
+}
 `,
     },
   ];
@@ -886,4 +954,11 @@ public class RestrictedController {
   const restricted = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/path-only");
   assert.deepEqual(restricted.map((endpoint) => endpoint.method), ["POST"]);
   assert.equal(res.warnings.some((warning) => warning.includes("RestrictedController.pathOnly")), false);
+
+  // 类级声明多个 method 时,方法级显式 @PostMapping 取交集,不再额外生成 GET
+  const onlyPost = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/only-post");
+  assert.deepEqual(onlyPost.map((endpoint) => endpoint.method), ["POST"]);
+  // 方法级未声明 method 时继承类级的 GET+POST
+  const inherited = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/path-only");
+  assert.deepEqual(inherited.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
 });

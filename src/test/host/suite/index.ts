@@ -32,17 +32,44 @@ function startImportServer(): Promise<{
   baseUrl: string;
   requests: string[];
   failNextImport: () => void;
+  failNextTeams: () => void;
+  failNextProjects: () => void;
   close: () => Promise<void>;
 }> {
   const requests: string[] = [];
   let failNext = false;
+  let failTeams = false;
+  let failProjects = false;
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
     });
     req.on("end", () => {
-      requests.push(`${req.method} ${req.url} (${body.length} bytes)`);
+      const url = (req.url ?? "").split("?")[0];
+      requests.push(`${req.method} ${url} (${body.length} bytes)`);
+      if (url === "/v1/teams") {
+        if (failTeams) {
+          failTeams = false;
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ code: 500, message: "模拟团队列表失败" }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ data: [{ id: 1, name: "Host Team" }] }));
+        return;
+      }
+      if (url === "/v1/teams/1/projects") {
+        if (failProjects) {
+          failProjects = false;
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ code: 500, message: "模拟项目列表失败" }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ data: [{ id: 10, name: "Host Project" }] }));
+        return;
+      }
       if (failNext) {
         failNext = false;
         res.writeHead(500, { "content-type": "application/json" });
@@ -62,6 +89,12 @@ function startImportServer(): Promise<{
         requests,
         failNextImport: () => {
           failNext = true;
+        },
+        failNextTeams: () => {
+          failTeams = true;
+        },
+        failNextProjects: () => {
+          failProjects = true;
         },
         close: () =>
           new Promise<void>((done) => {
@@ -248,6 +281,119 @@ export async function run(): Promise<void> {
     const requestsBefore = server.requests.length;
     await vscode.commands.executeCommand("apifoxHelper.syncWorkspace");
     assert.ok(server.requests.length > requestsBefore, "拒绝后应能重新同步");
+
+    // 6) 设置面板 Webview 消息流:ready/testConnection/fetchProjects/save 成功与失败
+    const { SettingsPanel } = require("../../../views/SettingsPanel") as {
+      SettingsPanel: {
+        createOrShow(secrets: vscode.SecretStorage): {
+          handleMessage(message: Record<string, any>): Promise<void>;
+          dispose(): void;
+          _panel: { webview: { postMessage(message: unknown): Thenable<boolean> } };
+        };
+      };
+    };
+    const secretStore = new Map<string, string>();
+    const fakeSecrets = {
+      get: async (key: string) => secretStore.get(key),
+      store: async (key: string, value: string) => {
+        secretStore.set(key, value);
+      },
+      delete: async (key: string) => {
+        secretStore.delete(key);
+      },
+    } as unknown as vscode.SecretStorage;
+    const settingsPanel = SettingsPanel.createOrShow(fakeSecrets);
+    const webview = settingsPanel._panel.webview;
+    const posted: Record<string, any>[] = [];
+    const originalPostMessage = webview.postMessage.bind(webview);
+    webview.postMessage = (message: unknown) => {
+      posted.push(message as Record<string, any>);
+      return Promise.resolve(true);
+    };
+    try {
+      await settingsPanel.handleMessage({ command: "ready" });
+      assert.equal(posted.at(-1)?.command, "init");
+      assert.equal(posted.at(-1)?.data.settings.projectId, 1);
+
+      await settingsPanel.handleMessage({
+        command: "testConnection",
+        token: "APS-host",
+        apiBaseUrl: server.baseUrl,
+        requestKey: "conn-ok",
+      });
+      const connOk = posted.at(-1)!;
+      assert.equal(connOk.command, "testResult");
+      assert.equal(connOk.ok, true);
+      assert.equal(connOk.requestKey, "conn-ok");
+      assert.equal(connOk.teams.length, 1);
+
+      server.failNextTeams();
+      await settingsPanel.handleMessage({
+        command: "testConnection",
+        token: "APS-host",
+        apiBaseUrl: server.baseUrl,
+        requestKey: "conn-fail",
+      });
+      const connFail = posted.at(-1)!;
+      assert.equal(connFail.command, "testResult");
+      assert.equal(connFail.ok, false);
+      assert.equal(connFail.requestKey, "conn-fail");
+
+      await settingsPanel.handleMessage({
+        command: "fetchProjects",
+        token: "APS-host",
+        apiBaseUrl: server.baseUrl,
+        teamId: 1,
+      });
+      const projOk = posted.at(-1)!;
+      assert.equal(projOk.command, "projectsResult");
+      assert.equal(projOk.ok, true);
+      assert.equal(projOk.projects.length, 1);
+
+      server.failNextProjects();
+      await settingsPanel.handleMessage({
+        command: "fetchProjects",
+        token: "APS-host",
+        apiBaseUrl: server.baseUrl,
+        teamId: 1,
+      });
+      const projFail = posted.at(-1)!;
+      assert.equal(projFail.command, "projectsResult");
+      assert.equal(projFail.ok, false);
+      assert.equal(projFail.teamId, 1);
+
+      const saveData = {
+        token: "APS-settings",
+        apiBaseUrl: server.baseUrl,
+        teamName: "Host Team",
+        projectId: 10,
+        projectName: "Host Project Saved",
+        endpointConflictBehavior: "OVERWRITE_EXISTING",
+        schemaConflictBehavior: "OVERWRITE_EXISTING",
+        folderNameSource: "tag",
+        pageTypeStyle: "mybatis-plus",
+        rootFolderName: "",
+        schemaFolderId: 0,
+        enumFieldDoc: false,
+      };
+      await settingsPanel.handleMessage({ command: "save", data: saveData });
+      const saveOk = posted.at(-1)!;
+      assert.equal(saveOk.command, "saveResult");
+      assert.equal(saveOk.ok, true);
+      assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
+      assert.equal(vscode.workspace.getConfiguration("apifoxHelper").get("projectName"), "Host Project Saved");
+
+      // 保存失败:缺少 token,应返回可见错误且不覆盖已保存的令牌
+      await settingsPanel.handleMessage({ command: "save", data: { ...saveData, token: "" } });
+      const saveFail = posted.at(-1)!;
+      assert.equal(saveFail.command, "saveResult");
+      assert.equal(saveFail.ok, false);
+      assert.ok(String(saveFail.message).includes("令牌"), `失败应说明原因:${JSON.stringify(saveFail)}`);
+      assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
+    } finally {
+      webview.postMessage = originalPostMessage;
+      settingsPanel.dispose();
+    }
   } finally {
     windowAny.showInformationMessage = originals.showInformationMessage;
     windowAny.showWarningMessage = originals.showWarningMessage;

@@ -501,6 +501,31 @@ function pageSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema |
   return undefined;
 }
 
+/**
+ * Optional<DTO> 的可空引用:组件已登记时复制其 schema 并标记 nullable,
+ * 避免 `allOf: [{$ref}]` 继续施加非 null 约束(OpenAPI 3.0.3 的 allOf 交集语义)。
+ * 复制体登记为独立组件(<Type>Nullable),既让 null 通过,也保留类型引用。
+ * 递归中的组件尚未登记到 schemas,退回引用包装(调用方仍需尽量避免该边界)。
+ */
+function nullableRefSchema(schema: JsonSchema, ctx: ResolveContext): JsonSchema | undefined {
+  const prefix = "#/components/schemas/";
+  const ref = schema.$ref;
+  if (!ref?.startsWith(prefix)) {
+    return undefined;
+  }
+  const name = ref.slice(prefix.length);
+  const target = ctx.registry.schemas[name];
+  if (!target) {
+    return undefined;
+  }
+  const clone = JSON.parse(JSON.stringify(target)) as JsonSchema;
+  clone.nullable = true;
+  if (!clone.type) {
+    clone.type = "object";
+  }
+  return ctx.registry.getOrAdd(`nullable:${name}`, `${name}Nullable`, () => clone);
+}
+
 function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema | undefined {
   const prim = PRIMITIVES[name];
   if (prim) {
@@ -521,9 +546,13 @@ function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchem
   }
   if (name === "Optional") {
     const inner = t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" };
-    // Optional 的 nullable 也是 Reference Object 的兄弟字段,引用类型必须包进 allOf;
-    // OpenAPI 3.0.3 的 nullable 仅在同一个 Schema Object 显式声明 type 时生效,故补 type: object。
-    return withRefSiblings(inner, { nullable: true, ...(inner.$ref ? { type: "object" } : {}) });
+    // OpenAPI 3.0.3 中 allOf 仍要求满足被引用的非 null DTO,包装层的 nullable 无法让 null 通过。
+    // 组件已构建时内联 DTO 并加 type/nullable,保证 Optional<DTO> 真正接受 null。
+    const nullableRef = nullableRefSchema(inner, ctx);
+    if (nullableRef) {
+      return nullableRef;
+    }
+    return withRefSiblings(inner, { nullable: true });
   }
   return undefined;
 }
