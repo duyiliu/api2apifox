@@ -520,7 +520,9 @@ function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchem
     return { type: "array", items: t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" } };
   }
   if (name === "Optional") {
-    return { ...(t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" }), nullable: true };
+    const inner = t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" };
+    // Optional 的 nullable 也是 Reference Object 的兄弟字段,引用类型必须包进 allOf
+    return withRefSiblings(inner, { nullable: true });
   }
   return undefined;
 }

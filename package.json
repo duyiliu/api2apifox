@@ -482,11 +482,13 @@
     "release:patch": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
-    "watch": "node esbuild.js --watch"
+    "watch": "node esbuild.js --watch",
+    "test:host": "npm run compile && npm run build:test && node out/test/host/runHostTest.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"

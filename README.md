@@ -250,6 +250,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 npm install
 npm run compile     # esbuild 打包到 dist/
 npm test            # 解析器单测 + sample 项目端到端断言
+npm run test:host   # VS Code 1.85 Extension Host smoke(激活/命令/single-flight/成功与失败恢复)
 npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
 ```
 

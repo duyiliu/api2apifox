@@ -609,7 +609,7 @@ test("同名模型互相递归时双向引用保持各自类型身份", () => {
     });
     const schemas = result.spec.components!.schemas;
     const operation = result.spec.paths["/nodes"].get as any;
-    const refName = (schema: any) => schema.$ref.split("/").pop();
+    const refName = (schema: any) => (schema.$ref ?? schema.allOf[0].$ref).split("/").pop();
     const start = refName(operation.responses["200"].content["*/*"].schema);
     const next = refName(schemas[start].properties!.next);
     assert.notEqual(start, next);
@@ -763,6 +763,9 @@ import org.springframework.web.bind.annotation.*;
 public class RefController {
   @PostMapping
   public void save(@RequestBody Wrapper wrapper) { }
+
+  @GetMapping("/optional")
+  public java.util.Optional<Nested> optional() { return java.util.Optional.empty(); }
 }
 
 class Wrapper {
@@ -771,6 +774,10 @@ class Wrapper {
   private Nested nested;
 
   private Nested plain;
+
+  private java.util.Optional<Nested> optional;
+
+  private java.util.List<java.util.Optional<Nested>> optionalList;
 }
 
 class Nested { private String x; }
@@ -784,8 +791,44 @@ class Nested { private String x; }
   assert.equal(wrapper.properties!.nested.description, "嵌套对象");
   assert.equal(wrapper.properties!.nested.example, "sample");
   assert.equal(wrapper.properties!.nested.minimum, 1);
+  // Optional<DTO> 的 nullable 也是 $ref 兄弟字段,即使没有描述/约束也必须包进 allOf
+  assert.deepEqual(wrapper.properties!.optional, {
+    allOf: [{ $ref: "#/components/schemas/Nested" }],
+    nullable: true,
+  });
+  assert.deepEqual(wrapper.properties!.optionalList.items, {
+    allOf: [{ $ref: "#/components/schemas/Nested" }],
+    nullable: true,
+  });
+  // 响应类型同样覆盖 Optional<DTO>
+  const optionalResponse = (res.spec.paths["/refs/optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.deepEqual(optionalResponse, {
+    allOf: [{ $ref: "#/components/schemas/Nested" }],
+    nullable: true,
+  });
   // 无额外元数据时保持简洁 $ref,不扩大文档体积
   assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
+
+  // 全量结构校验:OpenAPI 3.0.3 的 Reference Object 不允许任何兄弟字段
+  const assertNoRefSiblings = (node: unknown, path: string): void => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => assertNoRefSiblings(item, `${path}[${index}]`));
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (typeof record.$ref === "string") {
+      assert.deepEqual(Object.keys(record), ["$ref"], `$ref 同级字段会失效: ${path}`);
+      return;
+    }
+    for (const [key, value] of Object.entries(record)) {
+      assertNoRefSiblings(value, `${path}.${key}`);
+    }
+  };
+  assertNoRefSiblings(res.spec, "spec");
 });
 
 test("@RequestMapping 未声明 method 时输出常用 HTTP verb 集合,显式 method 不受影响", () => {

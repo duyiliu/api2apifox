@@ -49,3 +49,53 @@ test("single-flight:任务拒绝后释放状态,不会永久锁死", async () =>
   await flight.run(async () => undefined);
   assert.equal(flight.isRunning(), false);
 });
+
+test("single-flight:多个同步命令入口共享同一 in-flight,忙时逐个反馈", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let starts = 0;
+  const busyEntries: string[] = [];
+  const flight = createSingleFlight<void>();
+
+  // 模拟工作区/文件/勾选/目录/单接口/CodeLens 六个入口共用同一实例
+  const entries = ["workspace", "file", "checked", "folder", "endpoint", "codelens"];
+  const pending = entries.map((name) =>
+    flight.run(
+      async () => {
+        starts += 1;
+        await gate;
+      },
+      () => busyEntries.push(name)
+    )
+  );
+  assert.equal(starts, 1, "各入口并发触发时只允许一次实际同步");
+  assert.equal(new Set(pending).size, 1, "所有入口应复用同一个 promise");
+  assert.deepEqual(busyEntries, entries.slice(1), "其余入口应收到忙反馈");
+
+  release();
+  await Promise.all(pending);
+  assert.equal(flight.isRunning(), false);
+  await flight.run(async () => {
+    starts += 1;
+  });
+  assert.equal(starts, 2, "前一次完成后应允许新的同步");
+});
+
+test("single-flight:任意 rejection 值(含非 Error)都释放状态", async () => {
+  for (const reason of ["string failure", 42, { code: "E_CUSTOM" }, undefined]) {
+    const flight = createSingleFlight<void>();
+    await assert.rejects(
+      flight.run(async () => {
+        throw reason;
+      })
+    );
+    assert.equal(flight.isRunning(), false, `rejection=${String(reason)} 后应释放`);
+    let ran = false;
+    await flight.run(async () => {
+      ran = true;
+    });
+    assert.equal(ran, true, "释放后应可再次执行");
+  }
+});
