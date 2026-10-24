@@ -189,7 +189,8 @@ export class AnalyzeCache {
     const parsed = this.parsedOf(files);
     const key = this.resultKey(opts, endpointFilter);
     if (this.lastResult && this.lastResult.key === key) {
-      return this.lastResult.output;
+      // warnings 返回副本:syncToApifox 会原地 push 提示语,不能污染缓存结果
+      return { ...this.lastResult.output, warnings: [...this.lastResult.output.warnings] };
     }
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
@@ -206,7 +207,8 @@ export class AnalyzeCache {
     });
     const rawWarnings = [...new Set(parseResult.warnings)];
     const output = { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
-    this.lastResult = { key, output };
+    // 缓存存副本:调用方(如 syncToApifox)会原地 push warnings,不能污染缓存
+    this.lastResult = { key, output: { ...output, warnings: [...output.warnings] } };
     return output;
   }
 

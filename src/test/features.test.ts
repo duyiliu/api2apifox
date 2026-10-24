@@ -378,7 +378,11 @@ test("AnalyzeCache:相同文件与配置直接复用结果;文件内容变化即
   const files = cacheFixture();
   const opts = { title: "cache", cacheKey: "v1" };
   const first = cache.analyze(files, opts);
-  assert.equal(cache.analyze(files, opts), first, "同文件同配置应复用上一轮结果");
+  const replay = cache.analyze(files, opts);
+  assert.equal(replay.spec, first.spec, "同文件同配置应复用上一轮 spec");
+  assert.equal(replay.endpoints, first.endpoints, "同文件同配置应复用上一轮 endpoints");
+  assert.deepEqual(replay.warnings, first.warnings, "warnings 内容一致");
+  assert.notEqual(replay.warnings, first.warnings, "warnings 返回副本防下游原地 push 污染缓存");
 
   const changed = files.map((f) => (f.fsPath.includes("Alpha") ? { ...f, content: f.content.replace("/one", "/changed") } : f));
   const afterContent = cache.analyze(changed, opts);
