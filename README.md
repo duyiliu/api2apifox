@@ -191,6 +191,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.dependencyRepos` | `[]` | 可选兜底:额外本地 Maven 仓库目录(默认已自动发现 JetBrains MAVEN_REPOSITORY/IDEA 索引/`~/.m2`) |
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |
+| `apifoxHelper.maxDependencyJars` | `120` | 依赖 jar 解析总数上限(直接 + 传递依赖);超出按依赖距离丢弃并提示,`0` 表示不做依赖解析 |
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 
@@ -233,7 +234,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 ## ⚠️ 已知边界
 
 - **Kotlin 不支持**:需要第二套解析器(Kotlin 语法树),当前版本仅支持 Java 源码
-- **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限 120,超出部分告警);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
+- **依赖 jar 类型识别的边界**:解析工作区 `pom.xml` 声明的直接依赖,并读取各 jar 内嵌 pom 再推断 2 轮传递依赖(jar 总数上限默认 120,可用 `maxDependencyJars` 调整;超出部分按依赖距离丢弃,告警会列出被丢弃的 jar 名);仍未覆盖的类型可通过 `dependencyJars` 显式补充;Gradle 项目请用 `dependencyJars` 显式指定;仓库中的同名类以先注册的 jar 为准
 - 同项目内不同包下的**顶层**重名类型以简单名索引,后扫描到的覆盖先扫描到的(源码类型优先于 jar 类型;插件不做 import 解析,无法区分同名顶层类型)
 - 类体/接口体内的**嵌套类型按 Java 作用域解析**:支持完整的多层成员路径及泛型包装中的嵌套实参,字段类型里的简单名优先命中本类成员,再由内向外回退到顶层类型。不同类型同名时追加 `_2`、`_3` … 并告警;已完成的非递归同结构模型可复用,递归模型保留独立名称以保证引用准确
 - **隐藏目录与工作区内另一处 git 检出不参与扫描**:工作区根下任一 `.xxx` 目录的内容均跳过,因此 `.kilo/worktrees`、`.claude/worktrees` 和其他 AI 工具的隐藏工作目录不会产生重复接口；嵌套 git 检出同样按 `.git` 标记跳过。要扫描某个工作树,请将该工作树根目录作为独立工作区或多根工作区文件夹打开

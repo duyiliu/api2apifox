@@ -29,6 +29,8 @@ export interface ResolvedConfig {
   enumFieldDoc: boolean;
   dependencyRepos: string[];
   dependencyJars: string[];
+  /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */
+  maxDependencyJars: number;
   timeoutMs: number;
 }
 

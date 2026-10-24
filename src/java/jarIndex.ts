@@ -514,13 +514,18 @@ export async function resolveDependencyJars(
   const warnings: string[] = [];
 
   let roundCoords = pomCoords;
+  let dropped = 0;
+  const droppedNames: string[] = [];
   for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
     const jars = await findJarsForCoordinates(repos, roundCoords);
     const fresh = jars.filter((j) => !collectedSet.has(j));
     for (const j of fresh) {
       if (collected.length >= maxJars) {
-        warnings.push(`依赖 jar 数量达到上限 ${maxJars},忽略其余`);
-        break;
+        dropped++;
+        if (droppedNames.length < 10) {
+          droppedNames.push(path.basename(j));
+        }
+        continue;
       }
       collected.push(j);
       collectedSet.add(j);
@@ -550,6 +555,12 @@ export async function resolveDependencyJars(
       break;
     }
     roundCoords = next;
+  }
+  if (dropped) {
+    warnings.push(
+      `依赖 jar 数量达到上限 ${maxJars},忽略 ${dropped} 个已定位依赖 jar:${droppedNames.join(", ")}` +
+        `${dropped > droppedNames.length ? " 等" : ""}(更深层未展开的传递依赖不在其中;可用 maxDependencyJars 调高上限或 dependencyJars 显式补充)`
+    );
   }
   return { jars: collected, warnings };
 }

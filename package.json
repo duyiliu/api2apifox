@@ -454,6 +454,12 @@
           },
           "default": [],
           "description": "显式依赖 jar 的绝对路径(优先于仓库发现),用于识别源码之外的类型。"
+        },
+        "apifoxHelper.maxDependencyJars": {
+          "type": "number",
+          "default": 120,
+          "minimum": 0,
+          "description": "依赖 jar 解析总数上限(直接 + 传递依赖)。超出部分按依赖距离从远到近丢弃并提示;0 表示不做依赖解析。"
         }
       }
     }

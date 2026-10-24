@@ -52,6 +52,21 @@ test("helperProperties 必须是对象,非对象值报 CONFIG_INVALID", () => {
   assert.throws(() => resolveConfig(root), /helperProperties 必须是对象/);
 });
 
+test("maxDependencyJars:配置文件生效、默认值与非法值校验", () => {
+  const root = temporaryProject();
+  fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ maxDependencyJars: 256 }));
+  const resolved = resolveConfig(root);
+  assert.equal(resolved.config.maxDependencyJars, 256);
+  assert.match(resolved.sources.maxDependencyJars, /^file:/);
+
+  const empty = temporaryProject();
+  assert.equal(resolveConfig(empty).config.maxDependencyJars, 120);
+
+  const bad = temporaryProject();
+  fs.writeFileSync(path.join(bad, ".api2apifox.json"), JSON.stringify({ maxDependencyJars: -1 }));
+  assert.throws(() => resolveConfig(bad), /maxDependencyJars 必须是大于等于 0 的整数/);
+});
+
 test("严格拒绝未知配置字段", () => {
   const root = temporaryProject();
   fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ projectID: 42 }));

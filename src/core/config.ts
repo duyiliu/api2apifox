@@ -22,6 +22,7 @@ interface FileConfig {
   helperProperties?: unknown;
   dependencyRepos?: unknown;
   dependencyJars?: unknown;
+  maxDependencyJars?: unknown;
   timeoutMs?: unknown;
   title?: unknown;
   $schema?: unknown;
@@ -45,6 +46,7 @@ export interface ConfigOverrides {
   enumFieldDoc?: boolean;
   dependencyRepos?: string[];
   dependencyJars?: string[];
+  maxDependencyJars?: number;
   timeoutMs?: number;
   title?: string;
 }
@@ -98,6 +100,8 @@ export function resolveConfig(
     enumFieldDoc: false,
     dependencyRepos: [],
     dependencyJars: [],
+    // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
+    maxDependencyJars: 120,
     // OpenAPI 导入首次创建目录、接口和模型可能超过一分钟；CLI 默认等待五分钟。
     timeoutMs: 300_000,
   };
@@ -127,6 +131,7 @@ export function resolveConfig(
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
+  applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
   if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
     config.title = fileConfig.title.trim();
@@ -187,6 +192,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
     "helperProperties",
     "dependencyRepos",
     "dependencyJars",
+    "maxDependencyJars",
     "timeoutMs",
     "token",
   ]);
@@ -276,6 +282,9 @@ function validateResolvedConfig(config: ResolvedConfig, diagnostics: Diagnostic[
   }
   if (!Number.isFinite(config.timeoutMs) || config.timeoutMs <= 0) {
     invalid("timeoutMs 必须是正数", diagnostics);
+  }
+  if (!Number.isInteger(config.maxDependencyJars) || config.maxDependencyJars < 0) {
+    invalid("maxDependencyJars 必须是大于等于 0 的整数", diagnostics);
   }
   try {
     const protocol = new URL(config.apiBaseUrl).protocol;

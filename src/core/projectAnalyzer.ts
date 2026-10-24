@@ -133,7 +133,7 @@ async function buildProjectJarIndex(
         warnings.push(`pom.xml 不可读:${pom}`);
       }
     }
-    const resolved = await resolveDependencyJars(repos, coordinates);
+    const resolved = await resolveDependencyJars(repos, coordinates, { maxJars: config.maxDependencyJars });
     jars.push(...resolved.jars);
     warnings.push(...resolved.warnings);
   }

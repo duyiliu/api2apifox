@@ -114,7 +114,12 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
       }
     }
     if (coords.length) {
-      const { jars: resolved } = await resolveDependencyJars(repos, coords);
+      const { jars: resolved, warnings: depWarnings } = await resolveDependencyJars(repos, coords, {
+        maxJars: settings.maxDependencyJars,
+      });
+      if (depWarnings.length) {
+        vscode.window.showWarningMessage(`ApiGen for Apifox:${depWarnings.join(";")}`);
+      }
       jars.push(...resolved);
     }
   }

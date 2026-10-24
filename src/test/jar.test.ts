@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { test } from "node:test";
 import { parseClassSignature, parseFieldSignature, sigToText } from "../java/descriptor";
@@ -205,6 +206,36 @@ test("自动发现:无需配置即可找到本机 Maven 仓库(存在 IDEA 配�
   const repos = await discoverMavenRepos([]);
   t.diagnostic("发现仓库: " + repos.join(" | "));
   assert.ok(repos.some((r: string) => r.replace(/\\/g, "/") === "D:/repository"), "应自动发现 D:/repository: " + repos.join(","));
+});
+
+test("resolveDependencyJars:达到上限时告警列出被丢弃的 jar", async () => {
+  const { resolveDependencyJars } = require("../java/jarIndex");
+  const os = require("os");
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-repo-"));
+  const mkJar = (artifact: string, version: string) => {
+    const dir = path.join(repo, "com", "x", artifact, version);
+    fs.mkdirSync(dir, { recursive: true });
+    const jarPath = path.join(dir, `${artifact}-${version}.jar`);
+    fs.writeFileSync(jarPath, buildZip([{ name: "com/x/Fake.class", data: buildDemoClassExplicit() }]));
+    return jarPath;
+  };
+  mkJar("dep-a", "1.0");
+  mkJar("dep-b", "1.0");
+
+  const res = await resolveDependencyJars(
+    [repo],
+    [
+      { groupId: "com.x", artifactId: "dep-a" },
+      { groupId: "com.x", artifactId: "dep-b" },
+    ],
+    { maxJars: 1, maxRounds: 0 }
+  );
+  assert.equal(res.jars.length, 1);
+  assert.ok(res.jars[0].endsWith("dep-a-1.0.jar"), "直接依赖按坐标顺序优先保留");
+  const warn = res.warnings.find((w: string) => w.includes("上限"));
+  assert.ok(warn, "应产生上限告警");
+  assert.ok(warn.includes("dep-b-1.0.jar"), "告警应列出被丢弃的 jar: " + warn);
+  assert.ok(warn.includes("maxDependencyJars"), "告警应给出可调口径: " + warn);
 });
 
 /* ---------------- 畸形签名回归(此前死循环 OOM) ---------------- */
