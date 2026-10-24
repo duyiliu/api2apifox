@@ -239,7 +239,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 - 类体/接口体内的**嵌套类型按 Java 作用域解析**:支持完整的多层成员路径及泛型包装中的嵌套实参,字段类型里的简单名优先命中本类成员,再由内向外回退到顶层类型。不同类型同名时追加 `_2`、`_3` … 并告警;已完成的非递归同结构模型可复用,递归模型保留独立名称以保证引用准确
 - **隐藏目录与工作区内另一处 git 检出不参与扫描**:工作区根下任一 `.xxx` 目录的内容均跳过,因此 `.kilo/worktrees`、`.claude/worktrees` 和其他 AI 工具的隐藏工作目录不会产生重复接口；嵌套 git 检出同样按 `.git` 标记跳过。要扫描某个工作树,请将该工作树根目录作为独立工作区或多根工作区文件夹打开
 - 查询 Bean 的集合字段以数组形态描述(如 `deptCodes: array`);IDEA 版会写成 `deptCodes[0]`,只体现首个元素,故此处有意不一致
-- 继承接口的**泛型形参不做实例化绑定**:`abstract class Base<T>` 的方法签名里引用 `T` 时按未绑定类型处理(如 `T` 直接落在 `$ref`/类型名上);抽象基类声明为具体类型的场景不受影响
+- 继承接口的**泛型形参按具体类型实例化**:`class UserController extends BaseController<User>` 时父类方法签名(参数/返回值/请求体)里的 `T` 替换为 `User`,支持多级继承与嵌套泛型(`Base<List<User>>`);裸类型继承(如 `extends BaseController`)等无法确定的形参保留原样,并在告警中明确提示
 - `@ApiResponse` 的 `headers`/`links`、`@Digits`、`@Past/@Future` 等未映射
 
 ## 🛠 开发与发布

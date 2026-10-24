@@ -1,7 +1,7 @@
 import { collectAnnotations, parseArgsText } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
-import { parseTypeText, simpleName } from "./typeText";
+import { collectTypeVarNames, parseTypeText, simpleName, substituteTypeVars, typeRefToText, TypeRef } from "./typeText";
 import { HelperProperties } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
@@ -32,6 +32,13 @@ const HTTP_STATUS_BY_NAME: Record<string, string> = {
   UNSUPPORTED_MEDIA_TYPE: "415", TOO_MANY_REQUESTS: "429",
   INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
 };
+
+/** java.lang 类型无需拼包名(继承实参作用域解析与签名归一化共用) */
+const JAVA_LANG_TYPES = new Set([
+  "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+  "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+  "Void",
+]);
 
 const MEDIA_TYPE_CONSTANTS: Record<string, string> = {
   APPLICATION_JSON: "application/json",
@@ -74,11 +81,12 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       const { typeName, typeAnnotations } = site;
 
       // 继承链:具体类型在首位,父类/接口按 BFS 在后(仅工作区源码内可定位的类型)
+      // 每个链节携带自己的泛型形参绑定(如 Base<Patient> → T = Patient)
       const chain = sites ? superTypeChain(site, sites.byName) : [];
-      const hierarchy = [site, ...chain];
+      const hierarchy = [site, ...chain.map((link) => link.site)];
 
       // 类型风格判定:具体类型优先,抽象基类标注 @RestController 时由父类兜底
-      const flavor = detectFlavor(site, chain);
+      const flavor = detectFlavor(site, chain.map((link) => link.site));
       if (!flavor) {
         continue;
       }
@@ -164,7 +172,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         const { method, wrapper, modifierKey } = hit;
         const source = hit.site.pf.source;
         // 子类已声明同签名方法时,父类同名方法不再产出(覆写以具体类型为准)
-        const signature = methodSignature(hit.site, method);
+        const signature = methodSignature(hit.site, method, hit.bindings);
         if (settledSignatures.has(signature)) {
           continue;
         }
@@ -328,6 +336,8 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
                 ruleSummary,
                 ruleDescAppend,
                 index,
+                typeBindings: hit.bindings,
+                typeParams: hit.typeVars,
               });
               if (ep) {
                 endpoints.push(ep);
@@ -355,6 +365,8 @@ interface TypeSite {
   typeName: string;
   isInterface: boolean;
   typeAnnotations: AnnotationInfo[];
+  /** 类型声明的泛型形参名列表(如 ["T"]),用于继承链绑定与未绑定告警 */
+  typeParams: string[];
 }
 
 function typeSiteOf(pf: ParsedFile, typeDecl: CstNode): TypeSite | undefined {
@@ -380,7 +392,28 @@ function typeSiteOf(pf: ParsedFile, typeDecl: CstNode): TypeSite | undefined {
     ].filter(isCstNode),
     pf.source
   );
-  return { pf, carrier: typeDecl, inner, typeName, isInterface: !!normalItf, typeAnnotations };
+  return {
+    pf,
+    carrier: typeDecl,
+    inner,
+    typeName,
+    isInterface: !!normalItf,
+    typeAnnotations,
+    typeParams: typeParamsOf(inner),
+  };
+}
+
+/** 类型声明节点上的泛型形参(如 `class Base<T, R>` → ["T","R"]) */
+function typeParamsOf(inner: CstNode): string[] {
+  const tp = childNode(inner, "typeParameters");
+  if (!tp) {
+    return [];
+  }
+  const list = childNode(tp, "typeParameterList") ?? tp;
+  return childAll(list, "typeParameter")
+    .filter(isCstNode)
+    .map((n) => typeNameOf(n))
+    .filter((s) => s.length > 0);
 }
 
 /** 建立 简单名 -> 类型声明站点 的索引(同名以最后扫描到的为准,与类型索引口径一致);byFile 供主循环复用,免于二次 CST 扫描与注解收集 */
@@ -404,15 +437,24 @@ function buildTypeSites(files: ParsedFile[]): { byName: Map<string, TypeSite>; b
   return { byName, byFile };
 }
 
-/** 类型文本 -> 简单名(剥掉包名与泛型实参,如 java.util.List<String> -> List) */
-function typeTextName(text: string): string {
-  return simpleName(parseTypeText(text).name);
+interface SuperTypeRef {
+  /** 简单名 */
+  name: string;
+  /** 泛型实参(如 Base<Patient> → [Patient],Base<List<User>> → [List<User>]) */
+  args: TypeRef[];
 }
 
-/** 直接父类型名:类取 extends 的类 + implements 的接口;接口取 extends 的接口 */
-function directSuperTypeNames(site: TypeSite): string[] {
+/** 直接父类型:类取 extends 的类 + implements 的接口;接口取 extends 的接口 */
+function directSuperTypes(site: TypeSite): SuperTypeRef[] {
   const source = site.pf.source;
-  const names: string[] = [];
+  const supers: SuperTypeRef[] = [];
+  const push = (text: string) => {
+    const ref = parseTypeText(text);
+    const name = simpleName(ref.name);
+    if (name && name !== "Object") {
+      supers.push({ name, args: ref.args });
+    }
+  };
   const pushInterfaceList = (holder: CstNode | undefined) => {
     const list = childNode(holder, "interfaceTypeList");
     if (!list) {
@@ -420,9 +462,8 @@ function directSuperTypeNames(site: TypeSite): string[] {
     }
     for (const it of childAll(list, "interfaceType").filter(isCstNode)) {
       const classType = childNode(it, "classType");
-      const name = classType ? typeTextName(nodeText(source, classType)) : "";
-      if (name && name !== "Object") {
-        names.push(name);
+      if (classType) {
+        push(nodeText(source, classType));
       }
     }
   };
@@ -431,37 +472,83 @@ function directSuperTypeNames(site: TypeSite): string[] {
   } else {
     const ext = childNode(site.inner, "classExtends");
     const classType = ext ? childNode(ext, "classType") : undefined;
-    const superName = classType ? typeTextName(nodeText(source, classType)) : "";
-    if (superName && superName !== "Object") {
-      names.push(superName);
+    if (classType) {
+      push(nodeText(source, classType));
     }
     pushInterfaceList(childNode(site.inner, "classImplements"));
   }
-  return names;
+  return supers;
+}
+
+/**
+ * 把类型实参中的简单名按声明处文件的包/import 解析为全限定名。
+ * 继承实参写在子类源码里,必须按子类作用域解析;若留待父类作用域解析,
+ * 父类中同名成员类型会抢占子类实际引用的类型。
+ * 泛型形参保持原样(不引包名),已限定名与基本类型直接保留。
+ */
+function qualifyTypeRef(ref: TypeRef, pf: ParsedFile, vars: ReadonlySet<string>): TypeRef {
+  const qualifiedArgs = ref.args.map((arg) => qualifyTypeRef(arg, pf, vars));
+  // 裸通配符 `?` 在 TypeRef 中以 Object 表示,不能被拼成包名
+  if (ref.wildcard === "?" && ref.name === "Object" && !ref.args.length) {
+    return { ...ref, args: qualifiedArgs };
+  }
+  const name = ref.name;
+  if (name.includes(".") || vars.has(name) || JAVA_LANG_TYPES.has(name) || /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name)) {
+    return { ...ref, args: qualifiedArgs };
+  }
+  const { packageName, imported } = fileScopeOf(pf);
+  const qualified = imported.get(name) ?? (packageName ? `${packageName}.${name}` : name);
+  return { ...ref, name: qualified, args: qualifiedArgs };
+}
+
+/** 继承链节:父类型声明 + 到达它时解析出的泛型形参绑定(如 Base<Patient> → T = Patient) */
+interface ChainLink {
+  site: TypeSite;
+  bindings: Map<string, TypeRef>;
+  /** 链上仍未绑定的类型形参(含从更上层传入的,如 root<X> extends Base<X> 的 X) */
+  unboundVars: Set<string>;
 }
 
 /**
  * 收集继承链(具体类型在前,父类/接口按 BFS 在后,去重)。
  * 只含工作区源码内可定位的类型;依赖 jar 中的父类没有方法源码,自然跳过。
+ * 每级父类型的泛型实参在上一级绑定下展开,支持多级继承与嵌套泛型
+ * (如 `A extends B<Foo>`、`B<T> extends C<List<T>>` → C 的绑定为 List<Foo>)。
  */
-function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): TypeSite[] {
-  const chain: TypeSite[] = [];
+function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): ChainLink[] {
+  const chain: ChainLink[] = [];
   const visited = new Set<string>([root.typeName]);
-  let frontier: TypeSite[] = [root];
+  let frontier: ChainLink[] = [{ site: root, bindings: new Map(), unboundVars: new Set(root.typeParams) }];
   while (frontier.length) {
-    const next: TypeSite[] = [];
-    for (const site of frontier) {
-      for (const name of directSuperTypeNames(site)) {
-        if (visited.has(name)) {
+    const next: ChainLink[] = [];
+    for (const link of frontier) {
+      for (const sup of directSuperTypes(link.site)) {
+        if (visited.has(sup.name)) {
           continue;
         }
-        const sup = sites.get(name);
-        if (!sup) {
+        const supSite = sites.get(sup.name);
+        if (!supSite) {
           continue;
         }
-        visited.add(name);
-        chain.push(sup);
-        next.push(sup);
+        visited.add(sup.name);
+        const bindings = new Map<string, TypeRef>();
+        const unboundVars = new Set<string>();
+        // 当前声明处可见的形参:自己的 + 从上层沿绑定传下来的未绑定形参
+        const visibleVars = new Set([...link.site.typeParams, ...link.unboundVars]);
+        supSite.typeParams.forEach((param, i) => {
+          const arg = sup.args[i];
+          if (!arg) {
+            // 裸类型继承(如 extends Base):形参仍未绑定
+            unboundVars.add(param);
+            return;
+          }
+          const substituted = qualifyTypeRef(substituteTypeVars(arg, link.bindings), link.site.pf, visibleVars);
+          collectTypeVarNames(substituted, visibleVars, unboundVars);
+          bindings.set(param, substituted);
+        });
+        const nextLink: ChainLink = { site: supSite, bindings, unboundVars };
+        chain.push(nextLink);
+        next.push(nextLink);
       }
     }
     frontier = next;
@@ -537,16 +624,25 @@ interface MethodHit {
   modifierKey: string;
   /** 声明该方法的类型站点(继承方法为其父类/接口) */
   site: TypeSite;
+  /** 到达声明类型时的泛型形参绑定(具体 Controller 自身为空) */
+  bindings: Map<string, TypeRef>;
+  /** 方法签名中需按未绑定形参处理的变量名(声明类型形参 + 链上未绑定形参) */
+  typeVars: string[];
 }
 
 /** 取类型体内直接声明的方法(类/接口的包装节点与修饰符规则不同;Javadoc 附着在最近的包装节点上) */
-function declaredMethodsOf(site: TypeSite): MethodHit[] {
+function declaredMethodsOf(
+  site: TypeSite,
+  bindings: Map<string, TypeRef> = new Map(),
+  unboundVars: ReadonlySet<string> = new Set()
+): MethodHit[] {
+  const typeVars = [...new Set([...site.typeParams, ...unboundVars])];
   const hits: MethodHit[] = [];
   if (site.isInterface) {
     for (const member of childAll(childNode(site.inner, "interfaceBody"), "interfaceMemberDeclaration").filter(isCstNode)) {
       const m = childNode(member, "interfaceMethodDeclaration");
       if (m) {
-        hits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier", site });
+        hits.push({ method: m, wrapper: member, modifierKey: "interfaceMethodModifier", site, bindings, typeVars });
       }
     }
     return hits;
@@ -555,7 +651,7 @@ function declaredMethodsOf(site: TypeSite): MethodHit[] {
     const memberDecl = childNode(member, "classMemberDeclaration") ?? childNode(member, "memberDeclaration");
     const m = childNode(memberDecl, "methodDeclaration");
     if (m) {
-      hits.push({ method: m, wrapper: member, modifierKey: "methodModifier", site });
+      hits.push({ method: m, wrapper: member, modifierKey: "methodModifier", site, bindings, typeVars });
     }
   }
   return hits;
@@ -569,10 +665,10 @@ function hasNonHandlerModifier(method: CstNode, modifierKey: string): boolean {
 }
 
 /** 收集方法:本类声明的 + 继承链上的父类/接口方法(具体类型优先,后续按签名去重) */
-function collectMethodHits(root: TypeSite, chain: TypeSite[]): MethodHit[] {
+function collectMethodHits(root: TypeSite, chain: ChainLink[]): MethodHit[] {
   const hits = declaredMethodsOf(root);
-  for (const sup of chain) {
-    for (const hit of declaredMethodsOf(sup)) {
+  for (const link of chain) {
+    for (const hit of declaredMethodsOf(link.site, link.bindings, link.unboundVars)) {
       if (!hasNonHandlerModifier(hit.method, hit.modifierKey)) {
         hits.push(hit);
       }
@@ -605,17 +701,17 @@ function fileScopeOf(pf: ParsedFile): FileScope {
 }
 
 /** 方法签名按参数类型身份(擦除泛型,保留包名与数组维度),用于区分同名重载并识别覆写 */
-function methodSignature(site: TypeSite, method: CstNode): string {
+function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, TypeRef> = new Map()): string {
   const { pf } = site;
   const header = childNode(method, "methodHeader") ?? method;
+  // 方法级泛型形参遮蔽类级同名形参,不能套用继承链的类级绑定
+  const methodVars = new Set(typeParamsOf(header));
+  const effectiveBindings = methodVars.size
+    ? new Map([...bindings].filter(([name]) => !methodVars.has(name)))
+    : bindings;
   const declarator = childNode(header, "methodDeclarator");
   const paramList = childNode(declarator, "formalParameterList");
   const { packageName, imported } = fileScopeOf(pf);
-  const javaLang = new Set([
-    "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
-    "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
-    "Void",
-  ]);
   const types: string[] = [];
   for (const fp of childAll(paramList, "formalParameter").filter(isCstNode)) {
     const regular = childNode(fp, "variableParaRegularParameter") ?? childNode(fp, "variableArityParameter");
@@ -624,11 +720,11 @@ function methodSignature(site: TypeSite, method: CstNode): string {
       types.push("?");
       continue;
     }
-    const ref = parseTypeText(nodeText(pf.source, typeNode));
+    const ref = substituteTypeVars(parseTypeText(nodeText(pf.source, typeNode)), effectiveBindings);
     const name = ref.name;
     const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
       ? name
-      : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
+      : imported.get(name) ?? (JAVA_LANG_TYPES.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("."));
     const varargs = !!regular && childNode(fp, "variableArityParameter") !== undefined;
     types.push(`${resolvedName}${"[]".repeat(ref.dims + (varargs ? 1 : 0))}`);
   }
@@ -703,10 +799,48 @@ interface EndpointArgs {
   ruleDescAppend?: string;
   /** 全项目类型索引(用于展开无注解的查询 Bean 参数) */
   index?: TypeIndex;
+  /** 到达方法声明类型时的泛型形参绑定(如 Base<Patient> → T = Patient) */
+  typeBindings?: Map<string, TypeRef>;
+  /** 方法声明类型的泛型形参名(用于未绑定告警) */
+  typeParams?: readonly string[];
+}
+
+/** 方法签名中的泛型形参换成本次继承链解析出的实参;未绑定形参原样保留并上报 */
+function bindTypeText(
+  text: string,
+  bindings: Map<string, TypeRef>,
+  typeParams: readonly string[]
+): { text: string; unbound: string[] } {
+  if (!typeParams.length) {
+    return { text, unbound: [] };
+  }
+  const ref = parseTypeText(text);
+  const bound = substituteTypeVars(ref, bindings);
+  const unbound = new Set<string>();
+  collectTypeVarNames(bound, new Set(typeParams), unbound);
+  // 未发生替换时保留原始文本,避免非泛型场景的不必要改写
+  const substituted = bindings.size > 0 && typeRefToText(bound) !== typeRefToText(ref);
+  return { text: substituted ? typeRefToText(bound) : text, unbound: [...unbound] };
 }
 
 function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): EndpointInfo {
   const javadoc = parseJavadoc(nodeJavadoc(a.wrapper));
+  // 继承方法的签名按到达声明类型时的泛型绑定实例化(未绑定的形参保留原样,汇总后告警)
+  // 方法级泛型形参遮蔽类级同名形参:不应用类级绑定,并按未解析泛型处理
+  const methodVars = new Set(typeParamsOf(childNode(a.method, "methodHeader") ?? a.method));
+  const bindings = a.typeBindings ?? new Map<string, TypeRef>();
+  const effectiveBindings = methodVars.size
+    ? new Map([...bindings].filter(([name]) => !methodVars.has(name)))
+    : bindings;
+  const typeParams = [...(a.typeParams ?? []), ...methodVars];
+  const unboundVars = new Set<string>();
+  const bindType = (text: string): string => {
+    const bound = bindTypeText(text, effectiveBindings, typeParams);
+    for (const v of bound.unbound) {
+      unboundVars.add(v);
+    }
+    return bound.text;
+  };
 
   const operationAnn = findAnn(a.methodAnnotations, "Operation");
   const apiOperation = findAnn(a.methodAnnotations, "ApiOperation");
@@ -741,7 +875,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     }
     const annotations = collectAnnotations(childAll(regular, "variableModifier").filter(isCstNode), pf.source);
     const typeNode = childNode(regular, "unannType");
-    const typeText = typeNode ? nodeText(pf.source, typeNode).trim() : "Object";
+    const typeText = bindType(typeNode ? nodeText(pf.source, typeNode).trim() : "Object");
     const paramName = tokenImage(childNode(regular, "variableDeclaratorId"), "Identifier") ?? "";
     if (!paramName) {
       continue;
@@ -885,7 +1019,8 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
   // ---- 返回类型 ----
   const headerNode = childNode(a.method, "methodHeader") ?? a.method;
   const resultNode = childNode(headerNode, "result");
-  const returnType = resultNode ? extractReturnType(pf, resultNode) : undefined;
+  const rawReturnType = resultNode ? extractReturnType(pf, resultNode) : undefined;
+  const returnType = rawReturnType ? bindType(rawReturnType) : undefined;
   const responseDescription = javadoc?.returns?.trim() || "OK";
 
   // Actuator:@Selector 参数按顺序追加到路径
@@ -894,6 +1029,23 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     const selectorNames = parameters.filter((p) => p.in === "path").map((p) => `{${p.name}}`);
     if (selectorNames.length) {
       finalPath = joinPath(a.path, selectorNames.join("/"));
+    }
+  }
+
+  if (unboundVars.size) {
+    const methodUnbound = [...unboundVars].filter((v) => methodVars.has(v)).sort();
+    const classUnbound = [...unboundVars].filter((v) => !methodVars.has(v)).sort();
+    if (methodUnbound.length) {
+      warnings.push(
+        `${a.controller}.${a.methodName}: 方法级泛型形参 ${methodUnbound.join("、")} 未绑定` +
+          `(无法静态确定),已按未绑定类型输出`
+      );
+    }
+    if (classUnbound.length) {
+      warnings.push(
+        `${a.controller}.${a.methodName}: 泛型形参 ${classUnbound.join("、")} 未绑定` +
+          `(声明类型 ${a.declaringType ?? a.controller} 未提供具体实参),已按未绑定类型输出`
+      );
     }
   }
 
@@ -913,6 +1065,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     controller: a.controller,
     ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
     ...(a.declaringType && a.declaringType !== a.controller ? { declaringType: a.declaringType } : {}),
+    ...(unboundVars.size ? { unboundTypeVars: [...unboundVars].sort() } : {}),
     flavor: a.flavor,
     extraResponses: collectExtraResponses(a.methodAnnotations),
     consumes: a.consumes.length ? a.consumes : undefined,

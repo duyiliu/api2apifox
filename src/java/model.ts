@@ -54,6 +54,11 @@ export interface TypeIndex {
    * (对齐 IDEA 版基于 PSI 的解析口径;简单名冲突时顶层声明仍占用 types)。
    */
   nested: Map<string, ClassInfo>;
+  /**
+   * 全限定名(ClassInfo.qualifiedName)-> ClassInfo。
+   * 用于包名限定的继承实参/类型文本,避免在简单名冲突时回退到错误类型。
+   */
+  qualified?: Map<string, ClassInfo>;
   /** 文件路径 -> 该文件定义的类型简单名 */
   byFile: Map<string, string[]>;
   /** 源码中未找到的类型,按需从依赖 jar 解析(class 字节码);无 jar 索引时缺省 */
@@ -121,6 +126,8 @@ export interface EndpointInfo {
   ownerFsPath?: string;
   /** 方法实际声明类型(继承接口为父类型名;用于按声明处作用域解析签名中的类型) */
   declaringType?: string;
+  /** 签名中仍未绑定的泛型形参名(用于避免把同名具体类型误当作真实模型) */
+  unboundTypeVars?: string[];
   /** spring-mvc / jaxrs / feign / actuator */
   flavor: EndpointFlavor;
   /** 额外响应(@ApiResponse/@ResponseStatus 等) */
