@@ -203,22 +203,26 @@ export async function run(): Promise<void> {
     assert.equal(server.requests.length, 0, "取消 token 不应发起导入");
     assert.deepEqual(errorMessages, [], `取消不应报错:${JSON.stringify(info())}`);
 
-    // 2) 成功 + single-flight:四个入口并发,只允许一次导入;其余入口收到忙提示
+    // 2) 成功 + single-flight:六个入口并发,只允许一次导入;其余入口收到忙提示
     const endpoint = { method: "GET", path: "/demo/ping", fsPath: fixture };
+    await vscode.commands.executeCommand("apifoxHelper.refreshApiTree");
+    await vscode.commands.executeCommand("apifoxHelper.checkAllApis");
     const pending = [
       vscode.commands.executeCommand("apifoxHelper.syncWorkspace"),
       vscode.commands.executeCommand("apifoxHelper.syncFile", uri),
       vscode.commands.executeCommand("apifoxHelper.syncEndpoint", { kind: "endpoint", endpoint }),
       vscode.commands.executeCommand("apifoxHelper.syncMethod", uri, offset),
+      vscode.commands.executeCommand("apifoxHelper.syncCheckedApis"),
+      vscode.commands.executeCommand("apifoxHelper.syncFolderApis", { kind: "folder", key: "DemoController" }),
     ];
     await waitFor(
-      () => tokenGates.length === 1 && busyMessages.filter((message) => message.includes("正在同步中")).length >= 3,
+      () => tokenGates.length === 1 && busyMessages.filter((message) => message.includes("正在同步中")).length >= 5,
       20000,
-      "四个同步入口进入 single-flight"
+      "六个同步入口进入 single-flight"
     );
     assert.equal(tokenPrompts, 2, "只允许一个入口真正开始同步");
     const busyBefore = busyMessages.filter((message) => message.includes("正在同步中")).length;
-    assert.ok(busyBefore >= 3, `其余入口应收到忙提示,实际:${JSON.stringify(info())}`);
+    assert.ok(busyBefore >= 5, `其余入口应收到忙提示,实际:${JSON.stringify(info())}`);
 
     // 同步期间状态栏快捷菜单必须隐藏同步选项,非同步操作仍可用
     const quickPickItems: vscode.QuickPickItem[] = [];
