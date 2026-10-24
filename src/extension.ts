@@ -837,21 +837,25 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("apifoxHelper.showStatusBarMenu", async () => {
       const settings = getSettings();
-      const items: (vscode.QuickPickItem & { action: () => void })[] = [
+      const syncing = syncFlight.isRunning();
+      const items: (vscode.QuickPickItem & { action: () => void; sync?: boolean })[] = [
         {
           label: "$(cloud-upload) 同步当前文件接口",
           description: "同步当前打开的 Java Controller 接口",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncFile"),
+          sync: true,
         },
         {
           label: "$(repo-sync) 同步工作区全部接口",
           description: "全量扫描并同步到 Apifox",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncWorkspace"),
+          sync: true,
         },
         {
           label: "$(check-all) 同步勾选的接口",
           description: "同步侧边栏已勾选的接口",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncCheckedApis"),
+          sync: true,
         },
         {
           label: "$(search) 搜索接口",
@@ -880,8 +884,12 @@ export function activate(context: vscode.ExtensionContext): void {
         },
       ];
 
-      const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+      // 同步期间隐藏同步选项(命令 enablement 管不到自定义 QuickPick),非同步操作保持可用
+      const visibleItems = syncing ? items.filter((item) => !item.sync) : items;
+      const picked = await vscode.window.showQuickPick(visibleItems, {
+        placeHolder: syncing
+          ? "ApiGen for Apifox: 正在同步中,同步选项暂不可用"
+          : `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
       });
       if (picked) {
         picked.action();

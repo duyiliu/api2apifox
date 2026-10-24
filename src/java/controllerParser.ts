@@ -90,6 +90,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
 
       // 类级路径前缀:继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径)
       const basePaths = classBasePaths(hierarchy, flavor);
+      const baseMethods = classBaseMethods(hierarchy, flavor);
 
       // tag: @Tag(name) / @Api(tags[0]) / 类型名
       const tagAnn = findAnn(typeAnnotations, "Tag");
@@ -305,7 +306,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
 
         const mappings = resolveMapping(methodAnnotations, flavor, (message) => {
           warnings.push(`${typeName}.${methodName}: ${message}`);
-        });
+        }, baseMethods);
         if (!mappings.length) {
           // 未声明路由(如子类覆写但映射注解留在父类),不占用签名,由父类声明继续产出
           continue;
@@ -506,6 +507,25 @@ function detectFlavor(site: TypeSite, chain: TypeSite[]): EndpointFlavor | undef
   return undefined;
 }
 
+/** 类级映射声明的 HTTP 动词(最近的类级 @RequestMapping);方法级未声明 method 时继承 */
+function classBaseMethods(hierarchy: TypeSite[], flavor: EndpointFlavor): string[] {
+  if (flavor !== "spring-mvc" && flavor !== "feign") {
+    return [];
+  }
+  for (const s of hierarchy) {
+    const classMapping = findAnn(s.typeAnnotations, "RequestMapping");
+    if (classMapping) {
+      return normalizeVerbs(annArray(classMapping.args, "method"));
+    }
+  }
+  return [];
+}
+
+/** "RequestMethod.POST" -> "POST";保留无法识别的大写原值 */
+function normalizeVerbs(values: string[]): string[] {
+  return values.map((m) => (m.includes(".") ? m.slice(m.lastIndexOf(".") + 1) : m).toUpperCase());
+}
+
 /** 类级路径前缀:取继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径,不叠加) */
 function classBasePaths(hierarchy: TypeSite[], flavor: EndpointFlavor): string[] {
   if (flavor === "actuator") {
@@ -652,7 +672,12 @@ interface MethodMapping {
 }
 
 /** 方法上的路由声明 -> HTTP 动词 + 路径(可能多组) */
-function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor, warn?: (message: string) => void): MethodMapping[] {
+function resolveMapping(
+  annotations: AnnotationInfo[],
+  flavor: EndpointFlavor,
+  warn?: (message: string) => void,
+  baseMethods: string[] = []
+): MethodMapping[] {
   if (flavor === "actuator") {
     const op = findAnn(annotations, "ReadOperation", "WriteOperation", "DeleteOperation");
     if (!op) {
@@ -674,17 +699,12 @@ function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor, w
   if (!mapping) {
     return [];
   }
-  let verbs: string[];
-  if (SPRING_MAPPINGS[mapping.name]) {
-    verbs = SPRING_MAPPINGS[mapping.name];
-  } else {
-    const declared = annArray(mapping.args, "method");
-    if (!declared.length) {
-      warn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
-    }
-    verbs = declared.length
-      ? declared.map((m) => (m.includes(".") ? m.slice(m.lastIndexOf(".") + 1) : m).toUpperCase())
-      : [...REQUEST_MAPPING_DEFAULT_VERBS];
+  const declared = SPRING_MAPPINGS[mapping.name] ?? normalizeVerbs(annArray(mapping.args, "method"));
+  // Spring 会合并类级与方法级映射的 method 条件;方法级未声明时继承类级限制。
+  const verbs = [...new Set([...baseMethods, ...declared])];
+  if (!verbs.length) {
+    warn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
+    verbs.push(...REQUEST_MAPPING_DEFAULT_VERBS);
   }
   const paths = pathArgsOf(mapping);
   return verbs.map((method) => ({ method, paths }));

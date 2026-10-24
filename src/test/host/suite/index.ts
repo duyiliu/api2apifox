@@ -28,8 +28,14 @@ async function waitFor(predicate: () => boolean, timeoutMs: number, label: strin
   throw new Error(`等待超时:${label}`);
 }
 
-function startImportServer(): Promise<{ baseUrl: string; requests: string[]; close: () => Promise<void> }> {
+function startImportServer(): Promise<{
+  baseUrl: string;
+  requests: string[];
+  failNextImport: () => void;
+  close: () => Promise<void>;
+}> {
   const requests: string[] = [];
+  let failNext = false;
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => {
@@ -37,6 +43,12 @@ function startImportServer(): Promise<{ baseUrl: string; requests: string[]; clo
     });
     req.on("end", () => {
       requests.push(`${req.method} ${req.url} (${body.length} bytes)`);
+      if (failNext) {
+        failNext = false;
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ code: 500, message: "模拟上传失败" }));
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ counters: { endpointCreated: 1, schemaCreated: 1 }, errors: [] }));
     });
@@ -48,6 +60,9 @@ function startImportServer(): Promise<{ baseUrl: string; requests: string[]; clo
       resolve({
         baseUrl: `http://127.0.0.1:${port}`,
         requests,
+        failNextImport: () => {
+          failNext = true;
+        },
         close: () =>
           new Promise<void>((done) => {
             server.close(() => done());
@@ -94,6 +109,7 @@ export async function run(): Promise<void> {
     showWarningMessage: (...args: unknown[]) => Thenable<unknown>;
     showErrorMessage: (...args: unknown[]) => Thenable<unknown>;
     showInputBox: (...args: unknown[]) => Thenable<unknown>;
+    showQuickPick: (...args: unknown[]) => Thenable<unknown>;
     withProgress: (...args: unknown[]) => Thenable<unknown>;
   };
   const originals = {
@@ -101,6 +117,7 @@ export async function run(): Promise<void> {
     showWarningMessage: windowAny.showWarningMessage,
     showErrorMessage: windowAny.showErrorMessage,
     showInputBox: windowAny.showInputBox,
+    showQuickPick: windowAny.showQuickPick,
     withProgress: windowAny.withProgress,
   };
   const tokenGates: ((value: string | undefined) => void)[] = [];
@@ -170,6 +187,29 @@ export async function run(): Promise<void> {
     const busyBefore = busyMessages.filter((message) => message.includes("正在同步中")).length;
     assert.ok(busyBefore >= 3, `其余入口应收到忙提示,实际:${JSON.stringify(info())}`);
 
+    // 同步期间状态栏快捷菜单必须隐藏同步选项,非同步操作仍可用
+    const quickPickItems: vscode.QuickPickItem[] = [];
+    windowAny.showQuickPick = async (...args: unknown[]) => {
+      const pickedItems = args[0];
+      if (Array.isArray(pickedItems)) {
+        quickPickItems.push(...(pickedItems as vscode.QuickPickItem[]));
+      }
+      return undefined;
+    };
+    await vscode.commands.executeCommand("apifoxHelper.showStatusBarMenu");
+    windowAny.showQuickPick = originals.showQuickPick;
+    const menuLabels = quickPickItems.map((item) => item.label);
+    assert.ok(menuLabels.some((label) => label.includes("搜索接口")), "非同步选项应保持可用");
+    assert.ok(
+      !menuLabels.some(
+        (label) =>
+          label.includes("同步当前文件接口") ||
+          label.includes("同步工作区全部接口") ||
+          label.includes("同步勾选的接口")
+      ),
+      `同步选项应隐藏:${JSON.stringify(menuLabels)}`
+    );
+
     tokenGates.shift()!("设置令牌");
     await Promise.all(pending);
     console.log("host-smoke server requests:", JSON.stringify(server.requests));
@@ -181,7 +221,15 @@ export async function run(): Promise<void> {
     );
     assert.deepEqual(errorMessages, [], `成功路径不应报错:${JSON.stringify(info())}`);
 
-    // 3) 任意拒绝值:进度阶段的非 Error rejection 也要收尾并提示,且不留下未处理拒绝
+    // 3) 上传端失败:Apifox 返回 500 时应提示错误,且状态可恢复
+    server.failNextImport();
+    await vscode.commands.executeCommand("apifoxHelper.syncWorkspace");
+    assert.ok(
+      errorMessages.some((message) => message.includes("同步失败") && message.includes("模拟上传失败")),
+      `上传失败应被捕获:${JSON.stringify(info())}`
+    );
+
+    // 4) 任意拒绝值:进度阶段的非 Error rejection 也要收尾并提示,且不留下未处理拒绝
     let rejectNextProgress = true;
     windowAny.withProgress = (...args: unknown[]) => {
       if (rejectNextProgress) {
@@ -189,7 +237,6 @@ export async function run(): Promise<void> {
         throw "host non-error rejection";
       }
       return originals.withProgress.apply(vscode.window, args as never);
-  
     };
     await vscode.commands.executeCommand("apifoxHelper.syncWorkspace");
     assert.ok(
@@ -197,7 +244,7 @@ export async function run(): Promise<void> {
       `非 Error 拒绝应被捕获:${JSON.stringify(info())}`
     );
 
-    // 4) 失败后恢复:仍然可以发起新的同步(上下文已恢复为 false)
+    // 5) 失败后恢复:仍然可以发起新的同步(上下文已恢复为 false)
     const requestsBefore = server.requests.length;
     await vscode.commands.executeCommand("apifoxHelper.syncWorkspace");
     assert.ok(server.requests.length > requestsBefore, "拒绝后应能重新同步");
@@ -206,6 +253,7 @@ export async function run(): Promise<void> {
     windowAny.showWarningMessage = originals.showWarningMessage;
     windowAny.showErrorMessage = originals.showErrorMessage;
     windowAny.showInputBox = originals.showInputBox;
+    windowAny.showQuickPick = originals.showQuickPick;
     windowAny.withProgress = originals.withProgress;
     await server.close();
   }

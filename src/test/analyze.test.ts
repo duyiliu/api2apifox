@@ -795,10 +795,12 @@ class Nested { private String x; }
   assert.deepEqual(wrapper.properties!.optional, {
     allOf: [{ $ref: "#/components/schemas/Nested" }],
     nullable: true,
+    type: "object",
   });
   assert.deepEqual(wrapper.properties!.optionalList.items, {
     allOf: [{ $ref: "#/components/schemas/Nested" }],
     nullable: true,
+    type: "object",
   });
   // 响应类型同样覆盖 Optional<DTO>
   const optionalResponse = (res.spec.paths["/refs/optional"].get as Record<string, any>)
@@ -806,6 +808,7 @@ class Nested { private String x; }
   assert.deepEqual(optionalResponse, {
     allOf: [{ $ref: "#/components/schemas/Nested" }],
     nullable: true,
+    type: "object",
   });
   // 无额外元数据时保持简洁 $ref,不扩大文档体积
   assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
@@ -823,6 +826,10 @@ class Nested { private String x; }
     if (typeof record.$ref === "string") {
       assert.deepEqual(Object.keys(record), ["$ref"], `$ref 同级字段会失效: ${path}`);
       return;
+    }
+    if (record.nullable === true) {
+      // OpenAPI 3.0.3:nullable 只有与显式 type 位于同一 Schema Object 时才生效
+      assert.equal(typeof record.type, "string", `nullable 缺少显式 type: ${path}`);
     }
     for (const [key, value] of Object.entries(record)) {
       assertNoRefSiblings(value, `${path}.${key}`);
@@ -848,6 +855,13 @@ public class FlexController {
   @RequestMapping(value = "/only", method = RequestMethod.POST)
   public String only() { return null; }
 }
+
+@RestController
+@RequestMapping(path = "/api/restricted", method = RequestMethod.POST)
+public class RestrictedController {
+  @RequestMapping("/path-only")
+  public String pathOnly() { return null; }
+}
 `,
     },
   ];
@@ -867,4 +881,9 @@ public class FlexController {
   // 显式声明 method 时仍只生成声明的 verb
   const only = res.endpoints.filter((endpoint) => endpoint.path === "/api/flex/only");
   assert.deepEqual(only.map((endpoint) => endpoint.method), ["POST"]);
+
+  // 类级 method 限制与方法级仅声明路径的 @RequestMapping 合并,不应补出错误 verb
+  const restricted = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/path-only");
+  assert.deepEqual(restricted.map((endpoint) => endpoint.method), ["POST"]);
+  assert.equal(res.warnings.some((warning) => warning.includes("RestrictedController.pathOnly")), false);
 });

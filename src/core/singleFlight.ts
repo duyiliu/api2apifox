@@ -21,12 +21,28 @@ export function createSingleFlight<T>(onActiveChange?: (active: boolean) => void
         onBusy?.();
         return inFlight;
       }
-      onActiveChange?.(true);
-      const flight = (async () => task())().finally(() => {
-        inFlight = undefined;
-        onActiveChange?.(false);
+      // 先登记 in-flight promise,再同步启动 task:
+      // task 若在返回 Promise 前重入 run(),必须看到并复用当前 flight。
+      let resolveFlight!: (value: T | PromiseLike<T>) => void;
+      let rejectFlight!: (reason?: unknown) => void;
+      const flight = new Promise<T>((resolve, reject) => {
+        resolveFlight = resolve;
+        rejectFlight = reject;
       });
       inFlight = flight;
+      onActiveChange?.(true);
+      (async () => task())().then(
+        (value) => {
+          inFlight = undefined;
+          onActiveChange?.(false);
+          resolveFlight(value);
+        },
+        (reason) => {
+          inFlight = undefined;
+          onActiveChange?.(false);
+          rejectFlight(reason);
+        }
+      );
       return flight;
     },
   };

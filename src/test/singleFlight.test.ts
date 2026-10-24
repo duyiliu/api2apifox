@@ -99,3 +99,29 @@ test("single-flight:任意 rejection 值(含非 Error)都释放状态", async ()
     assert.equal(ran, true, "释放后应可再次执行");
   }
 });
+
+test("single-flight:任务在返回 Promise 前同步重入也不会启动第二次", async () => {
+  let starts = 0;
+  let reentered: Promise<void> | undefined;
+  let busy = 0;
+  const flight = createSingleFlight<void>();
+  const outer = flight.run(async () => {
+    starts += 1;
+    // 同步重入:此时 task 尚未返回 Promise
+    reentered = flight.run(
+      async () => {
+        starts += 1;
+      },
+      () => {
+        busy += 1;
+      }
+    );
+  });
+  assert.equal(starts, 1, "重入不应启动第二个任务");
+  assert.equal(busy, 1, "重入应命中忙分支");
+  assert.ok(reentered, "重入应拿到 in-flight promise");
+  assert.equal(reentered, outer, "重入必须复用同一个 promise");
+  await outer;
+  assert.equal(starts, 1);
+  assert.equal(flight.isRunning(), false);
+});

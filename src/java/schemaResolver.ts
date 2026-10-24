@@ -521,8 +521,9 @@ function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchem
   }
   if (name === "Optional") {
     const inner = t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" };
-    // Optional 的 nullable 也是 Reference Object 的兄弟字段,引用类型必须包进 allOf
-    return withRefSiblings(inner, { nullable: true });
+    // Optional 的 nullable 也是 Reference Object 的兄弟字段,引用类型必须包进 allOf;
+    // OpenAPI 3.0.3 的 nullable 仅在同一个 Schema Object 显式声明 type 时生效,故补 type: object。
+    return withRefSiblings(inner, { nullable: true, ...(inner.$ref ? { type: "object" } : {}) });
   }
   return undefined;
 }
