@@ -1,6 +1,9 @@
 .vscode/**
+.github/**
 src/**
 packages/**
+scripts/**
+.gitignore
 node_modules/**
 out/**
 dist/**/*.map

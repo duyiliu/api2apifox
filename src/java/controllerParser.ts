@@ -18,6 +18,11 @@ const SPRING_MAPPINGS: Record<string, string[]> = {
   DeleteMapping: ["DELETE"],
   PatchMapping: ["PATCH"],
 };
+/**
+ * 方法上只写 @RequestMapping 未声明 method 时,Spring 实际匹配所有 HTTP 方法。
+ * 文档输出常用 verb 集合(而不是固定 GET),避免调用方误判接口只支持 GET。
+ */
+const REQUEST_MAPPING_DEFAULT_VERBS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const SPRING_MAPPING_NAMES = [...Object.keys(SPRING_MAPPINGS), "RequestMapping"];
 
 const JAXRS_METHODS: Record<string, string> = {
@@ -298,7 +303,9 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
           continue;
         }
 
-        const mappings = resolveMapping(methodAnnotations, flavor);
+        const mappings = resolveMapping(methodAnnotations, flavor, (message) => {
+          warnings.push(`${typeName}.${methodName}: ${message}`);
+        });
         if (!mappings.length) {
           // 未声明路由(如子类覆写但映射注解留在父类),不占用签名,由父类声明继续产出
           continue;
@@ -645,7 +652,7 @@ interface MethodMapping {
 }
 
 /** 方法上的路由声明 -> HTTP 动词 + 路径(可能多组) */
-function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor): MethodMapping[] {
+function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor, warn?: (message: string) => void): MethodMapping[] {
   if (flavor === "actuator") {
     const op = findAnn(annotations, "ReadOperation", "WriteOperation", "DeleteOperation");
     if (!op) {
@@ -672,9 +679,12 @@ function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor): 
     verbs = SPRING_MAPPINGS[mapping.name];
   } else {
     const declared = annArray(mapping.args, "method");
+    if (!declared.length) {
+      warn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
+    }
     verbs = declared.length
       ? declared.map((m) => (m.includes(".") ? m.slice(m.lastIndexOf(".") + 1) : m).toUpperCase())
-      : ["GET"];
+      : [...REQUEST_MAPPING_DEFAULT_VERBS];
   }
   const paths = pathArgsOf(mapping);
   return verbs.map((method) => ({ method, paths }));

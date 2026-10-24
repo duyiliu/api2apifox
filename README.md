@@ -90,13 +90,13 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | **模型展开** | DTO 递归展开(含静态内部类)、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
 | **分页包装** | `PageInfo`、MyBatis-Plus `IPage`、Spring Data `Page`/`PageImpl`/`Slice` 自动展开 |
 | **注解支持** | OpenAPI 3 / Swagger 2 / Javadoc 文档注解、Bean Validation、Jackson / FASTJSON / GSON、响应声明 |
-| **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度;同步后出「同步结果」面板(计数表 + 接口清单,可排序 / 过滤 / 复制) |
+| **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度;同步串行化(并发入口自动合并);同步后出「同步结果」面板(计数表 + 接口清单,可排序 / 过滤 / 复制) |
 | **依赖 jar 识别** | 自动发现本地 Maven 仓库,按需解析 `.class` 字节码,零配置还原框架类型 |
 
 <details>
 <summary><b>接口识别 — 支持的框架与冲突规则</b></summary>
 
-- **Spring MVC**:`@RestController`/`@Controller` + `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping/@RequestMapping`
+- **Spring MVC**:`@RestController`/`@Controller` + `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping/@RequestMapping`(方法级 `@RequestMapping` 未声明 `method` 时按 GET/POST/PUT/PATCH/DELETE 输出,与 Spring 匹配所有方法保持一致)
 - **Spring Cloud OpenFeign**:`@FeignClient` 接口
 - **JAX-RS**:`@Path/@GET/@POST/@QueryParam/@PathParam/@HeaderParam/@DefaultValue/@Consumes/@Produces`
 - **Actuator 自定义端点**:`@Endpoint` + `@ReadOperation/@WriteOperation/@DeleteOperation` + `@Selector`

@@ -15,6 +15,8 @@ export interface JsonSchema {
   additionalProperties?: JsonSchema | boolean;
   enum?: string[];
   $ref?: string;
+  /** OpenAPI 3.0 中 $ref 的兄弟字段会被忽略,需包在 allOf 中承载描述/示例/约束 */
+  allOf?: JsonSchema[];
   nullable?: boolean;
   example?: string;
   title?: string;
@@ -47,6 +49,19 @@ function stableStringify(value: unknown): string {
 
 function refTo(name: string): JsonSchema {
   return { $ref: `#/components/schemas/${name}` };
+}
+
+/**
+ * 给字段 schema 追加描述/示例/约束。OpenAPI 3.0.3 的 Reference Object
+ * 会忽略 $ref 的兄弟字段,因此引用类型必须改写为 `{ allOf: [{$ref}], ... }`,
+ * 否则 Apifox/严格校验器会把字段说明与约束丢掉。
+ */
+export function withRefSiblings(schema: JsonSchema, additions: Partial<JsonSchema>): JsonSchema {
+  if (!schema.$ref) {
+    return { ...schema, ...additions };
+  }
+  const { $ref, ...rest } = schema;
+  return { allOf: [{ $ref }], ...rest, ...additions };
 }
 
 /**
@@ -320,17 +335,17 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
         (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
         (fastName ? annStr(fastName.args, "name") : undefined) ??
         field.name);
-    const schema = resolveTypeText(field.typeText, classCtx);
+    let schema = resolveTypeText(field.typeText, classCtx);
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
     const finalDesc = rule.appendDesc(desc, field, ctx);
     if (finalDesc) {
-      schema.description = finalDesc;
+      schema = withRefSiblings(schema, { description: finalDesc });
     }
     const example = schemaExample(field.annotations);
     if (example) {
-      schema.example = example;
+      schema = withRefSiblings(schema, { example });
     }
-    applyConstraints(field.annotations, schema);
+    schema = applyConstraints(field.annotations, schema);
     properties[propName] = schema;
 
     let isRequired =
@@ -540,7 +555,23 @@ export function isHidden(annotations: AnnotationInfo[]): boolean {
  * @Size -> minLength/maxLength/minItems/maxItems,@Min/@Max/@DecimalMin/@DecimalMax/@Positive... -> minimum/maximum,
  * @Pattern -> pattern,@Email -> format,@NotBlank/@NotEmpty -> minLength/minItems。
  */
+/** 会产生 JSON Schema 约束的注解;无这些注解时不需要把 $ref 包成 allOf */
+const CONSTRAINT_ANNOTATIONS = new Set([
+  "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+  "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+]);
+
 export function applyConstraints(annotations: AnnotationInfo[], schema: JsonSchema): JsonSchema {
+  if (!annotations.some((ann) => CONSTRAINT_ANNOTATIONS.has(ann.name))) {
+    return schema;
+  }
+  // Reference Object 在 OpenAPI 3.0.3 中不支持兄弟字段:先在原位包成 allOf,
+  // 参数(@ModelAttribute 等)与字段(@Size/@Min)共用同一套约束逻辑。
+  if (schema.$ref) {
+    const ref = schema.$ref;
+    delete schema.$ref;
+    schema.allOf = [{ $ref: ref }];
+  }
   const isString = schema.type === "string";
   const isArray = schema.type === "array";
 

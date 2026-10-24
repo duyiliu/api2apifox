@@ -186,7 +186,9 @@ public class PatientController {
   ];
   const res = analyze(sources, { title: "t" });
   const outer = res.spec.components!.schemas["PatientSaveRequest"];
-  assert.equal(outer.properties!.healthProfile.$ref, "#/components/schemas/HealthProfileRequest");
+  assert.deepEqual(outer.properties!.healthProfile.allOf, [{ $ref: "#/components/schemas/HealthProfileRequest" }]);
+  assert.equal(outer.properties!.healthProfile.description, "当前健康档案");
+  assert.equal(outer.properties!.healthProfile.$ref, undefined);
   // 嵌套类自带类级注解描述,不被外层字段描述覆盖
   const inner = res.spec.components!.schemas["HealthProfileRequest"];
   assert.equal(inner.title, "HealthProfileRequest");
@@ -744,4 +746,82 @@ test("AnalyzeCache:文件集变化时清理不在新集合内的解析缓存", (
 
   cache.analyze([a, b], { title: "cache" });
   assert.equal(entries.size, 2, "文件回到集合后可正常重新解析");
+});
+
+test("$ref 字段的说明/示例/约束使用 allOf 包装(OpenAPI 3.0.3 忽略 $ref 兄弟字段)", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/RefController.java",
+      content: `
+package com.example;
+import io.swagger.v3.oas.annotations.media.Schema;
+import javax.validation.constraints.Min;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/refs")
+public class RefController {
+  @PostMapping
+  public void save(@RequestBody Wrapper wrapper) { }
+}
+
+class Wrapper {
+  @Schema(description = "嵌套对象", example = "sample")
+  @Min(1)
+  private Nested nested;
+
+  private Nested plain;
+}
+
+class Nested { private String x; }
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const wrapper = res.spec.components!.schemas["Wrapper"];
+  assert.deepEqual(wrapper.properties!.nested.allOf, [{ $ref: "#/components/schemas/Nested" }]);
+  assert.equal(wrapper.properties!.nested.$ref, undefined);
+  assert.equal(wrapper.properties!.nested.description, "嵌套对象");
+  assert.equal(wrapper.properties!.nested.example, "sample");
+  assert.equal(wrapper.properties!.nested.minimum, 1);
+  // 无额外元数据时保持简洁 $ref,不扩大文档体积
+  assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
+});
+
+test("@RequestMapping 未声明 method 时输出常用 HTTP verb 集合,显式 method 不受影响", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/FlexController.java",
+      content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/flex")
+public class FlexController {
+  @RequestMapping("/all")
+  public String all() { return null; }
+
+  @RequestMapping(value = "/only", method = RequestMethod.POST)
+  public String only() { return null; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const methods = res.endpoints
+    .filter((endpoint) => endpoint.path === "/api/flex/all")
+    .map((endpoint) => endpoint.method)
+    .sort();
+  assert.deepEqual(methods, ["DELETE", "GET", "PATCH", "POST", "PUT"]);
+  for (const method of methods) {
+    assert.ok((res.spec.paths["/api/flex/all"] as Record<string, unknown>)[method.toLowerCase()]);
+  }
+  assert.ok(
+    res.warnings.some((warning) => warning.includes("FlexController.all") && warning.includes("未声明 method")),
+    "未声明 method 时应产生可定位的告警"
+  );
+  // 显式声明 method 时仍只生成声明的 verb
+  const only = res.endpoints.filter((endpoint) => endpoint.path === "/api/flex/only");
+  assert.deepEqual(only.map((endpoint) => endpoint.method), ["POST"]);
 });

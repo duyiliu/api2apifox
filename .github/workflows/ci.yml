@@ -1,0 +1,66 @@
+name: CI
+
+# PR 与 main 分支推送都执行与发布前等价的校验,避免只在 tag 时才发现类型/测试/打包问题。
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension:
+    name: Extension (typecheck, tests, package)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check extension
+        run: npm run typecheck
+
+      - name: Run extension unit tests
+        run: npm test
+
+      - name: Bundle (esbuild)
+        run: npm run compile
+
+      - name: Verify VSIX contents
+        run: npx @vscode/vsce ls --no-dependencies
+
+  cli:
+    name: CLI (typecheck, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check CLI and shared core
+        run: npm run typecheck:cli
+
+      - name: Run CLI integration tests
+        run: npm test --workspace @duyiliu/api2apifox
