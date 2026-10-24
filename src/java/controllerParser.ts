@@ -33,27 +33,46 @@ const HTTP_STATUS_BY_NAME: Record<string, string> = {
   INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
 };
 
-const MEDIA_TYPE_CONSTANTS: Record<string, string> = {
+/** Spring MediaType 常量基名 -> mime;同时派生出 *_VALUE 形式(如 MediaType.APPLICATION_XML_VALUE) */
+const MEDIA_TYPE_BASE: Record<string, string> = {
+  ALL: "*/*",
+  APPLICATION_ATOM_XML: "application/atom+xml",
+  APPLICATION_CBOR: "application/cbor",
+  APPLICATION_FORM_URLENCODED: "application/x-www-form-urlencoded",
+  APPLICATION_GRAPHQL: "application/graphql",
+  APPLICATION_GRAPHQL_RESPONSE: "application/graphql-response+json",
   APPLICATION_JSON: "application/json",
   APPLICATION_JSON_UTF8: "application/json;charset=UTF-8",
-  APPLICATION_XML: "application/xml",
-  APPLICATION_FORM_URLENCODED: "application/x-www-form-urlencoded",
+  APPLICATION_NDJSON: "application/x-ndjson",
   APPLICATION_OCTET_STREAM: "application/octet-stream",
+  APPLICATION_PDF: "application/pdf",
+  APPLICATION_PROBLEM_JSON: "application/problem+json",
+  APPLICATION_PROBLEM_JSON_UTF8: "application/problem+json;charset=UTF-8",
+  APPLICATION_PROBLEM_XML: "application/problem+xml",
+  APPLICATION_PROTOBUF: "application/x-protobuf",
+  APPLICATION_RSS_XML: "application/rss+xml",
+  APPLICATION_STREAM_JSON: "application/stream+json",
+  APPLICATION_XHTML_XML: "application/xhtml+xml",
+  APPLICATION_XML: "application/xml",
+  APPLICATION_YAML: "application/yaml",
+  IMAGE_GIF: "image/gif",
+  IMAGE_JPEG: "image/jpeg",
+  IMAGE_PNG: "image/png",
   MULTIPART_FORM_DATA: "multipart/form-data",
-  TEXT_PLAIN: "text/plain",
+  MULTIPART_MIXED: "multipart/mixed",
+  MULTIPART_RELATED: "multipart/related",
+  TEXT_EVENT_STREAM: "text/event-stream",
   TEXT_HTML: "text/html",
+  TEXT_MARKDOWN: "text/markdown",
+  TEXT_PLAIN: "text/plain",
   TEXT_XML: "text/xml",
-  // Spring MediaType 同时提供 "*_VALUE" 形式的常量(如 MediaType.APPLICATION_XML_VALUE)
-  APPLICATION_JSON_VALUE: "application/json",
-  APPLICATION_JSON_UTF8_VALUE: "application/json;charset=UTF-8",
-  APPLICATION_XML_VALUE: "application/xml",
-  APPLICATION_FORM_URLENCODED_VALUE: "application/x-www-form-urlencoded",
-  APPLICATION_OCTET_STREAM_VALUE: "application/octet-stream",
-  MULTIPART_FORM_DATA_VALUE: "multipart/form-data",
-  TEXT_PLAIN_VALUE: "text/plain",
-  TEXT_HTML_VALUE: "text/html",
-  TEXT_XML_VALUE: "text/xml",
+  WILDCARD: "*/*",
 };
+
+const MEDIA_TYPE_CONSTANTS: Record<string, string> = { ...MEDIA_TYPE_BASE };
+for (const [name, mime] of Object.entries(MEDIA_TYPE_BASE)) {
+  MEDIA_TYPE_CONSTANTS[`${name}_VALUE`] = mime;
+}
 
 /** 把 "MediaType.APPLICATION_JSON"/"application/json" 统一映射为 mime */
 function toMimeType(raw: string): string {
@@ -326,25 +345,19 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         }
         settledSignatures.add(signature);
         // 方法级媒体类型:JAX-RS @Consumes/@Produces + Spring @XxxMapping(consumes/produces)。
-        // JAX-RS 规范为方法级覆盖类级;Spring 的合并语义为方法级与类级条件取并集。
+        // JAX-RS 保持原有拼接行为(方法级在前,类级在后);Spring 的对应属性由方法级覆盖类级条件。
         const jaxrsMethodMedia = jaxrsMediaTypesOf(methodAnnotations);
         const springMethodMedia = springMediaTypesOf(methodAnnotations);
+        const jaxrsConsumes = [...jaxrsMethodMedia.consumes, ...classMedia.jaxrs.consumes];
+        const jaxrsProduces = [...jaxrsMethodMedia.produces, ...classMedia.jaxrs.produces];
+        const springConsumes = springMethodMedia.consumes.length ? springMethodMedia.consumes : classMedia.spring.consumes;
+        const springProduces = springMethodMedia.produces.length ? springMethodMedia.produces : classMedia.spring.produces;
         const consumes = flavor === "jaxrs"
-          ? (jaxrsMethodMedia.consumes.length ? jaxrsMethodMedia.consumes : classMedia.jaxrs.consumes)
-          : uniqueMediaTypes([
-              ...jaxrsMethodMedia.consumes,
-              ...springMethodMedia.consumes,
-              ...classMedia.jaxrs.consumes,
-              ...classMedia.spring.consumes,
-            ]);
+          ? jaxrsConsumes
+          : uniqueMediaTypes([...jaxrsConsumes, ...springConsumes]);
         const produces = flavor === "jaxrs"
-          ? (jaxrsMethodMedia.produces.length ? jaxrsMethodMedia.produces : classMedia.jaxrs.produces)
-          : uniqueMediaTypes([
-              ...jaxrsMethodMedia.produces,
-              ...springMethodMedia.produces,
-              ...classMedia.jaxrs.produces,
-              ...classMedia.spring.produces,
-            ]);
+          ? jaxrsProduces
+          : uniqueMediaTypes([...jaxrsProduces, ...springProduces]);
 
         for (const m of mappings) {
           for (const mp of m.paths) {

@@ -124,6 +124,81 @@ public class DefaultMediaController {
   assert.deepEqual(Object.keys(op.responses["200"].content), ["*/*"]);
 });
 
+test("Spring:方法级 consumes/produces 覆盖类级对应条件", () => {
+  const out = analyzeSource(
+    "/mem/OverrideMediaController.java",
+    `package com.example;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping(value = "/api/override-media", consumes = "application/json", produces = "text/plain")
+public class OverrideMediaController {
+    @PostMapping(value = "/submit", consumes = MediaType.APPLICATION_XML_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public String submit(@RequestBody String body) { return body; }
+
+    @GetMapping("/fallback")
+    public String fallback() { return "ok"; }
+}`
+  );
+  const overridden = out.endpoints.find((e) => e.path === "/api/override-media/submit");
+  assert.ok(overridden);
+  assert.deepEqual(overridden.consumes, ["application/xml"]);
+  assert.deepEqual(overridden.produces, ["application/json"]);
+  const op = out.spec.paths["/api/override-media/submit"].post as Record<string, any>;
+  assert.deepEqual(Object.keys(op.requestBody.content), ["application/xml"]);
+  assert.deepEqual(Object.keys(op.responses["200"].content), ["application/json"]);
+
+  // 方法未声明对应属性时仍继承类级条件
+  const fallback = out.endpoints.find((e) => e.path === "/api/override-media/fallback");
+  assert.ok(fallback);
+  assert.deepEqual(fallback.produces, ["text/plain"]);
+});
+
+test("Spring:未列入基础表的 MediaType *_VALUE 常量同样映射为 mime", () => {
+  const out = analyzeSource(
+    "/mem/MoreMediaController.java",
+    `package com.example;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/more-media")
+public class MoreMediaController {
+    @PostMapping(value = "/png", consumes = MediaType.IMAGE_PNG_VALUE, produces = MediaType.IMAGE_PNG_VALUE)
+    public String png(@RequestBody String body) { return body; }
+
+    @GetMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public String pdf() { return "pdf"; }
+
+    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public String events() { return "data: ok"; }
+
+    @GetMapping(value = "/problem", produces = MediaType.APPLICATION_PROBLEM_JSON_VALUE)
+    public String problem() { return "{}"; }
+}`
+  );
+  const png = out.endpoints.find((e) => e.path === "/api/more-media/png");
+  assert.ok(png);
+  assert.deepEqual(png.consumes, ["image/png"]);
+  assert.deepEqual(png.produces, ["image/png"]);
+  const pngOp = out.spec.paths["/api/more-media/png"].post as Record<string, any>;
+  assert.deepEqual(Object.keys(pngOp.requestBody.content), ["image/png"]);
+  assert.deepEqual(Object.keys(pngOp.responses["200"].content), ["image/png"]);
+
+  for (const [path, mime] of [
+    ["/api/more-media/pdf", "application/pdf"],
+    ["/api/more-media/events", "text/event-stream"],
+    ["/api/more-media/problem", "application/problem+json"],
+  ] as const) {
+    const ep = out.endpoints.find((e) => e.path === path);
+    assert.ok(ep, path);
+    assert.deepEqual(ep.produces, [mime], path);
+    const op = out.spec.paths[path].get as Record<string, any>;
+    assert.deepEqual(Object.keys(op.responses["200"].content), [mime], path);
+  }
+});
+
 test("JAX-RS:@Produces 多值同样生成多个响应 content;行为不回归", () => {
   const out = analyzeSource(
     "/mem/JaxrsMediaResource.java",
@@ -148,7 +223,7 @@ public class JaxrsMediaResource {
   assert.deepEqual(Object.keys(op.responses["200"].content), ["application/json", "application/xml"]);
 });
 
-test("JAX-RS:方法级 @Produces 覆盖类级(回归)", () => {
+test("JAX-RS:类级与方法级 @Produces 按原有拼接行为同时保留(回归)", () => {
   const out = analyzeSource(
     "/mem/JaxrsOverrideResource.java",
     `package com.example;
@@ -171,10 +246,11 @@ public class JaxrsOverrideResource {
   );
   const overridden = out.endpoints.find((e) => e.path === "/api/jaxrs-override");
   assert.ok(overridden);
-  assert.deepEqual(overridden.produces, ["application/xml"]);
+  // 变更前为 concat(方法级在前),类级类型不能丢失
+  assert.deepEqual(overridden.produces, ["application/xml", "application/json"]);
   const classDefault = out.endpoints.find((e) => e.path === "/api/jaxrs-override/class-default");
   assert.ok(classDefault);
   assert.deepEqual(classDefault.produces, ["application/json"]);
   const op = out.spec.paths["/api/jaxrs-override"].get as Record<string, any>;
-  assert.deepEqual(Object.keys(op.responses["200"].content), ["application/xml"]);
+  assert.deepEqual(Object.keys(op.responses["200"].content), ["application/xml", "application/json"]);
 });
