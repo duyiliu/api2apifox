@@ -274,12 +274,18 @@ function indexTypeDecl(
   decl: CstNode,
   carrier: CstNode | undefined,
   enclosing: string[],
-  out: { types: Map<string, ClassInfo>; nested: Map<string, ClassInfo>; names: string[] }
+  out: {
+    types: Map<string, ClassInfo>;
+    nested: Map<string, ClassInfo>;
+    qualified: Map<string, ClassInfo>;
+    names: string[];
+  }
 ): void {
   const info = classInfoOf(decl, pf.source, enclosing, carrier);
   if (!info) {
     return;
   }
+  out.qualified.set(info.qualifiedName, info);
   if (enclosing.length) {
     out.nested.set([...enclosing, info.simpleName].join("."), info);
     if (!out.types.has(info.simpleName)) {
@@ -300,11 +306,12 @@ function indexTypeDecl(
 export function buildIndex(files: ParsedFile[]): TypeIndex {
   const types = new Map<string, ClassInfo>();
   const nested = new Map<string, ClassInfo>();
+  const qualified = new Map<string, ClassInfo>();
   const byFile = new Map<string, string[]>();
 
   for (const pf of files) {
     const names: string[] = [];
-    const out = { types, nested, names };
+    const out = { types, nested, qualified, names };
 
     // ---- 顶层声明 ----
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
@@ -317,7 +324,7 @@ export function buildIndex(files: ParsedFile[]): TypeIndex {
 
     byFile.set(pf.fsPath, names);
   }
-  return { types, nested, byFile };
+  return { types, nested, qualified, byFile };
 }
 
 /**
@@ -338,8 +345,13 @@ export function resolveScopedType(index: TypeIndex, name: string, scope?: readon
       return hit;
     }
   }
-  // 显式限定名:逐段剥掉前导包名,尝试嵌套键 `Outer.Inner`
+  // 显式限定名:先按全限定名精确匹配(包名限定可避开简单名冲突),
+  // 再逐段剥掉前导包名,尝试嵌套键 `Outer.Inner`
   if (trimmed.includes(".")) {
+    const exact = index.qualified?.get(trimmed);
+    if (exact) {
+      return exact;
+    }
     const parts = trimmed.split(".");
     for (let i = 0; i < parts.length - 1; i++) {
       const hit = index.nested.get(parts.slice(i).join("."));

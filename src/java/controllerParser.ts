@@ -704,6 +704,11 @@ function fileScopeOf(pf: ParsedFile): FileScope {
 function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, TypeRef> = new Map()): string {
   const { pf } = site;
   const header = childNode(method, "methodHeader") ?? method;
+  // 方法级泛型形参遮蔽类级同名形参,不能套用继承链的类级绑定
+  const methodVars = new Set(typeParamsOf(header));
+  const effectiveBindings = methodVars.size
+    ? new Map([...bindings].filter(([name]) => !methodVars.has(name)))
+    : bindings;
   const declarator = childNode(header, "methodDeclarator");
   const paramList = childNode(declarator, "formalParameterList");
   const { packageName, imported } = fileScopeOf(pf);
@@ -715,7 +720,7 @@ function methodSignature(site: TypeSite, method: CstNode, bindings: Map<string, 
       types.push("?");
       continue;
     }
-    const ref = substituteTypeVars(parseTypeText(nodeText(pf.source, typeNode)), bindings);
+    const ref = substituteTypeVars(parseTypeText(nodeText(pf.source, typeNode)), effectiveBindings);
     const name = ref.name;
     const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
       ? name
@@ -821,11 +826,16 @@ function bindTypeText(
 function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): EndpointInfo {
   const javadoc = parseJavadoc(nodeJavadoc(a.wrapper));
   // 继承方法的签名按到达声明类型时的泛型绑定实例化(未绑定的形参保留原样,汇总后告警)
+  // 方法级泛型形参遮蔽类级同名形参:不应用类级绑定,并按未解析泛型处理
+  const methodVars = new Set(typeParamsOf(childNode(a.method, "methodHeader") ?? a.method));
   const bindings = a.typeBindings ?? new Map<string, TypeRef>();
-  const typeParams = a.typeParams ?? [];
+  const effectiveBindings = methodVars.size
+    ? new Map([...bindings].filter(([name]) => !methodVars.has(name)))
+    : bindings;
+  const typeParams = [...(a.typeParams ?? []), ...methodVars];
   const unboundVars = new Set<string>();
   const bindType = (text: string): string => {
-    const bound = bindTypeText(text, bindings, typeParams);
+    const bound = bindTypeText(text, effectiveBindings, typeParams);
     for (const v of bound.unbound) {
       unboundVars.add(v);
     }
@@ -1023,10 +1033,20 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
   }
 
   if (unboundVars.size) {
-    warnings.push(
-      `${a.controller}.${a.methodName}: 泛型形参 ${[...unboundVars].sort().join("、")} 未绑定` +
-        `(声明类型 ${a.declaringType ?? a.controller} 未提供具体实参),已按未绑定类型输出`
-    );
+    const methodUnbound = [...unboundVars].filter((v) => methodVars.has(v)).sort();
+    const classUnbound = [...unboundVars].filter((v) => !methodVars.has(v)).sort();
+    if (methodUnbound.length) {
+      warnings.push(
+        `${a.controller}.${a.methodName}: 方法级泛型形参 ${methodUnbound.join("、")} 未绑定` +
+          `(无法静态确定),已按未绑定类型输出`
+      );
+    }
+    if (classUnbound.length) {
+      warnings.push(
+        `${a.controller}.${a.methodName}: 泛型形参 ${classUnbound.join("、")} 未绑定` +
+          `(声明类型 ${a.declaringType ?? a.controller} 未提供具体实参),已按未绑定类型输出`
+      );
+    }
   }
 
   return {
