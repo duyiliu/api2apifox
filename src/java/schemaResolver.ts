@@ -250,7 +250,7 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
     return { type: "object", description: `未识别的类型: ${t.name}` };
   }
   if (info.kind === "enum") {
-    return enumSchema(info);
+    return enumSchema(info, ctx);
   }
 
   // 在调用处解析实参身份,防止进入包装类作用域后将 A.Item/B.Item 混为简单名 Item。
@@ -320,10 +320,14 @@ export function classDescription(
   return text && text.trim() ? text : undefined;
 }
 
-function enumSchema(info: ClassInfo): JsonSchema {
+function enumSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
+  if (info.enumValueWarning) {
+    ctx.fieldWarnings?.push(info.enumValueWarning);
+  }
   const schema: JsonSchema = { type: "string", title: info.simpleName };
-  if (info.enumConstants.length) {
-    schema.enum = [...info.enumConstants];
+  const values = info.enumValues?.length ? info.enumValues : info.enumConstants;
+  if (values.length) {
+    schema.enum = [...values];
   }
   const desc = classDescription(info.annotations, info.javadoc);
   if (desc) {

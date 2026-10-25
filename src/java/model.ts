@@ -38,6 +38,15 @@ export interface ClassInfo {
   /** record 组件(有值时 fields 为空) */
   recordComponents: FieldInfo[];
   enumConstants: string[];
+  /**
+   * 与 enumConstants 平行的实际序列化值:常量 @JsonProperty > @JsonValue 方法(按构造参数映射)> 常量名。
+   * 源码枚举按此解析;jar 枚举没有源码信息,保持与 enumConstants 相同。
+   */
+  enumValues: string[];
+  /** 与 enumConstants 平行的常量 Javadoc 描述(取正文/首行;无注释为 undefined) */
+  enumDocs: (string | undefined)[];
+  /** 枚举值无法解析时的告警(生成 schema 时并入 warnings);可解析/无需解析时为 undefined */
+  enumValueWarning?: string;
   annotations: AnnotationInfo[];
   javadoc?: JavadocInfo;
   /** extends 的类型文本(含泛型实参) */
