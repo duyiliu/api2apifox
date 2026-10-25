@@ -112,6 +112,9 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 ### 参数解析
 
 - `@PathVariable` / `@RequestParam(defaultValue)` / `@RequestHeader` / `@RequestBody`
+- `@CookieValue` → `in: cookie`(required/defaultValue 语义同 `@RequestParam`)
+- `@MatrixVariable` 矩阵变量在 OpenAPI 3.0 无直接表达,跳过并每个方法提示一次
+- `@SessionAttribute`/`@RequestAttribute`/`@Value`/`@Autowired` 及 `HttpServletRequest`/`HttpSession`/`Principal`/`Authentication` 等容器注入参数静默忽略(不计入告警)
 - 无注解简单类型按 Spring 默认作为 query 参数
 - 无注解查询 Bean 展开为逐字段 query 参数;嵌套对象按 Spring 的 `父字段.子字段` 绑定形态命名(层级上限 5 层),集合保持数组形态
 - `MultipartFile` → `multipart/form-data`
