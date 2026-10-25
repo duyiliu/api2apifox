@@ -29,6 +29,8 @@ export interface CliOptions {
   dependencyRepos: string[];
   dependencyJars: string[];
   dependencyMaxJars?: number;
+  /** 删除 Apifox 中本次文档未出现的接口/模型（仅全量工作区） */
+  deleteUnmatchedResources: boolean;
   /** Apifox 请求等待上限（毫秒）；导入首次建目录/接口/模型可能较慢 */
   timeoutMs?: number;
 }
@@ -58,6 +60,7 @@ const argumentOptions = {
   "dependency-repo": { type: "string", multiple: true, default: [] },
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
+  "delete-unmatched-resources": { type: "boolean", default: false },
   "timeout-ms": { type: "string" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
@@ -115,6 +118,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
       parsed.values["dependency-max-jars"] === undefined
         ? undefined
         : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
+    deleteUnmatchedResources: parsed.values["delete-unmatched-resources"] ?? false,
     timeoutMs: parsed.values["timeout-ms"] === undefined ? undefined : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
   };
 }

@@ -40,6 +40,7 @@ api2apifox scan --project . --format json                    # 扫描并输出�
 api2apifox export --project . --output openapi.gen.json      # 导出 OpenAPI 3.0 文件
 api2apifox export --project . --stdout                       # OpenAPI 直接输出到 stdout
 api2apifox sync --project . --dry-run --format json          # 同步预演(不写入)
+api2apifox sync --project . --dry-run --delete-unmatched-resources --format json  # 镜像预演:预览将被删除的接口/模型
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json                  # 查看生效配置
 ```
@@ -90,7 +91,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | **模型展开** | DTO 递归展开(含静态内部类)、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
 | **分页包装** | `PageInfo`、MyBatis-Plus `IPage`、Spring Data `Page`/`PageImpl`/`Slice` 自动展开 |
 | **注解支持** | OpenAPI 3 / Swagger 2 / Javadoc 文档注解、Bean Validation、Jackson / FASTJSON / GSON、响应声明 |
-| **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度;同步后出「同步结果」面板(计数表 + 接口清单,可排序 / 过滤 / 复制) |
+| **同步控制** | 目录命名、根目录、冲突策略可配;项目 / 文件 / 单接口(CodeLens)三种粒度;可选镜像同步删除源码中已不存在的接口/模型(先预览再确认);同步后出「同步结果」面板(计数表 + 接口清单,可排序 / 过滤 / 复制) |
 | **依赖 jar 识别** | 自动发现本地 Maven 仓库,按需解析 `.class` 字节码,零配置还原框架类型 |
 
 <details>
@@ -147,6 +148,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - 目录命名来源可配(`@Tag` 注解值或 Controller 类名),可选根目录与数据模型目录(自动创建)
 - 冲突策略可配:覆盖 / 自动合并 / 保留现有 / 新建
+- 可选镜像同步(删除传播):开启后仅「整个工作区」全量同步会删除 Apifox 中本次源码未出现的接口/模型。同步前先导出远端 OpenAPI 生成待删除清单并二次确认,导出失败即中止;文件/目录/勾选等局部同步永不删除,避免误删其他来源接口
 - 同步完成后打开「同步结果」面板:导入计数按「接口 / 数据模型 / 目录 × 新增 / 更新 / 忽略 / 失败」成表,并列出本次同步的接口清单(名称 / 方法 / 路径 / 目录 / 源文件),支持排序、过滤与一键复制(TSV / Markdown);通知栏保留一行摘要,可点「查看结果表」重新打开面板(命令 `查看上次同步结果`)
 
 ### 依赖 jar 类型识别(零配置)
@@ -192,6 +194,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |
 | `apifoxHelper.maxDependencyJars` | `120` | 依赖 jar 解析总数上限(直接 + 传递依赖);超出按依赖距离丢弃并提示,`0` 表示不做依赖解析 |
+| `apifoxHelper.deleteUnmatchedResources` | `false` | 全量工作区镜像同步:删除 Apifox 中本次源码未出现的接口/模型。开启后同步前先拉取远端清单预览待删除项并二次确认;文件/目录/勾选等局部同步永不删除 |
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 

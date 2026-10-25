@@ -1,5 +1,6 @@
 import { AnalyzeOutput } from "../pipeline";
 import { EndpointInfo } from "../java/model";
+import { UnmatchedResources } from "./deletePreview";
 
 export type ConflictBehavior = "OVERWRITE_EXISTING" | "AUTO_MERGE" | "KEEP_EXISTING" | "CREATE_NEW";
 
@@ -31,6 +32,8 @@ export interface ResolvedConfig {
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */
   maxDependencyJars: number;
+  /** 全量工作区同步时删除 Apifox 中本次文档未出现的接口/模型(默认 false) */
+  deleteUnmatchedResources: boolean;
   timeoutMs: number;
 }
 
@@ -73,6 +76,10 @@ export interface SyncResult {
     type: "workspace" | "file" | "endpoint" | "selection";
     endpointCount: number;
   };
+  /** 本次是否请求了删除传播(仅全量工作区允许) */
+  deleteUnmatchedResources: boolean;
+  /** dry-run 预览：远端存在但本次文档中未出现的资源 */
+  deletionPreview?: UnmatchedResources;
   counters: Record<string, number>;
   errors: { message?: string; code?: string }[];
 }

@@ -1,3 +1,5 @@
+import { UnmatchedResources, unmatchedResourceLines, unmatchedResourceSummary } from "../core/deletePreview";
+
 export interface SyncPreflightInput {
   teamName: string;
   projectName: string;
@@ -8,6 +10,10 @@ export interface SyncPreflightInput {
   schemaConflictBehavior: string;
   visibleChecked?: number;
   hiddenChecked?: number;
+  /** 本次是否开启删除传播（镜像同步） */
+  deleteUnmatchedResources?: boolean;
+  /** dry-run 预览出的待删除资源；未开启删除时忽略 */
+  deletionPreview?: UnmatchedResources;
 }
 
 const CONFLICT_LABELS: Record<string, string> = {
@@ -38,6 +44,18 @@ export function buildSyncPreflightDetail(input: SyncPreflightInput): string {
 
   if (input.visibleChecked !== undefined || input.hiddenChecked !== undefined) {
     lines.push(`选择：当前可见 ${input.visibleChecked ?? 0} 个，过滤隐藏 ${input.hiddenChecked ?? 0} 个`);
+  }
+
+  if (input.deleteUnmatchedResources) {
+    lines.push("删除传播：已开启（镜像同步，仅全量工作区生效）");
+    if (input.deletionPreview) {
+      lines.push(`将删除：${unmatchedResourceSummary(input.deletionPreview)}`);
+      for (const line of unmatchedResourceLines(input.deletionPreview, 10)) {
+        lines.push(`  · ${line}`);
+      }
+    } else {
+      lines.push("将删除：未获取到远端预览（不会执行删除）");
+    }
   }
 
   lines.push(

@@ -23,6 +23,7 @@ interface FileConfig {
   dependencyRepos?: unknown;
   dependencyJars?: unknown;
   maxDependencyJars?: unknown;
+  deleteUnmatchedResources?: unknown;
   timeoutMs?: unknown;
   title?: unknown;
   $schema?: unknown;
@@ -47,6 +48,7 @@ export interface ConfigOverrides {
   dependencyRepos?: string[];
   dependencyJars?: string[];
   maxDependencyJars?: number;
+  deleteUnmatchedResources?: boolean;
   timeoutMs?: number;
   title?: string;
 }
@@ -102,6 +104,8 @@ export function resolveConfig(
     dependencyJars: [],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
     maxDependencyJars: 120,
+    // 删除传播是破坏性操作:默认关闭,仅显式开启的全量工作区同步才允许
+    deleteUnmatchedResources: false,
     // OpenAPI 导入首次创建目录、接口和模型可能超过一分钟；CLI 默认等待五分钟。
     timeoutMs: 300_000,
   };
@@ -132,6 +136,7 @@ export function resolveConfig(
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
+  applyFile(config, sources, "deleteUnmatchedResources", booleanValue(fileConfig.deleteUnmatchedResources, "deleteUnmatchedResources", diagnostics), fileSource);
   applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
   if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
     config.title = fileConfig.title.trim();
@@ -144,6 +149,7 @@ export function resolveConfig(
   applyEnv(config, sources, "apiBaseUrl", env.API2APIFOX_API_BASE_URL, "API2APIFOX_API_BASE_URL", parseEnvString, diagnostics);
   applyEnv(config, sources, "endpointConflictBehavior", env.API2APIFOX_ENDPOINT_CONFLICT, "API2APIFOX_ENDPOINT_CONFLICT", parseEnvConflict, diagnostics);
   applyEnv(config, sources, "schemaConflictBehavior", env.API2APIFOX_SCHEMA_CONFLICT, "API2APIFOX_SCHEMA_CONFLICT", parseEnvConflict, diagnostics);
+  applyEnv(config, sources, "deleteUnmatchedResources", env.API2APIFOX_DELETE_UNMATCHED_RESOURCES, "API2APIFOX_DELETE_UNMATCHED_RESOURCES", parseEnvBoolean, diagnostics);
 
   for (const [key, value] of Object.entries(overrides) as [keyof ConfigOverrides, ConfigOverrides[keyof ConfigOverrides]][]) {
     if (key === "configFile" || key === "token" || value === undefined || key === "title") {
@@ -193,6 +199,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
     "dependencyRepos",
     "dependencyJars",
     "maxDependencyJars",
+    "deleteUnmatchedResources",
     "timeoutMs",
     "token",
   ]);
@@ -373,6 +380,16 @@ function parseEnvString(raw: string): string | undefined {
 
 function parseEnvConflict(raw: string): ConflictBehavior | undefined {
   return CONFLICT_BEHAVIORS.includes(raw as ConflictBehavior) ? (raw as ConflictBehavior) : undefined;
+}
+
+function parseEnvBoolean(raw: string): boolean | undefined {
+  if (raw === "true" || raw === "1") {
+    return true;
+  }
+  if (raw === "false" || raw === "0") {
+    return false;
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

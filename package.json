@@ -460,6 +460,11 @@
           "default": 120,
           "minimum": 0,
           "description": "依赖 jar 解析总数上限(直接 + 传递依赖)。超出部分按依赖距离从远到近丢弃并提示;0 表示不做依赖解析。"
+        },
+        "apifoxHelper.deleteUnmatchedResources": {
+          "type": "boolean",
+          "default": false,
+          "description": "全量工作区镜像同步:删除 Apifox 中本次源码未出现的接口与数据模型。默认关闭;开启后同步前会先拉取远端清单预览待删除项并二次确认,文件/目录/勾选等局部同步永不删除。"
         }
       }
     }

@@ -22,11 +22,14 @@ npx @duyiliu/api2apifox scan --project . --format json
 api2apifox scan --project . --format json
 api2apifox export --project . --output openapi.gen.json --force
 api2apifox sync --project . --dry-run --format json
+api2apifox sync --project . --project-id 123456 --dry-run --delete-unmatched-resources --format json
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json
 ```
 
 `sync` 真正写入 Apifox 时必须在交互终端确认，或显式传入 `--yes`。非交互环境不会等待输入。
+
+`--delete-unmatched-resources`（或配置文件 `deleteUnmatchedResources: true`）开启镜像删除：仅支持整个工作区的全量同步，且即使 `--dry-run` 也需要 Token，因为要先用官方导出接口拉取远端清单生成待删除预览。真正执行前会展示将删除的接口/模型并再次确认；文件/接口筛选（`--file` / `--endpoint`）会拒绝该选项，避免误删其他来源资源。
 
 首次导入需要创建目录、接口和数据模型，可能持续较长时间；请求等待上限默认 300000 毫秒，可用 `--timeout-ms` 覆盖：
 
@@ -67,6 +70,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "exclude": ["**/target/**", "**/build/**", "**/src/test/**", "**/.*/**"],
   "endpointConflictBehavior": "OVERWRITE_EXISTING",
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
+  "deleteUnmatchedResources": false,
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
   "helperProperties": {
@@ -83,6 +87,8 @@ Token 不允许写入配置文件。推荐使用环境变量：
 ```bash
 export API2APIFOX_TOKEN=APS_xxx
 export API2APIFOX_PROJECT_ID=123456
+# 可选：开启全量镜像删除（默认 false）
+export API2APIFOX_DELETE_UNMATCHED_RESOURCES=false
 ```
 
 Windows PowerShell：

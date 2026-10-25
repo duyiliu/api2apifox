@@ -67,6 +67,30 @@ test("maxDependencyJars:配置文件生效、默认值与非法值校验", () =>
   assert.throws(() => resolveConfig(bad), /maxDependencyJars 必须是大于等于 0 的整数/);
 });
 
+test("deleteUnmatchedResources:默认关闭,支持配置文件、环境变量与 CLI 覆盖", () => {
+  const empty = temporaryProject();
+  assert.equal(resolveConfig(empty).config.deleteUnmatchedResources, false);
+
+  const file = temporaryProject();
+  fs.writeFileSync(path.join(file, ".api2apifox.json"), JSON.stringify({ deleteUnmatchedResources: true }));
+  const fromFile = resolveConfig(file);
+  assert.equal(fromFile.config.deleteUnmatchedResources, true);
+  assert.match(fromFile.sources.deleteUnmatchedResources, /^file:/);
+
+  const fromEnv = resolveConfig(empty, {}, { API2APIFOX_DELETE_UNMATCHED_RESOURCES: "true" });
+  assert.equal(fromEnv.config.deleteUnmatchedResources, true);
+  assert.equal(fromEnv.sources.deleteUnmatchedResources, "env:API2APIFOX_DELETE_UNMATCHED_RESOURCES");
+
+  const fromCli = resolveConfig(file, { deleteUnmatchedResources: false });
+  assert.equal(fromCli.config.deleteUnmatchedResources, false);
+  assert.equal(fromCli.sources.deleteUnmatchedResources, "cli");
+
+  assert.throws(
+    () => resolveConfig(empty, {}, { API2APIFOX_DELETE_UNMATCHED_RESOURCES: "maybe" }),
+    /API2APIFOX_DELETE_UNMATCHED_RESOURCES 的值无效/
+  );
+});
+
 test("严格拒绝未知配置字段", () => {
   const root = temporaryProject();
   fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ projectID: 42 }));

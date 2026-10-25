@@ -138,3 +138,28 @@ test("client:业务错误码非 0 与正常 data 解包", async () => {
     globalThis.fetch = ORIGINAL_FETCH;
   }
 });
+
+test("client:exportOpenapi 请求全量项目并解析字符串形式的 JSON 文档", async () => {
+  let body: any;
+  globalThis.fetch = ((_url: unknown, init?: { body?: string }) => {
+    body = init?.body ? JSON.parse(init.body) : undefined;
+    return Promise.resolve(
+      new Response(JSON.stringify({ code: 0, data: JSON.stringify({ openapi: "3.0.3", paths: { "/legacy": { get: {} } } }) }), {
+        status: 200,
+      })
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const client = new ApifoxClient("https://api.example.com", "token");
+    const spec = (await client.exportOpenapi(42)) as { paths?: Record<string, unknown> };
+    assert.deepEqual(body, {
+      scope: { type: "ALL" },
+      options: { includeApifoxExtensionProperties: false, addFoldersToTags: false },
+      oasVersion: "3.0",
+      exportFormat: "JSON",
+    });
+    assert.ok(spec.paths?.["/legacy"]);
+  } finally {
+    globalThis.fetch = ORIGINAL_FETCH;
+  }
+});

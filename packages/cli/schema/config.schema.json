@@ -29,6 +29,7 @@
     "dependencyRepos": { "type": "array", "items": { "type": "string" } },
     "dependencyJars": { "type": "array", "items": { "type": "string" } },
     "maxDependencyJars": { "type": "integer", "minimum": 0 },
+    "deleteUnmatchedResources": { "type": "boolean" },
     "timeoutMs": { "type": "number", "exclusiveMinimum": 0 }
   },
   "$defs": {

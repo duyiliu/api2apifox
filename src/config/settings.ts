@@ -30,6 +30,8 @@ export interface ApifoxSettings {
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(默认 120;0 表示不做依赖解析) */
   maxDependencyJars: number;
+  /** 全量工作区同步时删除 Apifox 中本次源码未出现的接口/模型(默认 false) */
+  deleteUnmatchedResources: boolean;
   /** 是否在 Java Controller 方法上方显示 CodeLens「同步此接口」(默认 true) */
   enableCodeLens: boolean;
 }
@@ -56,6 +58,7 @@ export function getSettings(): ApifoxSettings {
     dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
     dependencyJars: cfg.get<string[]>("dependencyJars", []),
     maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),
+    deleteUnmatchedResources: cfg.get<boolean>("deleteUnmatchedResources", false),
     enableCodeLens: cfg.get<boolean>("enableCodeLens", true),
   };
 }

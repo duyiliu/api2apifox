@@ -126,3 +126,52 @@ test("默认等待上限允许首次导入较慢的建目录与建模型", () =>
   assert.equal(payload.result.fields.timeoutMs.value, 300000);
   assert.equal(payload.result.fields.timeoutMs.source, "default");
 });
+
+test("deleteUnmatchedResources 默认关闭并出现在 config 输出中", () => {
+  const result = run(["config", "--project", SAMPLE, "--format", "json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.result.fields.deleteUnmatchedResources.value, false);
+  assert.equal(payload.result.fields.deleteUnmatchedResources.source, "default");
+});
+
+test("镜像删除 dry-run 需要 token 才能拉取远端清单", () => {
+  const result = run([
+    "sync",
+    "--project",
+    SAMPLE,
+    "--project-id",
+    "42",
+    "--dry-run",
+    "--delete-unmatched-resources",
+    "--format",
+    "json",
+  ]);
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, "TOKEN_REQUIRED");
+  assert.match(payload.error.message, /远端清单/);
+});
+
+test("镜像删除拒绝局部接口筛选,避免误删其他来源资源", () => {
+  const result = run(
+    [
+      "sync",
+      "--project",
+      SAMPLE,
+      "--project-id",
+      "42",
+      "--dry-run",
+      "--delete-unmatched-resources",
+      "--endpoint",
+      "GET /api/v1/users",
+      "--format",
+      "json",
+    ],
+    { API2APIFOX_TOKEN: "not-a-real-token" }
+  );
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, "DELETE_REQUIRES_WORKSPACE");
+  assert.ok(!result.stdout.includes("not-a-real-token"));
+});

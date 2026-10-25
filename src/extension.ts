@@ -12,6 +12,7 @@ import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
 import { AnalyzeCache, endpointAt } from "./pipeline";
+import { diffOpenapiResources, hasUnmatchedResources, UnmatchedResources } from "./core/deletePreview";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
@@ -338,6 +339,8 @@ export function activate(context: vscode.ExtensionContext): void {
   type SyncOptions = {
     scopeLabel: string;
     confirm?: boolean;
+    /** 仅整个工作区同步允许镜像删除；局部同步即使配置开启也不会删除 */
+    fullWorkspace?: boolean;
     selection?: { visible: number; hidden: number };
   };
 
@@ -366,10 +369,23 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showWarningMessage(emptyHint);
       return;
     }
+    const settings = getSettings();
+    const deleteUnmatchedResources = settings.deleteUnmatchedResources && options.fullWorkspace === true;
+    let deletionPreview: UnmatchedResources | undefined;
+    if (deleteUnmatchedResources) {
+      // 删除前必须先拿到远端事实做 dry-run 预览；导出失败则中止，绝不盲删。
+      try {
+        deletionPreview = diffOpenapiResources(analyzed.spec, await client.exportOpenapi(settings.projectId));
+      } catch (err) {
+        vscode.window.showErrorMessage(`无法获取 Apifox 远端清单，已取消镜像同步：${errorMessage(err)}`);
+        return;
+      }
+    }
     if (options.confirm) {
-      const settings = getSettings();
+      const willDelete = deletionPreview !== undefined && hasUnmatchedResources(deletionPreview);
+      const confirmLabel = willDelete ? "确认删除并同步" : "开始同步";
       const picked = await vscode.window.showWarningMessage(
-        "确认批量同步到 Apifox？",
+        willDelete ? "确认删除远端未匹配资源并同步到 Apifox？" : "确认批量同步到 Apifox？",
         {
           modal: true,
           detail: buildSyncPreflightDetail({
@@ -382,17 +398,18 @@ export function activate(context: vscode.ExtensionContext): void {
             schemaConflictBehavior: settings.schemaConflictBehavior,
             visibleChecked: options.selection?.visible,
             hiddenChecked: options.selection?.hidden,
+            deleteUnmatchedResources,
+            deletionPreview,
           }),
         },
-        "开始同步"
+        confirmLabel
       );
-      if (picked !== "开始同步") {
+      if (picked !== confirmLabel) {
         return;
       }
     }
     try {
-      const settings = getSettings();
-      const outcome = await syncToApifox(client, settings, analyzed);
+      const outcome = await syncToApifox(client, settings, analyzed, { deleteUnmatchedResources });
       // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
       SyncResultPanel.createOrShow(
         buildSyncReport({
@@ -932,7 +949,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await doSync(
         "没有扫描到任何 Java 源文件",
         (token) => analyzeWorkspace(undefined, token),
-        { scopeLabel: "整个工作区", confirm: true }
+        { scopeLabel: "整个工作区", confirm: true, fullWorkspace: true }
       );
     })
   );

@@ -24,6 +24,13 @@ export interface ImportResult {
   errors: { message?: string; code?: string }[];
 }
 
+export interface ExportOpenapiOptions {
+  /** 导出范围;删除预览需要整个项目，缺省 ALL */
+  scope?: "ALL" | "SELECTED" | "PUBLISHED";
+  oasVersion?: "3.0" | "3.1";
+  exportFormat?: "JSON" | "YAML";
+}
+
 export class ApifoxApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -104,6 +111,29 @@ export class ApifoxClient {
       counters: body?.counters ?? {},
       errors: body?.errors ?? [],
     };
+  }
+
+  /**
+   * 导出项目当前的 OpenAPI 文档。删除传播的 dry-run 预览用它读取远端事实，
+   * 与 import-openapi 的 deleteUnmatchedResources 语义保持一致。
+   * 文档:https://apifox-openapi.apifox.cn 「导出 OpenAPI/Swagger 格式数据」
+   */
+  async exportOpenapi(projectId: number, options: ExportOpenapiOptions = {}): Promise<unknown> {
+    const body = await this.request<unknown>("POST", `/v1/projects/${projectId}/export-openapi`, {
+      scope: { type: options.scope ?? "ALL" },
+      options: { includeApifoxExtensionProperties: false, addFoldersToTags: false },
+      oasVersion: options.oasVersion ?? "3.0",
+      exportFormat: options.exportFormat ?? "JSON",
+    });
+    // 部分部署/版本会把 JSON 文档作为字符串放在 data 中
+    if (typeof body === "string") {
+      try {
+        return JSON.parse(body);
+      } catch {
+        return body;
+      }
+    }
+    return body;
   }
 
   private async request<T>(method: string, path: string, json?: unknown): Promise<T> {

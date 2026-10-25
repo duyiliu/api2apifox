@@ -243,6 +243,11 @@ export interface SyncOutcome {
   errors: { message?: string; code?: string }[];
 }
 
+export interface SyncToApifoxOptions {
+  /** 仅在调用方已完成远端预览与显式确认、且为全量工作区同步时为 true */
+  deleteUnmatchedResources?: boolean;
+}
+
 /**
  * 同步:依赖 Apifox 导入的官方目录机制。
  * 官方导入 OpenAPI 时,operation 上的 x-apifox-folder(优先)或 tags[0] 会作为接口目录,
@@ -255,7 +260,8 @@ export interface SyncOutcome {
 export async function syncToApifox(
   client: ApifoxClient,
   settings: ApifoxSettings,
-  analyzed: AnalyzeOutput
+  analyzed: AnalyzeOutput,
+  options: SyncToApifoxOptions = {}
 ): Promise<SyncOutcome> {
   const { spec, endpoints, warnings } = analyzed;
   if (!endpoints.length) {
@@ -286,6 +292,7 @@ export async function syncToApifox(
         targetSchemaFolderId: schemaFolderId,
         endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
         schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
+        deleteUnmatchedResources: options.deleteUnmatchedResources === true,
       });
     }
   );
@@ -300,6 +307,7 @@ export function formatResult(result: ImportResult, warnings: string[]): string {
     c.endpointCreated ? `新增 ${c.endpointCreated}` : "",
     c.endpointUpdated ? `更新 ${c.endpointUpdated}` : "",
     c.endpointIgnored ? `忽略 ${c.endpointIgnored}` : "",
+    c.endpointDeleted ? `删除 ${c.endpointDeleted}` : "",
     c.endpointFailed ? `失败 ${c.endpointFailed}` : "",
   ].filter(Boolean);
   if (endpointPart.length) {
@@ -309,6 +317,7 @@ export function formatResult(result: ImportResult, warnings: string[]): string {
     c.schemaCreated ? `新增 ${c.schemaCreated}` : "",
     c.schemaUpdated ? `更新 ${c.schemaUpdated}` : "",
     c.schemaIgnored ? `忽略 ${c.schemaIgnored}` : "",
+    c.schemaDeleted ? `删除 ${c.schemaDeleted}` : "",
     c.schemaFailed ? `失败 ${c.schemaFailed}` : "",
   ].filter(Boolean);
   if (schemaPart.length) {

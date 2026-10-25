@@ -6,6 +6,11 @@ import { analyzeProject } from "../../../src/core/projectAnalyzer";
 import { ConfigOverrides, resolveConfig } from "../../../src/core/config";
 import { EndpointSummary, ProjectAnalysisResult, ResolvedConfigResult, SyncResult } from "../../../src/core/types";
 import { hasImportFailures, syncProject } from "../../../src/core/syncService";
+import {
+  UnmatchedResources,
+  unmatchedResourceLines,
+  unmatchedResourceSummary,
+} from "../../../src/core/deletePreview";
 import { CliOptions, parseCliArgs } from "./args";
 import { CliError, toCliError } from "./errors";
 import { diagnosticMessages, FailureEnvelope, SuccessEnvelope, writeJson, writeText } from "./output";
@@ -57,15 +62,42 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       case "sync": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
-        validateSyncConfig(resolved, options);
-        if (!options.dryRun) {
-          await confirmSync(resolved, analyzed, options);
+        const deleteUnmatchedResources = resolveDeleteUnmatchedResources(resolved, options);
+        validateSyncConfig(resolved, options, deleteUnmatchedResources);
+        if (options.dryRun) {
+          const synced = await syncProject({
+            config: resolved.config,
+            token: resolved.token ?? "",
+            analyzed,
+            dryRun: true,
+            deleteUnmatchedResources,
+            scopeType: scopeType(options),
+            signal: controller.signal,
+          });
+          result = synced;
+          warnings = analyzed.warnings;
+          break;
         }
+        // 删除传播必须先 dry-run 预览远端事实，再让用户显式确认。
+        let deletionPreview: UnmatchedResources | undefined;
+        if (deleteUnmatchedResources) {
+          const preview = await syncProject({
+            config: resolved.config,
+            token: resolved.token ?? "",
+            analyzed,
+            dryRun: true,
+            deleteUnmatchedResources: true,
+            scopeType: "workspace",
+            signal: controller.signal,
+          });
+          deletionPreview = preview.deletionPreview;
+        }
+        await confirmSync(resolved, analyzed, options, deleteUnmatchedResources, deletionPreview);
         const synced = await syncProject({
           config: resolved.config,
           token: resolved.token ?? "",
           analyzed,
-          dryRun: options.dryRun,
+          deleteUnmatchedResources,
           scopeType: scopeType(options),
           signal: controller.signal,
         });
@@ -172,19 +204,43 @@ async function exportResult(
   };
 }
 
-function validateSyncConfig(resolved: ResolvedConfigResult, options: CliOptions): void {
+function validateSyncConfig(
+  resolved: ResolvedConfigResult,
+  options: CliOptions,
+  deleteUnmatchedResources: boolean
+): void {
   if (resolved.config.projectId <= 0) {
     throw new CliError("PROJECT_ID_REQUIRED", "sync 需要 projectId，可通过配置、环境变量或 --project-id 提供", 2);
+  }
+  if (deleteUnmatchedResources && (options.files.length || options.endpoints.length)) {
+    throw new CliError(
+      "DELETE_REQUIRES_WORKSPACE",
+      "删除传播只支持整个工作区的全量同步；--file/--endpoint 局部同步会误删其他来源的接口",
+      2
+    );
+  }
+  if (deleteUnmatchedResources && !resolved.token) {
+    throw new CliError(
+      "TOKEN_REQUIRED",
+      "删除传播需要先读取 Apifox 远端清单做 dry-run 预览，请提供 API2APIFOX_TOKEN 或 --token",
+      2
+    );
   }
   if (!options.dryRun && !resolved.token) {
     throw new CliError("TOKEN_REQUIRED", "sync 需要 API2APIFOX_TOKEN 环境变量或 --token", 2);
   }
 }
 
+function resolveDeleteUnmatchedResources(resolved: ResolvedConfigResult, options: CliOptions): boolean {
+  return options.deleteUnmatchedResources || resolved.config.deleteUnmatchedResources;
+}
+
 async function confirmSync(
   resolved: ResolvedConfigResult,
   analyzed: ProjectAnalysisResult,
-  options: CliOptions
+  options: CliOptions,
+  deleteUnmatchedResources: boolean,
+  deletionPreview?: UnmatchedResources
 ): Promise<void> {
   if (options.yes) {
     return;
@@ -192,7 +248,16 @@ async function confirmSync(
   if (!stdin.isTTY || !stdout.isTTY) {
     throw new CliError("CONFIRMATION_REQUIRED", "非交互环境执行同步必须显式传入 --yes", 2);
   }
-  const prompt = `将 ${analyzed.endpoints.length} 个接口同步到 Apifox 项目 ${resolved.config.projectId}，继续？ [y/N] `;
+  const lines = [`将 ${analyzed.endpoints.length} 个接口同步到 Apifox 项目 ${resolved.config.projectId}`];
+  if (deleteUnmatchedResources) {
+    lines.push(`删除传播已开启：${deletionPreview ? unmatchedResourceSummary(deletionPreview) : "未获取远端预览"}`);
+    if (deletionPreview) {
+      for (const line of unmatchedResourceLines(deletionPreview, 20)) {
+        lines.push(`  - ${line}`);
+      }
+    }
+  }
+  const prompt = `${lines.join("\n")}\n继续？ [y/N] `;
   const rl = readline.createInterface({ input: stdin, output: stdout });
   try {
     const answer = (await rl.question(prompt)).trim().toLowerCase();
@@ -229,6 +294,7 @@ function configOverrides(options: CliOptions): ConfigOverrides {
     dependencyRepos: options.dependencyRepos.length ? options.dependencyRepos : undefined,
     dependencyJars: options.dependencyJars.length ? options.dependencyJars : undefined,
     maxDependencyJars: options.dependencyMaxJars,
+    deleteUnmatchedResources: options.deleteUnmatchedResources ? true : undefined,
     exportPath: options.output,
     timeoutMs: options.timeoutMs,
   };
@@ -293,9 +359,23 @@ function formatTextResult(command: CliOptions["command"], result: unknown, warni
   }
   if (command === "sync") {
     const sync = result as unknown as SyncResult;
-    return sync.dryRun
-      ? `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox${warningText}`
-      : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口${warningText}`;
+    const lines = [
+      sync.dryRun
+        ? `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox`
+        : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口`,
+    ];
+    if (sync.deleteUnmatchedResources) {
+      if (sync.dryRun) {
+        const preview = sync.deletionPreview;
+        lines.push(preview ? `删除预览:${unmatchedResourceSummary(preview)}` : "删除预览:无待删除资源");
+        if (preview) {
+          lines.push(...unmatchedResourceLines(preview, 50).map((line) => `  - ${line}`));
+        }
+      } else {
+        lines.push("删除传播:已开启（被删除资源以 Apifox 返回计数为准）");
+      }
+    }
+    return `${lines.join("\n")}${warningText}`;
   }
   return `${JSON.stringify(result, null, 2)}${warningText}`;
 }
@@ -358,7 +438,7 @@ function helpText(command?: CliOptions["command"]): string {
 命令:
   scan     扫描 Java 项目并输出接口摘要（只读，不联网）
   export   生成 OpenAPI JSON 文件（只读，不联网）
-  sync     --dry-run 预检，或真正同步到 Apifox
+  sync     --dry-run 预检，或真正同步到 Apifox（可选镜像删除）
   config   输出最终配置及其来源（Token 只显示是否已配置）
 
 公共参数:
@@ -422,6 +502,9 @@ ${COMMON_HELP}
   --token <token>           Apifox 访问令牌，推荐改用 API2APIFOX_TOKEN 环境变量
   --endpoint-conflict <模式> 接口冲突处理：OVERWRITE_EXISTING | AUTO_MERGE | KEEP_EXISTING | CREATE_NEW
   --schema-conflict <模式>   数据模型冲突处理：取值同上
+  --delete-unmatched-resources
+                            全量镜像同步：删除 Apifox 中本次文档未出现的接口/模型
+                            （需 token；会先拉取远端清单预览并在执行前确认；不支持 --file/--endpoint）
   --timeout-ms <ms>         等待上限，默认 300000；首次全量导入偏慢，可调大
 ${FILTER_HELP}
 ${HELP_FLAG}
