@@ -124,18 +124,7 @@ export async function run(): Promise<void> {
   const offset = document.getText().indexOf("public String ping");
   assert.ok(offset > 0, "fixture 中未找到 ping 方法");
 
-  const server = await startImportServer();
-  const config = vscode.workspace.getConfiguration("apifoxHelper");
-  const target = vscode.ConfigurationTarget.Workspace;
-  await config.update("apiBaseUrl", server.baseUrl, target);
-  await config.update("projectId", 1, target);
-  await config.update("projectName", "host-smoke", target);
-  await config.update("teamName", "host-team", target);
-  await sleep(200);
-  const updated = vscode.workspace.getConfiguration("apifoxHelper");
-  console.log("host-smoke config:", JSON.stringify({ projectId: updated.get("projectId"), apiBaseUrl: updated.get("apiBaseUrl") }));
-  assert.equal(updated.get("projectId"), 1, "测试配置未生效(projectId)");
-  assert.equal(updated.get("apiBaseUrl"), server.baseUrl, "测试配置未生效(apiBaseUrl)");
+  let server: Awaited<ReturnType<typeof startImportServer>> | undefined;
 
   const windowAny = vscode.window as unknown as {
     showInformationMessage: (...args: unknown[]) => Thenable<unknown>;
@@ -144,6 +133,7 @@ export async function run(): Promise<void> {
     showInputBox: (...args: unknown[]) => Thenable<unknown>;
     showQuickPick: (...args: unknown[]) => Thenable<unknown>;
     withProgress: (...args: unknown[]) => Thenable<unknown>;
+    createWebviewPanel: (...args: unknown[]) => unknown;
   };
   const originals = {
     showInformationMessage: windowAny.showInformationMessage,
@@ -192,6 +182,20 @@ export async function run(): Promise<void> {
 
   const info = () => ({ prompt: tokenPrompts, busy: busyMessages.length, errors: [...errorMessages] });
   try {
+    // 服务器创建后立即进入 try/finally:配置更新或断言失败也要关闭监听器
+    server = await startImportServer();
+    const config = vscode.workspace.getConfiguration("apifoxHelper");
+    const target = vscode.ConfigurationTarget.Workspace;
+    await config.update("apiBaseUrl", server.baseUrl, target);
+    await config.update("projectId", 1, target);
+    await config.update("projectName", "host-smoke", target);
+    await config.update("teamName", "host-team", target);
+    await sleep(200);
+    const updated = vscode.workspace.getConfiguration("apifoxHelper");
+    console.log("host-smoke config:", JSON.stringify({ projectId: updated.get("projectId"), apiBaseUrl: updated.get("apiBaseUrl") }));
+    assert.equal(updated.get("projectId"), 1, "测试配置未生效(projectId)");
+    assert.equal(updated.get("apiBaseUrl"), server.baseUrl, "测试配置未生效(apiBaseUrl)");
+
     // 先从干净状态开始,避免复用历史 secret 导致不再出现 token 提示
     await vscode.commands.executeCommand("apifoxHelper.clearToken");
 
@@ -306,20 +310,43 @@ export async function run(): Promise<void> {
         secretStore.delete(key);
       },
     } as unknown as vscode.SecretStorage;
-    const settingsPanel = SettingsPanel.createOrShow(fakeSecrets);
-    const webview = settingsPanel._panel.webview;
+    let messageHandler: ((message: unknown) => unknown) | undefined;
     const posted: Record<string, any>[] = [];
-    const originalPostMessage = webview.postMessage.bind(webview);
-    webview.postMessage = (message: unknown) => {
-      posted.push(message as Record<string, any>);
-      return Promise.resolve(true);
+    const fakePanel = {
+      webview: {
+        cspSource: "vscode-webview://test",
+        html: "",
+        onDidReceiveMessage(handler: (message: unknown) => unknown) {
+          messageHandler = handler;
+          return { dispose() {} };
+        },
+        postMessage(message: unknown) {
+          posted.push(message as Record<string, any>);
+          return Promise.resolve(true);
+        },
+        asWebviewUri(uri: unknown) {
+          return uri;
+        },
+      },
+      onDidDispose() {
+        return { dispose() {} };
+      },
+      reveal() {},
+      dispose() {},
+    };
+    const originalCreateWebviewPanel = windowAny.createWebviewPanel;
+    windowAny.createWebviewPanel = () => fakePanel;
+    const settingsPanel = SettingsPanel.createOrShow(fakeSecrets);
+    assert.ok(messageHandler, "SettingsPanel 应注册 Webview 消息接收回调");
+    const sendMessage = async (message: Record<string, any>): Promise<void> => {
+      await messageHandler!(message);
     };
     try {
-      await settingsPanel.handleMessage({ command: "ready" });
+      await sendMessage({ command: "ready" });
       assert.equal(posted.at(-1)?.command, "init");
       assert.equal(posted.at(-1)?.data.settings.projectId, 1);
 
-      await settingsPanel.handleMessage({
+      await sendMessage({
         command: "testConnection",
         token: "APS-host",
         apiBaseUrl: server.baseUrl,
@@ -332,7 +359,7 @@ export async function run(): Promise<void> {
       assert.equal(connOk.teams.length, 1);
 
       server.failNextTeams();
-      await settingsPanel.handleMessage({
+      await sendMessage({
         command: "testConnection",
         token: "APS-host",
         apiBaseUrl: server.baseUrl,
@@ -343,7 +370,7 @@ export async function run(): Promise<void> {
       assert.equal(connFail.ok, false);
       assert.equal(connFail.requestKey, "conn-fail");
 
-      await settingsPanel.handleMessage({
+      await sendMessage({
         command: "fetchProjects",
         token: "APS-host",
         apiBaseUrl: server.baseUrl,
@@ -355,7 +382,7 @@ export async function run(): Promise<void> {
       assert.equal(projOk.projects.length, 1);
 
       server.failNextProjects();
-      await settingsPanel.handleMessage({
+      await sendMessage({
         command: "fetchProjects",
         token: "APS-host",
         apiBaseUrl: server.baseUrl,
@@ -380,7 +407,7 @@ export async function run(): Promise<void> {
         schemaFolderId: 0,
         enumFieldDoc: false,
       };
-      await settingsPanel.handleMessage({ command: "save", data: saveData });
+      await sendMessage({ command: "save", data: saveData });
       const saveOk = posted.at(-1)!;
       assert.equal(saveOk.command, "saveResult");
       assert.equal(saveOk.ok, true);
@@ -388,14 +415,14 @@ export async function run(): Promise<void> {
       assert.equal(vscode.workspace.getConfiguration("apifoxHelper").get("projectName"), "Host Project Saved");
 
       // 保存失败:缺少 token,应返回可见错误且不覆盖已保存的令牌
-      await settingsPanel.handleMessage({ command: "save", data: { ...saveData, token: "" } });
+      await sendMessage({ command: "save", data: { ...saveData, token: "" } });
       const saveFail = posted.at(-1)!;
       assert.equal(saveFail.command, "saveResult");
       assert.equal(saveFail.ok, false);
       assert.ok(String(saveFail.message).includes("令牌"), `失败应说明原因:${JSON.stringify(saveFail)}`);
       assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
     } finally {
-      webview.postMessage = originalPostMessage;
+      windowAny.createWebviewPanel = originalCreateWebviewPanel;
       settingsPanel.dispose();
     }
   } finally {
@@ -405,6 +432,6 @@ export async function run(): Promise<void> {
     windowAny.showInputBox = originals.showInputBox;
     windowAny.showQuickPick = originals.showQuickPick;
     windowAny.withProgress = originals.withProgress;
-    await server.close();
+    await server?.close();
   }
 }

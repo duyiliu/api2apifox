@@ -80,6 +80,10 @@ export class SchemaRegistry {
   private readonly byIdentity = new Map<string, string>();
   /** 构建前预留唯一名称;循环引用一旦使用该名称,整个构建过程不再重命名。 */
   private readonly pending = new Map<string, { name: string; referenced: boolean }>();
+  /** 基础组件名 -> 可空变体组件名(同一 DTO 的多个 Optional 复用) */
+  private readonly nullableByName = new Map<string, string>();
+  /** 基础组件尚在构建中时,可空变体先占名,待基础组件登记后填充 */
+  private readonly nullablePending = new Map<string, string>();
 
   /**
    * 取已存在的 $ref;不存在则用 make() 生成并登记。
@@ -115,15 +119,60 @@ export class SchemaRegistry {
         this.warnings.push(`同名类型冲突:${identity} 已登记为 ${name},以保留独立模型及循环引用`);
       }
       this.byIdentity.set(identity, name);
+      this.flushNullable(name);
       return refTo(name);
     } finally {
       this.pending.delete(identity);
     }
   }
 
+  /**
+   * 取/建可空变体组件。基础组件尚未登记(递归构建中)时先预留名称,
+   * 待基础组件完成后复制其 schema 并补 nullable/type,避免 allOf 继续强制非 null。
+   */
+  getOrAddNullableRef(baseName: string): JsonSchema {
+    const known = this.nullableByName.get(baseName);
+    if (known) {
+      return refTo(known);
+    }
+    const { name } = this.reserveName(`${baseName}Nullable`);
+    this.nullableByName.set(baseName, name);
+    const target = this.schemas[baseName];
+    if (target) {
+      this.registerNullable(name, target);
+    } else {
+      this.nullablePending.set(baseName, name);
+    }
+    return refTo(name);
+  }
+
+  private registerNullable(name: string, target: JsonSchema): void {
+    const clone = JSON.parse(JSON.stringify(target)) as JsonSchema;
+    clone.nullable = true;
+    if (!clone.type) {
+      clone.type = "object";
+    }
+    this.schemas[name] = clone;
+  }
+
+  private flushNullable(baseName: string): void {
+    const name = this.nullablePending.get(baseName);
+    if (!name) {
+      return;
+    }
+    this.nullablePending.delete(baseName);
+    const target = this.schemas[baseName];
+    if (target) {
+      this.registerNullable(name, target);
+    }
+  }
+
   /** 已登记和正在构建的名称均不可占用,保证递归中的类型身份不会发生碰撞。 */
   private reserveName(baseName: string): { name: string; candidates: [string, JsonSchema][] } {
-    const reserved = new Set([...this.pending.values()].map((entry) => entry.name));
+    const reserved = new Set([
+      ...[...this.pending.values()].map((entry) => entry.name),
+      ...this.nullablePending.values(),
+    ]);
     const candidates: [string, JsonSchema][] = [];
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? baseName : `${baseName}_${n}`;
@@ -502,10 +551,10 @@ function pageSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema |
 }
 
 /**
- * Optional<DTO> 的可空引用:组件已登记时复制其 schema 并标记 nullable,
- * 避免 `allOf: [{$ref}]` 继续施加非 null 约束(OpenAPI 3.0.3 的 allOf 交集语义)。
- * 复制体登记为独立组件(<Type>Nullable),既让 null 通过,也保留类型引用。
- * 递归中的组件尚未登记到 schemas,退回引用包装(调用方仍需尽量避免该边界)。
+ * Optional<DTO> 的可空引用:由注册表生成独立 <Type>Nullable 组件,
+ * 其 schema 复制自基础 DTO 并补 nullable/type,不使用 allOf,
+ * 因此 null 不会继续受被引用 DTO 的非空约束。递归构建中的基础组件会先占名,
+ * 完成后由注册表回填。
  */
 function nullableRefSchema(schema: JsonSchema, ctx: ResolveContext): JsonSchema | undefined {
   const prefix = "#/components/schemas/";
@@ -513,17 +562,7 @@ function nullableRefSchema(schema: JsonSchema, ctx: ResolveContext): JsonSchema 
   if (!ref?.startsWith(prefix)) {
     return undefined;
   }
-  const name = ref.slice(prefix.length);
-  const target = ctx.registry.schemas[name];
-  if (!target) {
-    return undefined;
-  }
-  const clone = JSON.parse(JSON.stringify(target)) as JsonSchema;
-  clone.nullable = true;
-  if (!clone.type) {
-    clone.type = "object";
-  }
-  return ctx.registry.getOrAdd(`nullable:${name}`, `${name}Nullable`, () => clone);
+  return ctx.registry.getOrAddNullableRef(ref.slice(prefix.length));
 }
 
 function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema | undefined {

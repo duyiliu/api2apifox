@@ -8,6 +8,37 @@ import { SourceFile } from "../java/model";
 
 const SAMPLE_ROOT = path.join(__dirname, "..", "..", "sample");
 
+/** OAS 3.0 nullable -> JSON Schema type:[T,null],供 Ajv 做实例级语义校验 */
+function oasToJsonSchema(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(oasToJsonSchema);
+  }
+  if (!node || typeof node !== "object") {
+    return node;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key !== "nullable") {
+      out[key] = oasToJsonSchema(value);
+    }
+  }
+  const record = node as Record<string, unknown>;
+  if (record.nullable === true && typeof record.type === "string") {
+    out.type = [record.type, "null"];
+  }
+  return out;
+}
+
+function compileOasSchema(schema: unknown, schemas: Record<string, unknown>) {
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  return ajv.compile({
+    ...(oasToJsonSchema(schema) as Record<string, unknown>),
+    components: {
+      schemas: Object.fromEntries(Object.entries(schemas).map(([name, value]) => [name, oasToJsonSchema(value)])),
+    },
+  });
+}
+
 function loadSample(): SourceFile[] {
   const out: SourceFile[] = [];
   const walk = (dir: string) => {
@@ -611,13 +642,63 @@ test("同名模型互相递归时双向引用保持各自类型身份", () => {
     const schemas = result.spec.components!.schemas;
     const operation = result.spec.paths["/nodes"].get as any;
     const refName = (schema: any) => (schema.$ref ?? schema.allOf[0].$ref).split("/").pop();
-    const start = refName(operation.responses["200"].content["*/*"].schema);
-    const next = refName(schemas[start].properties!.next);
+    // Optional 字段引用的是 <Type>Nullable 变体,比较类型身份时去掉该后缀
+    const baseName = (name: string) => name.replace(/Nullable$/, "");
+    const start = baseName(refName(operation.responses["200"].content["*/*"].schema));
+    const next = baseName(refName(schemas[start].properties!.next));
     assert.notEqual(start, next);
-    assert.equal(refName(schemas[next].properties!.next), start);
+    assert.equal(baseName(refName(schemas[next].properties!.next)), start);
     assert.ok((reverse ? "bOnly" : "aOnly") in schemas[start].properties!);
     assert.ok((reverse ? "aOnly" : "bOnly") in schemas[next].properties!);
   }
+});
+
+test("自递归 DTO 的 Optional 字段/集合元素/响应使用可空变体并接受 null", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/NodeController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class NodeController {
+  @GetMapping("/node")
+  public Node get() { return null; }
+
+  @GetMapping("/node-optional")
+  public java.util.Optional<Node> getOptional() { return null; }
+}
+
+class Node {
+  private String name;
+  private java.util.Optional<Node> parent;
+  private java.util.List<java.util.Optional<Node>> children;
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const node = schemas["Node"];
+  assert.equal(node.nullable, undefined, "基础 DTO 不应变成可空");
+  assert.equal(node.properties!.parent.$ref, "#/components/schemas/NodeNullable");
+  assert.equal(node.properties!.children.items!.$ref, "#/components/schemas/NodeNullable");
+  const optionalResponse = (res.spec.paths["/node-optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.equal(optionalResponse.$ref, "#/components/schemas/NodeNullable");
+
+  const nullable = schemas["NodeNullable"];
+  assert.equal(nullable.type, "object");
+  assert.equal(nullable.nullable, true);
+  assert.equal(nullable.allOf, undefined);
+  // 变体复制基础 DTO 的字段,递归字段继续指向可空变体
+  assert.equal(nullable.properties!.parent.$ref, "#/components/schemas/NodeNullable");
+  assert.equal(nullable.properties!.children.items!.$ref, "#/components/schemas/NodeNullable");
+
+  const validateNullable = compileOasSchema(nullable, schemas);
+  assert.equal(validateNullable(null), true, "自递归 Optional<DTO> 必须接受 null");
+  assert.equal(validateNullable({ name: "n" }), true);
+  assert.equal(validateNullable(42), false);
+  assert.equal(compileOasSchema(node, schemas)(null), false, "基础 DTO 不应接受 null");
 });
 
 test("泛型继承与自递归字段保留已绑定的嵌套类型身份", () => {
@@ -829,44 +910,18 @@ class Nested { private String x; }
 
   // 用 JSON Schema 校验器按 OAS 3.0 规则把 nullable+type 展开为 type:[T,null] 后验证实例:
   // 新表示接受 null;旧的 allOf + nullable 仍会被被引用的非 null DTO 拒绝。
-  const toJsonSchema = (node: unknown): unknown => {
-    if (Array.isArray(node)) {
-      return node.map(toJsonSchema);
-    }
-    if (!node || typeof node !== "object") {
-      return node;
-    }
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-      if (key !== "nullable") {
-        out[key] = toJsonSchema(value);
-      }
-    }
-    const record = node as Record<string, unknown>;
-    if (record.nullable === true && typeof record.type === "string") {
-      out.type = [record.type, "null"];
-    }
-    return out;
-  };
-  const jsonSchemas = Object.fromEntries(
-    Object.entries(schemas).map(([name, schema]) => [name, toJsonSchema(schema)])
-  );
-  const ajv = new Ajv({ strict: false, validateFormats: false });
-  const validateOptional = ajv.compile({
-    ...(toJsonSchema(nullableSchema) as Record<string, unknown>),
-    components: { schemas: jsonSchemas },
-  });
+  const validateOptional = compileOasSchema(nullableSchema, schemas);
   assert.equal(validateOptional(null), true, "Optional<DTO> 必须接受 null");
   assert.equal(validateOptional({ x: "ok" }), true);
   assert.equal(validateOptional("not-object"), false);
-  const validateOldAllOf = ajv.compile({
-    ...(toJsonSchema({
+  const validateOldAllOf = compileOasSchema(
+    {
       allOf: [{ $ref: "#/components/schemas/Nested" }],
       type: "object",
       nullable: true,
-    }) as Record<string, unknown>),
-    components: { schemas: jsonSchemas },
-  });
+    },
+    schemas
+  );
   assert.equal(validateOldAllOf(null), false, "allOf 包装仍会拒绝 null,故不能使用该表示");
   // 无额外元数据时保持简洁 $ref,不扩大文档体积
   assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
@@ -919,6 +974,9 @@ public class FlexController {
 public class RestrictedController {
   @RequestMapping("/path-only")
   public String pathOnly() { return null; }
+
+  @GetMapping("/get-under-post")
+  public String getUnderPost() { return null; }
 }
 
 @RestController
@@ -955,10 +1013,13 @@ public class IntersectController {
   assert.deepEqual(restricted.map((endpoint) => endpoint.method), ["POST"]);
   assert.equal(res.warnings.some((warning) => warning.includes("RestrictedController.pathOnly")), false);
 
-  // 类级声明多个 method 时,方法级显式 @PostMapping 取交集,不再额外生成 GET
-  const onlyPost = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/only-post");
-  assert.deepEqual(onlyPost.map((endpoint) => endpoint.method), ["POST"]);
+  // 类级 GET+POST 与方法级 @PostMapping 合并为 GET+POST(RequestMethodsRequestCondition.combine)
+  const mergedPost = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/only-post");
+  assert.deepEqual(mergedPost.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
   // 方法级未声明 method 时继承类级的 GET+POST
   const inherited = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/path-only");
   assert.deepEqual(inherited.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
+  // 类级 POST 与方法级 @GetMapping 合并为 POST+GET
+  const mergedGet = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/get-under-post");
+  assert.deepEqual(mergedGet.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
 });
