@@ -745,3 +745,57 @@ test("AnalyzeCache:文件集变化时清理不在新集合内的解析缓存", (
   cache.analyze([a, b], { title: "cache" });
   assert.equal(entries.size, 2, "文件回到集合后可正常重新解析");
 });
+
+test("路径变量正则约束被剥离,产出合法 OpenAPI 模板并关联 @PathVariable", () => {
+  const result = analyzeJavaSources({
+    RegexPathController: `package com.example;
+      import org.springframework.web.bind.annotation.*;
+      @RestController
+      @RequestMapping("/api/{version:\\\\d+}")
+      public class RegexPathController {
+        @GetMapping("/users/{id:\\\\d+}")
+        public String get(@PathVariable("version") int version, @PathVariable("id") Long id) { return null; }
+
+        @GetMapping("/names/{name:[a-z]+}/orders/{orderId:\\\\d{1,3}}")
+        public String names(@PathVariable String name, @PathVariable String orderId) { return null; }
+
+        @GetMapping("/plain/{id}")
+        public String plain(@PathVariable Long id) { return null; }
+
+        @GetMapping("/multi/{x}/{y}")
+        public String multi(@PathVariable String x, @PathVariable String y) { return null; }
+      }`,
+  });
+
+  assert.deepEqual(
+    result.endpoints.map((e) => `${e.method} ${e.path}`).sort(),
+    [
+      "GET /api/{version}/names/{name}/orders/{orderId}",
+      "GET /api/{version}/plain/{id}",
+      "GET /api/{version}/multi/{x}/{y}",
+      "GET /api/{version}/users/{id}",
+    ].sort()
+  );
+  assert.ok(result.endpoints.every((e) => !e.path.includes(":")));
+
+  const user = result.spec.paths["/api/{version}/users/{id}"].get as Record<string, any>;
+  assert.deepEqual(
+    user.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name).sort(),
+    ["id", "version"]
+  );
+
+  const names = result.spec.paths["/api/{version}/names/{name}/orders/{orderId}"].get as Record<string, any>;
+  assert.deepEqual(
+    names.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name).sort(),
+    ["name", "orderId"]
+  );
+
+  // 无正则的普通路径与多变量路径不回归
+  const plain = result.spec.paths["/api/{version}/plain/{id}"].get as Record<string, any>;
+  assert.equal(plain.parameters.find((p: any) => p.name === "id").in, "path");
+  const multi = result.spec.paths["/api/{version}/multi/{x}/{y}"].get as Record<string, any>;
+  assert.deepEqual(
+    multi.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name).sort(),
+    ["x", "y"]
+  );
+});

@@ -1184,7 +1184,62 @@ function joinPath(base: string, sub: string): string {
       .filter((s) => s && s !== "/")
       .map((s) => s.replace(/^\/+|\/+$/g, ""))
       .join("/");
-  return p.replace(/\/{2,}/g, "/") || "/";
+  return stripPathVariableRegex(p.replace(/\/{2,}/g, "/")) || "/";
+}
+
+/**
+ * 剥离路径变量上的正则约束:{id:\\d+} -> {id}(Spring/JAX-RS 均支持该写法)。
+ * OpenAPI 只允许 {name},保留正则会产出非法 paths key,且无法与 @PathVariable 名称关联。
+ * 正则段允许出现花括号量词(如 \\d{1,3}),按配对花括号找到模板结尾。
+ */
+function stripPathVariableRegex(path: string): string {
+  if (!path.includes(":")) {
+    return path;
+  }
+  let out = "";
+  let i = 0;
+  while (i < path.length) {
+    const open = path.indexOf("{", i);
+    if (open < 0) {
+      out += path.slice(i);
+      break;
+    }
+    const colon = path.indexOf(":", open + 1);
+    const close = path.indexOf("}", open + 1);
+    // {name} 没有正则约束:原样保留
+    if (colon < 0 || (close >= 0 && close < colon)) {
+      out += path.slice(i, open + 1);
+      i = open + 1;
+      continue;
+    }
+    const name = path.slice(open + 1, colon);
+    if (!name || /[{}:]/.test(name)) {
+      out += path.slice(i, open + 1);
+      i = open + 1;
+      continue;
+    }
+    let depth = 1;
+    let end = colon + 1;
+    for (; end < path.length; end++) {
+      if (path[end] === "{") {
+        depth++;
+      } else if (path[end] === "}") {
+        depth--;
+        if (!depth) {
+          break;
+        }
+      }
+    }
+    if (depth !== 0) {
+      // 未闭合的模板:保持原样,避免做出更坏的猜测
+      out += path.slice(i, open + 1);
+      i = open + 1;
+      continue;
+    }
+    out += path.slice(i, open + 1) + name + "}";
+    i = end + 1;
+  }
+  return out;
 }
 
 /** Java 原生类型(不含包装类与数组):query 参数缺失时无法绑定 null,按必填处理 */
