@@ -266,10 +266,51 @@ function enumSchema(info: ClassInfo): JsonSchema {
   return schema;
 }
 
-function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
+/** 类级 @JsonNaming 的命名策略;未识别/未配置时返回 undefined(保持原字段名) */
+function jsonNamingStrategy(annotations: AnnotationInfo[]): ((name: string) => string) | undefined {
+  const naming = findAnn(annotations, "JsonNaming");
+  if (!naming) {
+    return undefined;
+  }
+  const value = annStr(naming.args, "value");
+  if (!value) {
+    return undefined;
+  }
+  // 兼容 PropertyNamingStrategies.SnakeCaseStrategy.class 与旧版 PropertyNamingStrategy.SnakeCaseStrategy.class;
+  // jar 中的类常量可能使用 $ 分隔内部类,统一按最后一段策略名匹配。
+  const strategy = value.trim().replace(/\.class$/, "").split(/[.$]/).pop();
+  switch (strategy) {
+    case "SnakeCaseStrategy":
+      return (name) => delimitedLowerCase(name, "_");
+    case "KebabCaseStrategy":
+      return (name) => delimitedLowerCase(name, "-");
+    case "LowerCaseStrategy":
+      return (name) => name.toLowerCase();
+    case "UpperCamelCaseStrategy":
+    case "PascalCaseStrategy":
+      return (name) => (name ? name.charAt(0).toUpperCase() + name.slice(1) : name);
+    case "LowerDotCaseStrategy":
+      return (name) => delimitedLowerCase(name, ".");
+    default:
+      // 自定义/未知策略不做猜测,保持原字段名
+      return undefined;
+  }
+}
+
+/** userName -> user_name / user-name / user.name;已含分隔符或全小写的名称保持不变 */
+function delimitedLowerCase(name: string, delimiter: string): string {
+  return name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, `$1${delimiter}$2`)
+    .replace(/([a-z0-9])([A-Z])/g, `$1${delimiter}$2`)
+    .toLowerCase();
+}
+
+function classSchema(info: ClassInfo, ctx: ResolveContext, inheritedNaming?: (name: string) => string): JsonSchema {
   const fields: FieldInfo[] = info.fields.length ? info.fields : info.recordComponents;
   // 字段类型在**本类的作用域**下解析:同名嵌套类型优先于顶层类型(与 Java/PSI 一致)
   const classCtx: ResolveContext = { ...ctx, scope: typeScopeOf(info) };
+  // 自身注解优先;未声明时可继承父类策略,使子类模型(含子类自有字段)保持同一命名口径。
+  let naming = jsonNamingStrategy(info.annotations) ?? inheritedNaming;
 
   // 父类字段(含父类泛型绑定)
   const properties: Record<string, JsonSchema> = {};
@@ -285,7 +326,12 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
           supBindings.set(p, bindTypeArgument(supRef.args[i], classCtx));
         }
       });
-      const supSchema = classSchema(supInfo, { ...classCtx, bindings: supBindings });
+      const supNaming = jsonNamingStrategy(supInfo.annotations);
+      const supSchema = classSchema(supInfo, { ...classCtx, bindings: supBindings }, naming ?? supNaming);
+      if (!naming && supNaming) {
+        // 父类声明了 @JsonNaming 而子类未声明:子类字段沿用父类策略。
+        naming = supNaming;
+      }
       Object.assign(properties, supSchema.properties ?? {});
       required.push(...(supSchema.required ?? []));
     }
@@ -314,12 +360,12 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
     const jsonProp = findAnn(field.annotations, "JsonProperty");
     const gsonName = findAnn(field.annotations, "SerializedName");
     const fastName = findAnn(field.annotations, "JSONField");
-    const propName =
-      rule.fieldName ??
-      ((jsonProp ? annStr(jsonProp.args, "value", "name") : undefined) ??
-        (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
-        (fastName ? annStr(fastName.args, "name") : undefined) ??
-        field.name);
+    const explicitName =
+      (jsonProp ? annStr(jsonProp.args, "value", "name") : undefined) ??
+      (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
+      (fastName ? annStr(fastName.args, "name") : undefined);
+    // 优先级:字段规则 > 显式序列化注解 > 类级 @JsonNaming > Java 字段名
+    const propName = rule.fieldName ?? explicitName ?? (naming ? naming(field.name) : field.name);
     const schema = resolveTypeText(field.typeText, classCtx);
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
     const finalDesc = rule.appendDesc(desc, field, ctx);

@@ -135,7 +135,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - **文档注解**:OpenAPI 3(`@Operation/@Tag/@Parameter/@Schema`,支持 hidden)、Swagger 2(`@Api/@ApiOperation/@ApiModel/@ApiModelProperty/@ApiParam` 与 `@ApiImplicitParams/@ApiImplicitParam`)、Javadoc(`@param/@return`)
 - **Bean Validation**:`@NotNull/@NotBlank/@NotEmpty` → required,`@Size` → minLength/maxLength/minItems/maxItems,`@Min/@Max/@DecimalMin/@DecimalMax`(含 inclusive=false)→ minimum/maximum,`@Pattern` → pattern,`@Email` → format,`@Positive/@Negative` 等
-- **序列化注解**:Jackson `@JsonProperty/@JsonIgnore`、FASTJSON `@JSONField(name/serialize)`、GSON `@SerializedName`
+- **序列化注解**:Jackson `@JsonProperty/@JsonIgnore`、类级 `@JsonNaming`(SnakeCase/KebabCase/LowerCase/UpperCamelCase/LowerDotCase,兼容 `PropertyNamingStrategies` 与旧 `PropertyNamingStrategy`)、FASTJSON `@JSONField(name/serialize)`、GSON `@SerializedName`
 - **响应声明**:`@ApiResponses/@ApiResponse`(含 `@Schema(implementation=X.class)` 响应体)、`@ResponseStatus` → 额外状态码;`@Deprecated` → deprecated
 
 </details>
