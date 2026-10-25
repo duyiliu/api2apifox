@@ -228,8 +228,11 @@ test("继承字段合并:父类字段进入子类模型,泛型基类形参正确
 
 test("嵌套静态类与非 record 复合字段展开为独立数据模型", () => {
   const detail = spec.components!.schemas["UserDetailVO"];
-  assert.equal(detail.properties!.profile.$ref, "#/components/schemas/Profile");
-  assert.equal(detail.properties!.contact.$ref, "#/components/schemas/UserContactRecord");
+  // OpenAPI 3.0.3 会忽略 $ref 兄弟字段:带字段说明的引用类型改为 allOf 包装
+  assert.deepEqual(detail.properties!.profile.allOf, [{ $ref: "#/components/schemas/Profile" }]);
+  assert.equal(detail.properties!.profile.description, "档案信息");
+  assert.deepEqual(detail.properties!.contact.allOf, [{ $ref: "#/components/schemas/UserContactRecord" }]);
+  assert.equal(detail.properties!.contact.description, "联系方式");
 
   const profile = spec.components!.schemas["Profile"];
   assert.equal(profile.title, "Profile");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Module from "node:module";
 import * as vm from "node:vm";
+import { getNonce } from "../ui/nonce";
 
 /**
  * Webview 的 HTML 写在 TS 模板字面量里,而模板会吞掉单写的反斜杠:
@@ -76,4 +77,10 @@ test("webview:设置中心脚本引用的元素 id 在 HTML 中均存在", () =>
   ]);
   const missing = Array.from(referenced).filter((id) => !ids.has(id));
   assert.deepEqual(missing, [], `脚本引用了不存在的元素 id:${missing.join(", ")}`);
+});
+
+test("getNonce 生成 16 位随机 nonce(不依赖宿主全局 crypto)", () => {
+  const first = getNonce();
+  assert.match(first, /^[A-Za-z0-9]{16}$/);
+  assert.notEqual(first, getNonce());
 });

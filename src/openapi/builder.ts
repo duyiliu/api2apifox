@@ -1,5 +1,5 @@
 import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
-import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry } from "../java/schemaResolver";
+import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry, withRefSiblings } from "../java/schemaResolver";
 import { typeScopeOf } from "../java/typeIndex";
 import { HelperProperties } from "../config/helperProperties";
 
@@ -125,7 +125,8 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
       param.example = p.example;
     }
     if (p.defaultValue !== undefined) {
-      param.schema = { ...(param.schema as JsonSchema), default: p.defaultValue };
+      // @RequestParam(defaultValue) 同样不能写成 $ref 的兄弟字段
+      param.schema = withRefSiblings(param.schema as JsonSchema, { default: p.defaultValue });
     }
     return param;
   });

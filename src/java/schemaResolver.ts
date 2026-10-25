@@ -15,6 +15,8 @@ export interface JsonSchema {
   additionalProperties?: JsonSchema | boolean;
   enum?: string[];
   $ref?: string;
+  /** OpenAPI 3.0 中 $ref 的兄弟字段会被忽略,需包在 allOf 中承载描述/示例/约束 */
+  allOf?: JsonSchema[];
   nullable?: boolean;
   example?: string;
   title?: string;
@@ -50,6 +52,19 @@ function refTo(name: string): JsonSchema {
 }
 
 /**
+ * 给字段 schema 追加描述/示例/约束。OpenAPI 3.0.3 的 Reference Object
+ * 会忽略 $ref 的兄弟字段,因此引用类型必须改写为 `{ allOf: [{$ref}], ... }`,
+ * 否则 Apifox/严格校验器会把字段说明与约束丢掉。
+ */
+export function withRefSiblings(schema: JsonSchema, additions: Partial<JsonSchema>): JsonSchema {
+  if (!schema.$ref) {
+    return { ...schema, ...additions };
+  }
+  const { $ref, ...rest } = schema;
+  return { allOf: [{ $ref }], ...rest, ...additions };
+}
+
+/**
  * components/schemas 注册表。
  * 以「类型身份」(qualifiedName + 泛型实参)去重:同一类型只生成一份定义;
  * 不同类型的简单名相同时(如实体 `ExamProject` 与请求内嵌 `...SaveRequest.ExamProject`),
@@ -65,6 +80,10 @@ export class SchemaRegistry {
   private readonly byIdentity = new Map<string, string>();
   /** 构建前预留唯一名称;循环引用一旦使用该名称,整个构建过程不再重命名。 */
   private readonly pending = new Map<string, { name: string; referenced: boolean }>();
+  /** 基础组件名 -> 可空变体组件名(同一 DTO 的多个 Optional 复用) */
+  private readonly nullableByName = new Map<string, string>();
+  /** 基础组件尚在构建中时,可空变体先占名,待基础组件登记后填充 */
+  private readonly nullablePending = new Map<string, string>();
 
   /**
    * 取已存在的 $ref;不存在则用 make() 生成并登记。
@@ -100,15 +119,62 @@ export class SchemaRegistry {
         this.warnings.push(`同名类型冲突:${identity} 已登记为 ${name},以保留独立模型及循环引用`);
       }
       this.byIdentity.set(identity, name);
+      this.flushNullable(name);
       return refTo(name);
     } finally {
       this.pending.delete(identity);
     }
   }
 
+  /**
+   * 取/建可空变体组件。基础组件尚未登记(递归构建中)时先预留名称,
+   * 待基础组件完成后复制其 schema 并补 nullable/type,避免 allOf 继续强制非 null。
+   */
+  getOrAddNullableRef(baseName: string): JsonSchema {
+    const known = this.nullableByName.get(baseName);
+    if (known) {
+      return refTo(known);
+    }
+    const { name } = this.reserveName(`${baseName}Nullable`);
+    this.nullableByName.set(baseName, name);
+    const target = this.schemas[baseName];
+    if (target) {
+      this.registerNullable(name, target);
+    } else {
+      this.nullablePending.set(baseName, name);
+    }
+    return refTo(name);
+  }
+
+  private registerNullable(name: string, target: JsonSchema): void {
+    // 基础 schema 构建时,Optional 递归字段已指向本可空变体;
+    // 非 Optional 递归字段仍指向基础组件(它们本就不应接受 null)。
+    const clone = JSON.parse(JSON.stringify(target)) as JsonSchema;
+    clone.nullable = true;
+    if (!clone.type) {
+      clone.type = "object";
+    }
+    this.schemas[name] = clone;
+  }
+
+  private flushNullable(baseName: string): void {
+    const name = this.nullablePending.get(baseName);
+    if (!name) {
+      return;
+    }
+    this.nullablePending.delete(baseName);
+    const target = this.schemas[baseName];
+    if (target) {
+      this.registerNullable(name, target);
+    }
+  }
+
   /** 已登记和正在构建的名称均不可占用,保证递归中的类型身份不会发生碰撞。 */
   private reserveName(baseName: string): { name: string; candidates: [string, JsonSchema][] } {
-    const reserved = new Set([...this.pending.values()].map((entry) => entry.name));
+    const reserved = new Set([
+      ...[...this.pending.values()].map((entry) => entry.name),
+      ...this.nullablePending.values(),
+    ]);
     const candidates: [string, JsonSchema][] = [];
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? baseName : `${baseName}_${n}`;
@@ -320,17 +386,17 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
         (gsonName ? annStr(gsonName.args, "value", "name") : undefined) ??
         (fastName ? annStr(fastName.args, "name") : undefined) ??
         field.name);
-    const schema = resolveTypeText(field.typeText, classCtx);
+    let schema = resolveTypeText(field.typeText, classCtx);
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
     const finalDesc = rule.appendDesc(desc, field, ctx);
     if (finalDesc) {
-      schema.description = finalDesc;
+      schema = withRefSiblings(schema, { description: finalDesc });
     }
     const example = schemaExample(field.annotations);
     if (example) {
-      schema.example = example;
+      schema = withRefSiblings(schema, { example });
     }
-    applyConstraints(field.annotations, schema);
+    schema = applyConstraints(field.annotations, schema);
     properties[propName] = schema;
 
     let isRequired =
@@ -486,6 +552,21 @@ function pageSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema |
   return undefined;
 }
 
+/**
+ * Optional<DTO> 的可空引用:由注册表生成独立 <Type>Nullable 组件,
+ * 其 schema 复制自基础 DTO 并补 nullable/type,不使用 allOf,
+ * 因此 null 不会继续受被引用 DTO 的非空约束。递归构建中的基础组件会先占名,
+ * 完成后由注册表回填。
+ */
+function nullableRefSchema(schema: JsonSchema, ctx: ResolveContext): JsonSchema | undefined {
+  const prefix = "#/components/schemas/";
+  const ref = schema.$ref;
+  if (!ref?.startsWith(prefix)) {
+    return undefined;
+  }
+  return ctx.registry.getOrAddNullableRef(ref.slice(prefix.length));
+}
+
 function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchema | undefined {
   const prim = PRIMITIVES[name];
   if (prim) {
@@ -505,7 +586,14 @@ function builtinSchema(name: string, t: TypeRef, ctx: ResolveContext): JsonSchem
     return { type: "array", items: t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" } };
   }
   if (name === "Optional") {
-    return { ...(t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" }), nullable: true };
+    const inner = t.args[0] ? resolveType(t.args[0], ctx) : { type: "object" };
+    // OpenAPI 3.0.3 中 allOf 仍要求满足被引用的非 null DTO,包装层的 nullable 无法让 null 通过。
+    // 组件已构建时内联 DTO 并加 type/nullable,保证 Optional<DTO> 真正接受 null。
+    const nullableRef = nullableRefSchema(inner, ctx);
+    if (nullableRef) {
+      return nullableRef;
+    }
+    return withRefSiblings(inner, { nullable: true });
   }
   return undefined;
 }
@@ -540,7 +628,23 @@ export function isHidden(annotations: AnnotationInfo[]): boolean {
  * @Size -> minLength/maxLength/minItems/maxItems,@Min/@Max/@DecimalMin/@DecimalMax/@Positive... -> minimum/maximum,
  * @Pattern -> pattern,@Email -> format,@NotBlank/@NotEmpty -> minLength/minItems。
  */
+/** 会产生 JSON Schema 约束的注解;无这些注解时不需要把 $ref 包成 allOf */
+const CONSTRAINT_ANNOTATIONS = new Set([
+  "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+  "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+]);
+
 export function applyConstraints(annotations: AnnotationInfo[], schema: JsonSchema): JsonSchema {
+  if (!annotations.some((ann) => CONSTRAINT_ANNOTATIONS.has(ann.name))) {
+    return schema;
+  }
+  // Reference Object 在 OpenAPI 3.0.3 中不支持兄弟字段:先在原位包成 allOf,
+  // 参数(@ModelAttribute 等)与字段(@Size/@Min)共用同一套约束逻辑。
+  if (schema.$ref) {
+    const ref = schema.$ref;
+    delete schema.$ref;
+    schema.allOf = [{ $ref: ref }];
+  }
   const isString = schema.type === "string";
   const isArray = schema.type === "array";
 

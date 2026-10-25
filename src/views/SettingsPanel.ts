@@ -53,31 +53,43 @@ export class SettingsPanel {
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
 
     this._panel.webview.onDidReceiveMessage(
-      async (message) => {
-        switch (message.command) {
-          case "ready":
-            await this._sendInitData();
-            break;
-          case "testConnection":
-            await this._handleTestConnection(message.token, message.apiBaseUrl, message.requestKey);
-            break;
-          case "fetchProjects":
-            await this._handleFetchProjects(message.token, message.apiBaseUrl, message.teamId);
-            break;
-          case "save":
-            await this._handleSave(message.data);
-            break;
-          case "openHelp":
-            await vscode.env.openExternal(vscode.Uri.parse(TOKEN_HELP_URL));
-            break;
-          case "openAdvancedSettings":
-            await vscode.commands.executeCommand("workbench.action.openSettings", "apifoxHelper");
-            break;
-        }
-      },
+      (message) => this.handleMessage(message),
       null,
       this._disposables
     );
+  }
+
+  /** Webview 消息入口(公开以便 Extension Host smoke 直接驱动同一套逻辑) */
+  public async handleMessage(message: {
+    command?: string;
+    token?: string;
+    apiBaseUrl?: string;
+    requestKey?: string;
+    teamId?: number;
+    data?: Parameters<SettingsPanel["_handleSave"]>[0];
+  }): Promise<void> {
+    switch (message.command) {
+      case "ready":
+        await this._sendInitData();
+        break;
+      case "testConnection":
+        await this._handleTestConnection(message.token ?? "", message.apiBaseUrl ?? "", message.requestKey);
+        break;
+      case "fetchProjects":
+        await this._handleFetchProjects(message.token ?? "", message.apiBaseUrl ?? "", message.teamId ?? 0);
+        break;
+      case "save":
+        if (message.data) {
+          await this._handleSave(message.data);
+        }
+        break;
+      case "openHelp":
+        await vscode.env.openExternal(vscode.Uri.parse(TOKEN_HELP_URL));
+        break;
+      case "openAdvancedSettings":
+        await vscode.commands.executeCommand("workbench.action.openSettings", "apifoxHelper");
+        break;
+    }
   }
 
   private async _sendInitData(): Promise<void> {

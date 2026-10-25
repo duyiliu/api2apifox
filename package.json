@@ -15,6 +15,7 @@
     "url": "https://github.com/duyiliu/apifox-helper-vscode"
   },
   "engines": {
+    "node": ">=18",
     "vscode": "^1.85.0"
   },
   "categories": [
@@ -57,16 +58,19 @@
       },
       {
         "command": "apifoxHelper.syncWorkspace",
-        "title": "ApiGen for Apifox: 同步整个项目到 Apifox (Sync Workspace)"
+        "title": "ApiGen for Apifox: 同步整个项目到 Apifox (Sync Workspace)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.syncFile",
         "title": "ApiGen for Apifox: 同步当前文件到 Apifox (Sync This File)",
-        "icon": "$(cloud-upload)"
+        "icon": "$(cloud-upload)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.syncMethod",
-        "title": "ApiGen for Apifox: 同步光标处接口到 Apifox (Sync This Endpoint)"
+        "title": "ApiGen for Apifox: 同步光标处接口到 Apifox (Sync This Endpoint)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.exportOpenapi",
@@ -110,7 +114,8 @@
       {
         "command": "apifoxHelper.syncFolderApis",
         "title": "ApiGen for Apifox: 同步此目录全部接口到 Apifox",
-        "icon": "$(cloud-upload)"
+        "icon": "$(cloud-upload)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.checkFolderApis",
@@ -125,7 +130,8 @@
       {
         "command": "apifoxHelper.syncCheckedApis",
         "title": "ApiGen for Apifox: 同步勾选的接口到 Apifox (Sync Checked APIs)",
-        "icon": "$(cloud-upload)"
+        "icon": "$(cloud-upload)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.gotoEndpoint",
@@ -134,7 +140,8 @@
       {
         "command": "apifoxHelper.syncEndpoint",
         "title": "ApiGen for Apifox: 同步此接口到 Apifox",
-        "icon": "$(cloud-upload)"
+        "icon": "$(cloud-upload)",
+        "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.copyEndpointPath",
@@ -475,12 +482,15 @@
     "release:patch": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
-    "watch": "node esbuild.js --watch"
+    "watch": "node esbuild.js --watch",
+    "test:host": "npm run compile && npm run build:test && node out/test/host/runHostTest.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.0.0",
+    "ajv": "^8.20.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
   },

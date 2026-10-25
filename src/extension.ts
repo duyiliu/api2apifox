@@ -12,6 +12,7 @@ import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
 import { AnalyzeCache, endpointAt } from "./pipeline";
+import { createSingleFlight } from "./core/singleFlight";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
@@ -230,6 +231,13 @@ function withoutIgnoredSources(uris: vscode.Uri[], keepCheckoutOf?: vscode.Uri):
 
 export function activate(context: vscode.ExtensionContext): void {
   const secrets = context.secrets;
+  // 同步命令的上下文键:同步期间禁用入口,结束后恢复
+  const setSyncingContext = (syncing: boolean) => {
+    void vscode.commands.executeCommand("setContext", "apifoxHelper.syncing", syncing).then(undefined, () => undefined);
+  };
+  setSyncingContext(false);
+  // 批量/勾选/单文件/单接口/目录/状态栏菜单共用同一个 single-flight 实例
+  const syncFlight = createSingleFlight<void>(setSyncingContext);
   // 扩展停用时释放 jar 索引持有的 fd 并清空会话缓存
   context.subscriptions.push({
     dispose: () => {
@@ -342,78 +350,87 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   /** 同步一组接口(整包/单文件/单接口共用):先校验账号项目,再解析、确认并上传。 */
-  const doSync = async (
+  const doSync = (
     emptyHint: string,
     prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>,
     options: SyncOptions
-  ) => {
-    // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
-    const client = await makeClient();
-    if (!client) {
-      return;
-    }
-    const analyzed = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
-      (progress, token) => {
-        progress.report({ message: "扫描 Java 文件..." });
-        return prepare(token);
+  ): Promise<void> => {
+    return syncFlight.run(async () => {
+      try {
+        // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
+        const client = await makeClient();
+        if (!client) {
+          return;
+        }
+        const analyzed = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
+          (progress, token) => {
+            progress.report({ message: "扫描 Java 文件..." });
+            return prepare(token);
+          }
+        );
+        if (!analyzed) {
+          return;
+        }
+        if (!analyzed.endpoints.length) {
+          vscode.window.showWarningMessage(emptyHint);
+          return;
+        }
+        if (options.confirm) {
+          const settings = getSettings();
+          const picked = await vscode.window.showWarningMessage(
+            "确认批量同步到 Apifox？",
+            {
+              modal: true,
+              detail: buildSyncPreflightDetail({
+                teamName: settings.teamName ?? "",
+                projectName: settings.projectName ?? "",
+                projectId: settings.projectId,
+                scopeLabel: options.scopeLabel,
+                endpointCount: analyzed.endpoints.length,
+                endpointConflictBehavior: settings.endpointConflictBehavior,
+                schemaConflictBehavior: settings.schemaConflictBehavior,
+                visibleChecked: options.selection?.visible,
+                hiddenChecked: options.selection?.hidden,
+              }),
+            },
+            "开始同步"
+          );
+          if (picked !== "开始同步") {
+            return;
+          }
+        }
+        try {
+          const settings = getSettings();
+          const outcome = await syncToApifox(client, settings, analyzed);
+          // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
+          SyncResultPanel.createOrShow(
+            buildSyncReport({
+              counters: outcome.counters,
+              errors: outcome.errors,
+              warnings: analyzed.warnings,
+              endpoints: analyzed.endpoints,
+              target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
+              projectId: settings.projectId,
+              projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
+              scope: options.scopeLabel,
+              endpointConflictBehavior: settings.endpointConflictBehavior,
+              schemaConflictBehavior: settings.schemaConflictBehavior,
+              folderOf: folderKeyForTree,
+              workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+            })
+          );
+          showResult(outcome.message, () => SyncResultPanel.showLast());
+        } catch (err) {
+          vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
+        }
+      } catch (err) {
+        // 覆盖 token/解析/进度阶段的任意拒绝值,避免单飞 promise 把 rejection 抛给多个命令入口
+        vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
       }
-    );
-    if (!analyzed) {
-      return;
-    }
-    if (!analyzed.endpoints.length) {
-      vscode.window.showWarningMessage(emptyHint);
-      return;
-    }
-    if (options.confirm) {
-      const settings = getSettings();
-      const picked = await vscode.window.showWarningMessage(
-        "确认批量同步到 Apifox？",
-        {
-          modal: true,
-          detail: buildSyncPreflightDetail({
-            teamName: settings.teamName ?? "",
-            projectName: settings.projectName ?? "",
-            projectId: settings.projectId,
-            scopeLabel: options.scopeLabel,
-            endpointCount: analyzed.endpoints.length,
-            endpointConflictBehavior: settings.endpointConflictBehavior,
-            schemaConflictBehavior: settings.schemaConflictBehavior,
-            visibleChecked: options.selection?.visible,
-            hiddenChecked: options.selection?.hidden,
-          }),
-        },
-        "开始同步"
-      );
-      if (picked !== "开始同步") {
-        return;
-      }
-    }
-    try {
-      const settings = getSettings();
-      const outcome = await syncToApifox(client, settings, analyzed);
-      // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
-      SyncResultPanel.createOrShow(
-        buildSyncReport({
-          counters: outcome.counters,
-          errors: outcome.errors,
-          warnings: analyzed.warnings,
-          endpoints: analyzed.endpoints,
-          target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
-          projectId: settings.projectId,
-          projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
-          scope: options.scopeLabel,
-          endpointConflictBehavior: settings.endpointConflictBehavior,
-          schemaConflictBehavior: settings.schemaConflictBehavior,
-          folderOf: folderKeyForTree,
-          workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        })
-      );
-      showResult(outcome.message, () => SyncResultPanel.showLast());
-    } catch (err) {
-      vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
-    }
+    }, () => {
+      vscode.window.showInformationMessage("正在同步中，请等待当前同步完成");
+    });
   };
 
   /* ---------- 侧边栏「接口列表」树 ---------- */
@@ -820,21 +837,25 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("apifoxHelper.showStatusBarMenu", async () => {
       const settings = getSettings();
-      const items: (vscode.QuickPickItem & { action: () => void })[] = [
+      const syncing = syncFlight.isRunning();
+      const items: (vscode.QuickPickItem & { action: () => void; sync?: boolean })[] = [
         {
           label: "$(cloud-upload) 同步当前文件接口",
           description: "同步当前打开的 Java Controller 接口",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncFile"),
+          sync: true,
         },
         {
           label: "$(repo-sync) 同步工作区全部接口",
           description: "全量扫描并同步到 Apifox",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncWorkspace"),
+          sync: true,
         },
         {
           label: "$(check-all) 同步勾选的接口",
           description: "同步侧边栏已勾选的接口",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncCheckedApis"),
+          sync: true,
         },
         {
           label: "$(search) 搜索接口",
@@ -863,8 +884,12 @@ export function activate(context: vscode.ExtensionContext): void {
         },
       ];
 
-      const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+      // 同步期间隐藏同步选项(命令 enablement 管不到自定义 QuickPick),非同步操作保持可用
+      const visibleItems = syncing ? items.filter((item) => !item.sync) : items;
+      const picked = await vscode.window.showQuickPick(visibleItems, {
+        placeHolder: syncing
+          ? "ApiGen for Apifox: 正在同步中,同步选项暂不可用"
+          : `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
       });
       if (picked) {
         picked.action();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import Ajv from "ajv";
 import { test } from "node:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -6,6 +7,37 @@ import { analyze, analyzeSubset, AnalyzeCache } from "../pipeline";
 import { SourceFile } from "../java/model";
 
 const SAMPLE_ROOT = path.join(__dirname, "..", "..", "sample");
+
+/** OAS 3.0 nullable -> JSON Schema type:[T,null],供 Ajv 做实例级语义校验 */
+function oasToJsonSchema(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(oasToJsonSchema);
+  }
+  if (!node || typeof node !== "object") {
+    return node;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key !== "nullable") {
+      out[key] = oasToJsonSchema(value);
+    }
+  }
+  const record = node as Record<string, unknown>;
+  if (record.nullable === true && typeof record.type === "string") {
+    out.type = [record.type, "null"];
+  }
+  return out;
+}
+
+function compileOasSchema(schema: unknown, schemas: Record<string, unknown>) {
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  return ajv.compile({
+    ...(oasToJsonSchema(schema) as Record<string, unknown>),
+    components: {
+      schemas: Object.fromEntries(Object.entries(schemas).map(([name, value]) => [name, oasToJsonSchema(value)])),
+    },
+  });
+}
 
 function loadSample(): SourceFile[] {
   const out: SourceFile[] = [];
@@ -186,7 +218,9 @@ public class PatientController {
   ];
   const res = analyze(sources, { title: "t" });
   const outer = res.spec.components!.schemas["PatientSaveRequest"];
-  assert.equal(outer.properties!.healthProfile.$ref, "#/components/schemas/HealthProfileRequest");
+  assert.deepEqual(outer.properties!.healthProfile.allOf, [{ $ref: "#/components/schemas/HealthProfileRequest" }]);
+  assert.equal(outer.properties!.healthProfile.description, "当前健康档案");
+  assert.equal(outer.properties!.healthProfile.$ref, undefined);
   // 嵌套类自带类级注解描述,不被外层字段描述覆盖
   const inner = res.spec.components!.schemas["HealthProfileRequest"];
   assert.equal(inner.title, "HealthProfileRequest");
@@ -607,14 +641,118 @@ test("同名模型互相递归时双向引用保持各自类型身份", () => {
     });
     const schemas = result.spec.components!.schemas;
     const operation = result.spec.paths["/nodes"].get as any;
-    const refName = (schema: any) => schema.$ref.split("/").pop();
-    const start = refName(operation.responses["200"].content["*/*"].schema);
-    const next = refName(schemas[start].properties!.next);
+    const refName = (schema: any) => (schema.$ref ?? schema.allOf[0].$ref).split("/").pop();
+    // Optional 字段引用的是 <Type>Nullable 变体,比较类型身份时去掉该后缀
+    const baseName = (name: string) => name.replace(/Nullable$/, "");
+    const start = baseName(refName(operation.responses["200"].content["*/*"].schema));
+    const next = baseName(refName(schemas[start].properties!.next));
     assert.notEqual(start, next);
-    assert.equal(refName(schemas[next].properties!.next), start);
+    assert.equal(baseName(refName(schemas[next].properties!.next)), start);
     assert.ok((reverse ? "bOnly" : "aOnly") in schemas[start].properties!);
     assert.ok((reverse ? "aOnly" : "bOnly") in schemas[next].properties!);
   }
+});
+
+test("自递归 DTO 的 Optional 字段/集合元素/响应使用可空变体并接受 null", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/NodeController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class NodeController {
+  @GetMapping("/node")
+  public Node get() { return null; }
+
+  @GetMapping("/node-optional")
+  public java.util.Optional<Node> getOptional() { return null; }
+}
+
+class Node {
+  private String name;
+  private java.util.Optional<Node> parent;
+  private java.util.List<java.util.Optional<Node>> children;
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const node = schemas["Node"];
+  assert.equal(node.nullable, undefined, "基础 DTO 不应变成可空");
+  assert.equal(node.properties!.parent.$ref, "#/components/schemas/NodeNullable");
+  assert.equal(node.properties!.children.items!.$ref, "#/components/schemas/NodeNullable");
+  const optionalResponse = (res.spec.paths["/node-optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.equal(optionalResponse.$ref, "#/components/schemas/NodeNullable");
+
+  const nullable = schemas["NodeNullable"];
+  assert.equal(nullable.type, "object");
+  assert.equal(nullable.nullable, true);
+  assert.equal(nullable.allOf, undefined);
+  // 变体复制基础 DTO 的字段,递归字段继续指向可空变体
+  assert.equal(nullable.properties!.parent.$ref, "#/components/schemas/NodeNullable");
+  assert.equal(nullable.properties!.children.items!.$ref, "#/components/schemas/NodeNullable");
+
+  const validateNullable = compileOasSchema(nullable, schemas);
+  assert.equal(validateNullable(null), true, "自递归 Optional<DTO> 必须接受 null");
+  assert.equal(validateNullable({ name: "n" }), true);
+  assert.equal(validateNullable({ name: "n", parent: null, children: [null] }), true);
+  assert.equal(validateNullable({ name: "n", parent: { name: "p" }, children: [{ name: "c" }] }), true);
+  assert.equal(validateNullable({ name: "n", parent: 42 }), false);
+  assert.equal(validateNullable(42), false);
+  assert.equal(compileOasSchema(node, schemas)(null), false, "基础 DTO 不应接受 null");
+});
+
+test("互递归 DTO 的 Optional 集合元素与响应使用可空变体", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/MutualController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class MutualController {
+  @GetMapping("/a")
+  public A getA() { return null; }
+
+  @GetMapping("/a-optional")
+  public java.util.Optional<A> getOptionalA() { return null; }
+}
+
+class A {
+  private String aOnly;
+  private java.util.Optional<B> next;
+  private java.util.List<java.util.Optional<B>> links;
+}
+
+class B {
+  private String bOnly;
+  private A back;
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const a = schemas["A"];
+  assert.equal(a.nullable, undefined);
+  assert.equal(a.properties!.next.$ref, "#/components/schemas/BNullable");
+  assert.equal(a.properties!.links.items!.$ref, "#/components/schemas/BNullable");
+  const optionalResponse = (res.spec.paths["/a-optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.equal(optionalResponse.$ref, "#/components/schemas/ANullable");
+
+  for (const name of ["ANullable", "BNullable"]) {
+    const schema = schemas[name];
+    assert.equal(schema.type, "object", name);
+    assert.equal(schema.nullable, true, name);
+    assert.equal(schema.allOf, undefined, name);
+    const validate = compileOasSchema(schema, schemas);
+    assert.equal(validate(null), true, `${name} 必须接受 null`);
+    assert.equal(validate({ [name === "ANullable" ? "aOnly" : "bOnly"]: "x" }), true, `${name} 应接受有效 DTO`);
+  }
+  assert.equal(compileOasSchema(schemas["A"], schemas)(null), false);
+  assert.equal(compileOasSchema(schemas["B"], schemas)(null), false);
 });
 
 test("泛型继承与自递归字段保留已绑定的嵌套类型身份", () => {
@@ -744,4 +882,202 @@ test("AnalyzeCache:文件集变化时清理不在新集合内的解析缓存", (
 
   cache.analyze([a, b], { title: "cache" });
   assert.equal(entries.size, 2, "文件回到集合后可正常重新解析");
+});
+
+test("$ref 字段的说明/示例/约束使用 allOf 包装(OpenAPI 3.0.3 忽略 $ref 兄弟字段)", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/RefController.java",
+      content: `
+package com.example;
+import io.swagger.v3.oas.annotations.media.Schema;
+import javax.validation.constraints.Min;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/refs")
+public class RefController {
+  @PostMapping
+  public void save(@RequestBody Wrapper wrapper) { }
+
+  @GetMapping("/optional")
+  public java.util.Optional<Nested> optional() { return java.util.Optional.empty(); }
+}
+
+class Wrapper {
+  @Schema(description = "嵌套对象", example = "sample")
+  @Min(1)
+  private Nested nested;
+
+  private Nested plain;
+
+  private java.util.Optional<Nested> optional;
+
+  private java.util.List<java.util.Optional<Nested>> optionalList;
+}
+
+class Nested { private String x; }
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const wrapper = schemas["Wrapper"];
+  assert.deepEqual(wrapper.properties!.nested.allOf, [{ $ref: "#/components/schemas/Nested" }]);
+  assert.equal(wrapper.properties!.nested.$ref, undefined);
+  assert.equal(wrapper.properties!.nested.description, "嵌套对象");
+  assert.equal(wrapper.properties!.nested.example, "sample");
+  assert.equal(wrapper.properties!.nested.minimum, 1);
+  // Optional<DTO> 不能仅用 allOf + nullable(allOf 仍强制非 null DTO):
+  // 复制为非 nullable 约束的独立组件,并保留 $ref 类型身份
+  const nullableRef = "#/components/schemas/NestedNullable";
+  assert.equal(wrapper.properties!.optional.$ref, nullableRef);
+  assert.equal(wrapper.properties!.optionalList.items!.$ref, nullableRef);
+  const nullableSchema = schemas["NestedNullable"];
+  assert.equal(nullableSchema.type, "object");
+  assert.equal(nullableSchema.nullable, true);
+  assert.equal(nullableSchema.allOf, undefined);
+  assert.deepEqual(Object.keys(nullableSchema.properties!), ["x"]);
+  // 响应类型同样覆盖 Optional<DTO>
+  const optionalResponse = (res.spec.paths["/refs/optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.equal(optionalResponse.$ref, nullableRef);
+
+  // OpenAPI 3.0.3 语义:ref 需解引用;allOf 必须所有子 schema 接受 null;
+  // nullable 仅与同层显式 type 一起生效。
+  const acceptsNull = (schema: Record<string, any> | undefined): boolean => {
+    if (!schema) {
+      return false;
+    }
+    if (typeof schema.$ref === "string") {
+      return acceptsNull(schemas[schema.$ref.split("/").pop()!] as Record<string, any>);
+    }
+    if (Array.isArray(schema.allOf) && !schema.allOf.every(acceptsNull)) {
+      return false;
+    }
+    return schema.nullable === true && typeof schema.type === "string";
+  };
+  assert.equal(acceptsNull(wrapper.properties!.optional as Record<string, any>), true);
+  assert.equal(acceptsNull(wrapper.properties!.optionalList.items as Record<string, any>), true);
+  assert.equal(acceptsNull(optionalResponse as Record<string, any>), true);
+  assert.equal(acceptsNull(schemas["Nested"] as Record<string, any>), false, "基础 DTO 不应因此变成可空");
+
+  // 用 JSON Schema 校验器按 OAS 3.0 规则把 nullable+type 展开为 type:[T,null] 后验证实例:
+  // 新表示接受 null;旧的 allOf + nullable 仍会被被引用的非 null DTO 拒绝。
+  const validateOptional = compileOasSchema(nullableSchema, schemas);
+  assert.equal(validateOptional(null), true, "Optional<DTO> 必须接受 null");
+  assert.equal(validateOptional({ x: "ok" }), true);
+  assert.equal(validateOptional("not-object"), false);
+  const validateOldAllOf = compileOasSchema(
+    {
+      allOf: [{ $ref: "#/components/schemas/Nested" }],
+      type: "object",
+      nullable: true,
+    },
+    schemas
+  );
+  assert.equal(validateOldAllOf(null), false, "allOf 包装仍会拒绝 null,故不能使用该表示");
+  // 无额外元数据时保持简洁 $ref,不扩大文档体积
+  assert.equal(wrapper.properties!.plain.$ref, "#/components/schemas/Nested");
+
+  // 全量结构校验:OpenAPI 3.0.3 的 Reference Object 不允许任何兄弟字段
+  const assertNoRefSiblings = (node: unknown, path: string): void => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => assertNoRefSiblings(item, `${path}[${index}]`));
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (typeof record.$ref === "string") {
+      assert.deepEqual(Object.keys(record), ["$ref"], `$ref 同级字段会失效: ${path}`);
+      return;
+    }
+    if (record.nullable === true) {
+      // OpenAPI 3.0.3:nullable 只有与显式 type 位于同一 Schema Object 时才生效
+      assert.equal(typeof record.type, "string", `nullable 缺少显式 type: ${path}`);
+    }
+    for (const [key, value] of Object.entries(record)) {
+      assertNoRefSiblings(value, `${path}.${key}`);
+    }
+  };
+  assertNoRefSiblings(res.spec, "spec");
+});
+
+test("@RequestMapping 未声明 method 时输出常用 HTTP verb 集合,显式 method 不受影响", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/FlexController.java",
+      content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/flex")
+public class FlexController {
+  @RequestMapping("/all")
+  public String all() { return null; }
+
+  @RequestMapping(value = "/only", method = RequestMethod.POST)
+  public String only() { return null; }
+}
+
+@RestController
+@RequestMapping(path = "/api/restricted", method = RequestMethod.POST)
+public class RestrictedController {
+  @RequestMapping("/path-only")
+  public String pathOnly() { return null; }
+
+  @GetMapping("/get-under-post")
+  public String getUnderPost() { return null; }
+}
+
+@RestController
+@RequestMapping(path = "/api/intersect", method = { RequestMethod.GET, RequestMethod.POST })
+public class IntersectController {
+  @PostMapping("/only-post")
+  public String onlyPost() { return null; }
+
+  @RequestMapping("/path-only")
+  public String pathOnly() { return null; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const methods = res.endpoints
+    .filter((endpoint) => endpoint.path === "/api/flex/all")
+    .map((endpoint) => endpoint.method)
+    .sort();
+  assert.deepEqual(methods, ["DELETE", "GET", "PATCH", "POST", "PUT"]);
+  for (const method of methods) {
+    assert.ok((res.spec.paths["/api/flex/all"] as Record<string, unknown>)[method.toLowerCase()]);
+  }
+  assert.ok(
+    res.warnings.some((warning) => warning.includes("FlexController.all") && warning.includes("未声明 method")),
+    "未声明 method 时应产生可定位的告警"
+  );
+  // 显式声明 method 时仍只生成声明的 verb
+  const only = res.endpoints.filter((endpoint) => endpoint.path === "/api/flex/only");
+  assert.deepEqual(only.map((endpoint) => endpoint.method), ["POST"]);
+
+  // 类级 method 限制与方法级仅声明路径的 @RequestMapping 合并,不应补出错误 verb
+  const restricted = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/path-only");
+  assert.deepEqual(restricted.map((endpoint) => endpoint.method), ["POST"]);
+  assert.equal(res.warnings.some((warning) => warning.includes("RestrictedController.pathOnly")), false);
+
+  // 类级 GET+POST 限制与方法级 @PostMapping 收敛为 POST
+  const mergedPost = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/only-post");
+  assert.deepEqual(mergedPost.map((endpoint) => endpoint.method), ["POST"]);
+  // 方法级未声明 method 时继承类级的 GET+POST
+  const inherited = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/path-only");
+  assert.deepEqual(inherited.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
+  // 类级 POST 与方法级 @GetMapping 无交集:不生成接口并告警
+  const emptyIntersection = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/get-under-post");
+  assert.deepEqual(emptyIntersection, []);
+  assert.ok(
+    res.warnings.some((warning) => warning.includes("RestrictedController.getUnderPost") && warning.includes("无交集")),
+    "无交集时应产生可定位告警"
+  );
 });
