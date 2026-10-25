@@ -85,7 +85,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 | 能力 | 说明 |
 | --- | --- |
-| **接口识别** | Spring MVC、Spring Cloud OpenFeign、JAX-RS、Actuator 自定义端点 |
+| **接口识别** | Spring MVC、Spring Cloud OpenFeign、Spring 6 `@HttpExchange`(默认关)、JAX-RS、Actuator 自定义端点 |
 | **参数解析** | 常用 Spring MVC 注解、`MultipartFile`、`Pageable`;无注解简单类型按 Spring 默认规则 |
 | **模型展开** | DTO 递归展开(含静态内部类)、泛型实例化、`ResponseEntity`/`Mono`/`Flux` 解包、枚举、继承合并、循环引用 |
 | **分页包装** | `PageInfo`、MyBatis-Plus `IPage`、Spring Data `Page`/`PageImpl`/`Slice` 自动展开 |
@@ -98,6 +98,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - **Spring MVC**:`@RestController`/`@Controller` + `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping/@RequestMapping`
 - **Spring Cloud OpenFeign**:`@FeignClient` 接口
+- **Spring 6 声明式 HTTP 客户端(默认关闭)**:`@HttpExchange` + `@GetExchange/@PostExchange/@PutExchange/@DeleteExchange/@PatchExchange`;路径支持 `value`/`url`,`accept`/`contentType` 映射 produces/consumes。开启 `apifoxHelper.includeHttpExchange` 后才会识别,避免把「我方消费」的出站契约与「我方提供」的服务端接口混在同一目录
 - **JAX-RS**:`@Path/@GET/@POST/@QueryParam/@PathParam/@HeaderParam/@DefaultValue/@Consumes/@Produces`
 - **Actuator 自定义端点**:`@Endpoint` + `@ReadOperation/@WriteOperation/@DeleteOperation` + `@Selector`
 - **继承接口**:方法声明在抽象父类/接口上时按具体 Controller 展开(子类覆写优先;覆写未重声明映射时回退父类声明);类级路径前缀取继承链上最近的一处(Spring `findMergedAnnotation` 口径,不叠加)
@@ -188,6 +189,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.folderNameSource` | `tag` | 接口目录命名来源:`tag`(@Tag 注解,缺省类名)或 `controller`(类名) |
 | `apifoxHelper.helperProperties.enabled` | `true` | 是否识别工作区 `.apifox-helper.properties` 规则 |
 | `apifoxHelper.helperProperties.enumFieldDoc` | `false` | 枚举字段自动在描述后追加「(枚举类:类名)」 |
+| `apifoxHelper.includeHttpExchange` | `false` | 是否识别 Spring 6 `@HttpExchange` 声明式 HTTP 客户端接口(出站契约);默认关闭 |
 | `apifoxHelper.dependencyRepos` | `[]` | 可选兜底:额外本地 Maven 仓库目录(默认已自动发现 JetBrains MAVEN_REPOSITORY/IDEA 索引/`~/.m2`) |
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |

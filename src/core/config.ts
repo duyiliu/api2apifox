@@ -20,6 +20,7 @@ interface FileConfig {
   rootFolderName?: unknown;
   schemaFolderId?: unknown;
   helperProperties?: unknown;
+  includeHttpExchange?: unknown;
   dependencyRepos?: unknown;
   dependencyJars?: unknown;
   maxDependencyJars?: unknown;
@@ -44,6 +45,7 @@ export interface ConfigOverrides {
   schemaFolderId?: number;
   helperPropertiesEnabled?: boolean;
   enumFieldDoc?: boolean;
+  includeHttpExchange?: boolean;
   dependencyRepos?: string[];
   dependencyJars?: string[];
   maxDependencyJars?: number;
@@ -98,6 +100,7 @@ export function resolveConfig(
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
+    includeHttpExchange: false,
     dependencyRepos: [],
     dependencyJars: [],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
@@ -129,6 +132,7 @@ export function resolveConfig(
   applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
+  applyFile(config, sources, "includeHttpExchange", booleanValue(fileConfig.includeHttpExchange, "includeHttpExchange", diagnostics), fileSource);
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
@@ -190,6 +194,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
     "rootFolderName",
     "schemaFolderId",
     "helperProperties",
+    "includeHttpExchange",
     "dependencyRepos",
     "dependencyJars",
     "maxDependencyJars",

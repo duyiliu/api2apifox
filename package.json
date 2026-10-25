@@ -439,6 +439,11 @@
           "default": false,
           "description": "字段类型为枚举时,自动在字段描述后追加「(枚举类:类名)」。对应团队 groovy 规则意图,默认关。"
         },
+        "apifoxHelper.includeHttpExchange": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否识别 Spring 6 @HttpExchange/@GetExchange 等声明式 HTTP 客户端接口。这些是出站调用契约(我方消费),默认关闭以免与服务端接口混在同一目录。"
+        },
         "apifoxHelper.dependencyRepos": {
           "type": "array",
           "items": {

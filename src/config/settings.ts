@@ -24,6 +24,8 @@ export interface ApifoxSettings {
   helperProperties: boolean;
   /** 枚举字段自动追加「(枚举类:X)」(默认 false,对应团队 groovy 规则意图) */
   enumFieldDoc: boolean;
+  /** 是否识别 Spring 6 @HttpExchange 声明式 HTTP 客户端接口(默认 false) */
+  includeHttpExchange: boolean;
   /** 额外的本地 Maven 仓库目录(自动发现 ~/.m2 之外再补充,如 D:/repository) */
   dependencyRepos: string[];
   /** 显式依赖 jar 路径(优先于仓库发现) */
@@ -53,6 +55,7 @@ export function getSettings(): ApifoxSettings {
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
     helperProperties: cfg.get<boolean>("helperProperties.enabled", true),
     enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
+    includeHttpExchange: cfg.get<boolean>("includeHttpExchange", false),
     dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
     dependencyJars: cfg.get<string[]>("dependencyJars", []),
     maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),

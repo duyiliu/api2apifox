@@ -91,7 +91,7 @@ export interface ResponseInfo {
 }
 
 /** 接口来源风格 */
-export type EndpointFlavor = "spring-mvc" | "jaxrs" | "feign" | "actuator";
+export type EndpointFlavor = "spring-mvc" | "jaxrs" | "feign" | "http-exchange" | "actuator";
 
 export interface EndpointInfo {
   /** GET/POST/... */
@@ -121,7 +121,7 @@ export interface EndpointInfo {
   ownerFsPath?: string;
   /** 方法实际声明类型(继承接口为父类型名;用于按声明处作用域解析签名中的类型) */
   declaringType?: string;
-  /** spring-mvc / jaxrs / feign / actuator */
+  /** spring-mvc / jaxrs / feign / http-exchange / actuator */
   flavor: EndpointFlavor;
   /** 额外响应(@ApiResponse/@ResponseStatus 等) */
   extraResponses?: ResponseInfo[];

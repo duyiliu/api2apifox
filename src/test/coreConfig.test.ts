@@ -67,6 +67,17 @@ test("maxDependencyJars:配置文件生效、默认值与非法值校验", () =>
   assert.throws(() => resolveConfig(bad), /maxDependencyJars 必须是大于等于 0 的整数/);
 });
 
+test("includeHttpExchange:默认关闭,可由配置文件开启", () => {
+  const root = temporaryProject();
+  fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ includeHttpExchange: true }));
+  const resolved = resolveConfig(root);
+  assert.equal(resolved.config.includeHttpExchange, true);
+  assert.match(resolved.sources.includeHttpExchange, /^file:/);
+
+  const empty = temporaryProject();
+  assert.equal(resolveConfig(empty).config.includeHttpExchange, false);
+});
+
 test("严格拒绝未知配置字段", () => {
   const root = temporaryProject();
   fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ projectID: 42 }));

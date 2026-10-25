@@ -62,3 +62,33 @@ test("--endpoint 精确匹配 METHOD PATH", async () => {
   assert.equal(result.endpoints[0].method, "GET");
   assert.equal(result.endpoints[0].path, "/api/v1/users");
 });
+
+test("includeHttpExchange 默认关闭,开启后识别 Spring 6 @HttpExchange 客户端", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-exchange-"));
+  try {
+    const dir = path.join(root, "src/main/java/demo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "OrderClient.java"),
+      `package demo;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.service.annotation.GetExchange;
+import org.springframework.web.service.annotation.HttpExchange;
+@HttpExchange("/order")
+public interface OrderClient {
+  @GetExchange("/{id}")
+  String get(@PathVariable("id") Long id);
+}
+`
+    );
+    const base = { include: ["**/*.java"], exclude: [] };
+    const off = await analyzeProject({ config: resolveConfig(root, base).config });
+    assert.equal(off.endpoints.length, 0, "默认关闭时不应产出 HttpExchange 接口");
+
+    const on = await analyzeProject({ config: resolveConfig(root, { ...base, includeHttpExchange: true }).config });
+    assert.deepEqual(on.endpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`), ["GET /order/{id}"]);
+    assert.equal(on.endpoints[0].flavor, "http-exchange");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

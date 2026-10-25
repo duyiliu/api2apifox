@@ -311,8 +311,9 @@ export function activate(context: vscode.ExtensionContext): void {
       pageStyle: settings.pageTypeStyle,
       rules: await loadHelperProperties(),
       enumFieldDoc: settings.enumFieldDoc,
-      // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
-      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey].join("\u0000"),
+      includeHttpExchange: settings.includeHttpExchange,
+      // 目录命名、依赖 jar 索引与 HttpExchange 开关无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
+      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, settings.includeHttpExchange, activeJarIndexKey].join("\u0000"),
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
       folderOf: (ep: { tag: string; controller: string }) => {
         const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
@@ -436,6 +437,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "apifoxHelper.rootFolderName",
     "apifoxHelper.helperProperties.enabled",
     "apifoxHelper.helperProperties.enumFieldDoc",
+    "apifoxHelper.includeHttpExchange",
     "apifoxHelper.dependencyRepos",
     "apifoxHelper.dependencyJars",
   ];
@@ -946,7 +948,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 用全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
-      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async (token) => {
+      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path;识别 @HttpExchange 客户端接口需开启 apifoxHelper.includeHttpExchange)", async (token) => {
         const allFiles = await collectFiles(undefined, token, target);
         if (!allFiles) {
           return undefined;
@@ -977,7 +979,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!files?.length) {
         return;
       }
-      const allEndpoints = cache.endpointsOfFile(files[0].fsPath, files[0].content);
+      const allEndpoints = cache.endpointsOfFile(files[0].fsPath, files[0].content, getSettings().includeHttpExchange);
       const endpoint = endpointAt(allEndpoints, files[0].fsPath, pos);
       if (!endpoint) {
         vscode.window.showWarningMessage("光标附近未发现 REST 接口方法");
@@ -1038,7 +1040,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         let endpoints;
         try {
-          endpoints = cache.endpointsOfFile(document.uri.fsPath, document.getText());
+          endpoints = cache.endpointsOfFile(document.uri.fsPath, document.getText(), settings.includeHttpExchange);
         } catch {
           return [];
         }

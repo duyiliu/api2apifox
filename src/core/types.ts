@@ -27,6 +27,8 @@ export interface ResolvedConfig {
   schemaFolderId: number;
   helperPropertiesEnabled: boolean;
   enumFieldDoc: boolean;
+  /** 是否识别 Spring 6 @HttpExchange 声明式 HTTP 客户端接口(默认 false) */
+  includeHttpExchange: boolean;
   dependencyRepos: string[];
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */

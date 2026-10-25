@@ -69,6 +69,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
+  "includeHttpExchange": false,
   "helperProperties": {
     "enabled": true,
     "enumFieldDoc": false

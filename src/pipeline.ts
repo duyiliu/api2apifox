@@ -34,6 +34,8 @@ export interface AnalyzeOptions {
   rules?: HelperProperties;
   /** 枚举字段自动追加「(枚举类:X)」(默认关) */
   enumFieldDoc?: boolean;
+  /** 是否识别 Spring 6 @HttpExchange 声明式 HTTP 客户端接口(默认关) */
+  includeHttpExchange?: boolean;
   /** 接口目录:x-apifox-folder(优先于 tags 用于 Apifox 建目录) */
   folderOf?: (ep: EndpointInfo) => string;
   /** 源码未覆盖的类型,从依赖 jar 的 .class 按需解析(框架类识别) */
@@ -82,7 +84,9 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
   const parsed = files.map((f) => parseJava(f.fsPath, f.content));
   const index = buildIndex(parsed);
   index.jarLookup = options.jarLookup;
-  const parseResult = parseControllers(parsed, options.rules, index);
+  const parseResult = parseControllers(parsed, options.rules, index, {
+    includeHttpExchange: options.includeHttpExchange,
+  });
   const all = dedupeEndpoints(parseResult.endpoints);
   const kept = endpointFilter ? all.filter(endpointFilter) : all;
   const filtered = { ...parseResult, endpoints: kept };
@@ -115,6 +119,7 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
     opts.title,
     opts.pageStyle ?? "",
     opts.enumFieldDoc ?? false,
+    opts.includeHttpExchange ?? false,
     opts.cacheKey ?? "",
     opts.rules
       ? {
@@ -201,7 +206,9 @@ export class AnalyzeCache {
     }
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
-    const parseResult = parseControllers(parsed, opts.rules, index);
+    const parseResult = parseControllers(parsed, opts.rules, index, {
+      includeHttpExchange: opts.includeHttpExchange,
+    });
     const all = dedupeEndpoints(parseResult.endpoints);
     const kept = endpointFilter ? all.filter(endpointFilter) : all;
     const deduped = { ...parseResult, endpoints: kept };
@@ -231,14 +238,14 @@ export class AnalyzeCache {
   }
 
   /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存并推进代际,防止结果缓存漏失效 */
-  endpointsOfFile(fsPath: string, content: string): EndpointInfo[] {
+  endpointsOfFile(fsPath: string, content: string, includeHttpExchange = false): EndpointInfo[] {
     const hit = this.cache.get(fsPath);
     if (hit && hit.content === content) {
-      return parseControllers([hit.parsed]).endpoints;
+      return parseControllers([hit.parsed], undefined, undefined, { includeHttpExchange }).endpoints;
     }
     const parsed = parseJava(fsPath, content);
     this.remember(fsPath, content, parsed);
-    return parseControllers([parsed]).endpoints;
+    return parseControllers([parsed], undefined, undefined, { includeHttpExchange }).endpoints;
   }
 }
 

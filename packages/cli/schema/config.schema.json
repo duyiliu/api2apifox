@@ -26,6 +26,7 @@
         "enumFieldDoc": { "type": "boolean" }
       }
     },
+    "includeHttpExchange": { "type": "boolean" },
     "dependencyRepos": { "type": "array", "items": { "type": "string" } },
     "dependencyJars": { "type": "array", "items": { "type": "string" } },
     "maxDependencyJars": { "type": "integer", "minimum": 0 },

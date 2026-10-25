@@ -20,6 +20,15 @@ const SPRING_MAPPINGS: Record<string, string[]> = {
 };
 const SPRING_MAPPING_NAMES = [...Object.keys(SPRING_MAPPINGS), "RequestMapping"];
 
+/** Spring 6 声明式 HTTP 客户端方法级注解 -> HTTP 动词 */
+const HTTP_EXCHANGE_METHODS: Record<string, string> = {
+  GetExchange: "GET",
+  PostExchange: "POST",
+  PutExchange: "PUT",
+  DeleteExchange: "DELETE",
+  PatchExchange: "PATCH",
+};
+
 const JAXRS_METHODS: Record<string, string> = {
   GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
 };
@@ -52,11 +61,23 @@ function toMimeType(raw: string): string {
 }
 
 /**
- * 解析 REST 接口:Spring MVC Controller、OpenFeign 接口、JAX-RS 资源类、Actuator @Endpoint。
+ * 解析 REST 接口:Spring MVC Controller、OpenFeign 接口、Spring 6 @HttpExchange 客户端接口(可选)、
+ * JAX-RS 资源类、Actuator @Endpoint。
  * 接口方法可声明在抽象父类或接口中(继承),按 Spring handler 类型及其父类/接口的口径展开;
  * 单文件解析(无类型索引,如 CodeLens)时退化为仅解析本类声明的方法。
  */
-export function parseControllers(files: ParsedFile[], rules?: HelperProperties, index?: TypeIndex): ParseResult {
+export interface ControllerParseOptions {
+  /** 是否识别 Spring 6 @HttpExchange 声明式 HTTP 客户端接口(默认关闭,避免与服务端接口混淆) */
+  includeHttpExchange?: boolean;
+}
+
+export function parseControllers(
+  files: ParsedFile[],
+  rules?: HelperProperties,
+  index?: TypeIndex,
+  options?: ControllerParseOptions
+): ParseResult {
+  const includeHttpExchange = options?.includeHttpExchange === true;
   const endpoints: EndpointInfo[] = [];
   const ruleWarnings: string[] = [];
   const warnings: string[] = [];
@@ -78,7 +99,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       const hierarchy = [site, ...chain];
 
       // 类型风格判定:具体类型优先,抽象基类标注 @RestController 时由父类兜底
-      const flavor = detectFlavor(site, chain);
+      const flavor = detectFlavor(site, chain, includeHttpExchange);
       if (!flavor) {
         continue;
       }
@@ -155,6 +176,10 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       // JAX-RS 类级 @Consumes/@Produces 对所有方法生效(方法级优先)
       const classConsumes = annArray(findAnn(typeAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType);
       const classProduces = annArray(findAnn(typeAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType);
+      // Spring 6 @HttpExchange 类级 contentType/accept 映射 consumes/produces(方法级优先)
+      const classExchange = flavor === "http-exchange" ? findExchangeAnnotation(hierarchy) : undefined;
+      const classExchangeConsumes = exchangeArgsOf(classExchange, "contentType");
+      const classExchangeProduces = exchangeArgsOf(classExchange, "accept");
 
       // 收集方法:本类声明的 + 继承链上未被覆写的父类/接口方法(具体类型优先)
       const methodHits = collectMethodHits(site, chain);
@@ -304,8 +329,13 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
           continue;
         }
         settledSignatures.add(signature);
-        const consumes = annArray(findAnn(methodAnnotations, "Consumes")?.args ?? {}, "value").map(toMimeType).concat(classConsumes);
-        const produces = annArray(findAnn(methodAnnotations, "Produces")?.args ?? {}, "value").map(toMimeType).concat(classProduces);
+        const exchangeMapping = flavor === "http-exchange" ? findExchangeMethodAnnotation(methodAnnotations) : undefined;
+        const consumes = annArray(findAnn(methodAnnotations, "Consumes")?.args ?? {}, "value")
+          .map(toMimeType)
+          .concat(classConsumes, exchangeArgsOf(exchangeMapping, "contentType"), classExchangeConsumes);
+        const produces = annArray(findAnn(methodAnnotations, "Produces")?.args ?? {}, "value")
+          .map(toMimeType)
+          .concat(classProduces, exchangeArgsOf(exchangeMapping, "accept"), classExchangeProduces);
 
         for (const m of mappings) {
           for (const mp of m.paths) {
@@ -470,13 +500,16 @@ function superTypeChain(root: TypeSite, sites: Map<string, TypeSite>): TypeSite[
 }
 
 /** 类型风格判定:具体类型优先;抽象基类标注 @RestController/@Controller 时由父类兜底 */
-function detectFlavor(site: TypeSite, chain: TypeSite[]): EndpointFlavor | undefined {
+function detectFlavor(site: TypeSite, chain: TypeSite[], includeHttpExchange: boolean): EndpointFlavor | undefined {
   const probe = (s: TypeSite): EndpointFlavor | undefined => {
     if (findAnn(s.typeAnnotations, "RestController", "Controller")) {
       return "spring-mvc";
     }
     if (s.isInterface && findAnn(s.typeAnnotations, "FeignClient")) {
       return "feign";
+    }
+    if (includeHttpExchange && findAnn(s.typeAnnotations, "HttpExchange")) {
+      return "http-exchange";
     }
     if (findAnn(s.typeAnnotations, "Path")) {
       return "jaxrs";
@@ -491,12 +524,40 @@ function detectFlavor(site: TypeSite, chain: TypeSite[]): EndpointFlavor | undef
     return own;
   }
   for (const s of chain) {
-    const inherited = s.isInterface ? undefined : probe(s);
-    if (inherited === "spring-mvc") {
+    // 只有 HttpExchange 允许从接口父类型继承;Feign/JAX-RS 仍以具体类型声明为准
+    if (s.isInterface) {
+      if (includeHttpExchange && findAnn(s.typeAnnotations, "HttpExchange")) {
+        return "http-exchange";
+      }
+      continue;
+    }
+    const inherited = probe(s);
+    if (inherited === "spring-mvc" || inherited === "http-exchange") {
       return inherited;
     }
   }
   return undefined;
+}
+
+/** 继承链上最近的 @HttpExchange(类级路径与 contentType/accept 用) */
+function findExchangeAnnotation(hierarchy: TypeSite[]): AnnotationInfo | undefined {
+  for (const s of hierarchy) {
+    const ann = findAnn(s.typeAnnotations, "HttpExchange");
+    if (ann) {
+      return ann;
+    }
+  }
+  return undefined;
+}
+
+/** 方法级 @GetExchange/@PostExchange/... 或兜底 @HttpExchange */
+function findExchangeMethodAnnotation(annotations: AnnotationInfo[]): AnnotationInfo | undefined {
+  return findAnn(annotations, ...Object.keys(HTTP_EXCHANGE_METHODS)) ?? findAnn(annotations, "HttpExchange");
+}
+
+/** @HttpExchange 的 accept/contentType -> mime 数组 */
+function exchangeArgsOf(ann: AnnotationInfo | undefined, key: "accept" | "contentType"): string[] {
+  return ann ? annArray(ann.args, key).map(toMimeType) : [];
 }
 
 /** 类级路径前缀:取继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径,不叠加) */
@@ -514,8 +575,16 @@ function classBasePaths(hierarchy: TypeSite[], flavor: EndpointFlavor): string[]
     }
     return [""];
   }
-  // spring-mvc / feign
+  // spring-mvc / feign / http-exchange
   for (const s of hierarchy) {
+    if (flavor === "http-exchange") {
+      const exchange = findAnn(s.typeAnnotations, "HttpExchange");
+      if (exchange) {
+        return exchangePathArgsOf(exchange);
+      }
+      // HttpExchange 的类级前缀只看继承链上的 HttpExchange,不与 RequestMapping 混用
+      continue;
+    }
     const classMapping = findAnn(s.typeAnnotations, "RequestMapping");
     if (classMapping) {
       return pathArgsOf(classMapping);
@@ -661,6 +730,22 @@ function resolveMapping(annotations: AnnotationInfo[], flavor: EndpointFlavor): 
     }
     const pathAnn = findAnn(annotations, "Path");
     return [{ method: JAXRS_METHODS[verbAnn.name], paths: pathArgsOf(pathAnn ?? verbAnn) }];
+  }
+  if (flavor === "http-exchange") {
+    const mapping = findExchangeMethodAnnotation(annotations);
+    if (!mapping) {
+      return [];
+    }
+    const fixedVerb = HTTP_EXCHANGE_METHODS[mapping.name];
+    if (fixedVerb) {
+      return [{ method: fixedVerb, paths: exchangePathArgsOf(mapping) }];
+    }
+    // 直接使用 @HttpExchange(method = "GET", url = ...) 的方法级写法
+    const declared = annStr(mapping.args, "method");
+    const verb = declared
+      ? (declared.includes(".") ? declared.slice(declared.lastIndexOf(".") + 1) : declared).toUpperCase()
+      : "GET";
+    return [{ method: verb, paths: exchangePathArgsOf(mapping) }];
   }
   // spring-mvc / feign
   const mapping = findAnn(annotations, ...SPRING_MAPPING_NAMES);
@@ -1174,6 +1259,12 @@ function extractReturnType(pf: ParsedFile, resultNode: CstNode): string | undefi
 /** 映射注解的路径参数:value/path(数组或单值) */
 function pathArgsOf(mapping: AnnotationInfo): string[] {
   const paths = annArray(mapping.args, "value", "path");
+  return paths.length ? paths : [""];
+}
+
+/** @HttpExchange 系注解的路径参数:value/url(Spring 6 以 url 为主,value 为别名) */
+function exchangePathArgsOf(mapping: AnnotationInfo): string[] {
+  const paths = annArray(mapping.args, "value", "url");
   return paths.length ? paths : [""];
 }
 
