@@ -3,7 +3,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { ApifoxClient } from "./apifox/client";
 import { errorMessage, ensureToken, selectProject, syncToApifox } from "./apifox/uploader";
-import { setToken } from "./config/secret";
+import { getToken, setToken } from "./config/secret";
 import { getSettings } from "./config/settings";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { fileSetFingerprint } from "./config/fileFingerprint";
@@ -16,6 +16,7 @@ import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDepende
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
 import { buildSyncReport, projectWebUrl } from "./ui/syncResult";
+import { AutoSyncScheduler } from "./ui/autoSync";
 
 const cache = new AnalyzeCache();
 
@@ -264,6 +265,16 @@ export function activate(context: vscode.ExtensionContext): void {
     return new ApifoxClient(settings.apiBaseUrl, token);
   };
 
+  /** 自动同步用:配置缺失时静默返回,不弹令牌输入/项目选择向导 */
+  const makeClientQuiet = async (): Promise<ApifoxClient | undefined> => {
+    const settings = getSettings();
+    const token = await getToken(secrets);
+    if (!token || settings.projectId <= 0) {
+      return undefined;
+    }
+    return new ApifoxClient(settings.apiBaseUrl, token);
+  };
+
   /** 收集要分析的 Java 文件;singleFile 限定为一个文件(token 取消即中断读文件循环) */
   const collectFiles = async (
     singleFile?: vscode.Uri,
@@ -339,7 +350,12 @@ export function activate(context: vscode.ExtensionContext): void {
     scopeLabel: string;
     confirm?: boolean;
     selection?: { visible: number; hidden: number };
+    /** 保存触发的自动同步:静默解析/上传,不弹进度、确认、错误对话框或结果面板 */
+    auto?: boolean;
   };
+
+  /** 正在执行的手动同步数;>0 时抑制保存触发的自动同步,避免并发写 Apifox */
+  let manualSyncInProgress = 0;
 
   /** 同步一组接口(整包/单文件/单接口共用):先校验账号项目,再解析、确认并上传。 */
   const doSync = async (
@@ -347,72 +363,97 @@ export function activate(context: vscode.ExtensionContext): void {
     prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>,
     options: SyncOptions
   ) => {
-    // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
-    const client = await makeClient();
-    if (!client) {
-      return;
-    }
-    const analyzed = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
-      (progress, token) => {
-        progress.report({ message: "扫描 Java 文件..." });
-        return prepare(token);
-      }
-    );
-    if (!analyzed) {
-      return;
-    }
-    if (!analyzed.endpoints.length) {
-      vscode.window.showWarningMessage(emptyHint);
-      return;
-    }
-    if (options.confirm) {
-      const settings = getSettings();
-      const picked = await vscode.window.showWarningMessage(
-        "确认批量同步到 Apifox？",
-        {
-          modal: true,
-          detail: buildSyncPreflightDetail({
-            teamName: settings.teamName ?? "",
-            projectName: settings.projectName ?? "",
-            projectId: settings.projectId,
-            scopeLabel: options.scopeLabel,
-            endpointCount: analyzed.endpoints.length,
-            endpointConflictBehavior: settings.endpointConflictBehavior,
-            schemaConflictBehavior: settings.schemaConflictBehavior,
-            visibleChecked: options.selection?.visible,
-            hiddenChecked: options.selection?.hidden,
-          }),
-        },
-        "开始同步"
-      );
-      if (picked !== "开始同步") {
-        return;
-      }
+    const isManual = !options.auto;
+    if (isManual) {
+      manualSyncInProgress++;
     }
     try {
+      // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
+      // 自动同步使用静默客户端:令牌/项目未配置时直接跳过,不打断编码。
+      const client = options.auto ? await makeClientQuiet() : await makeClient();
+      if (!client) {
+        if (options.auto) {
+          appendAutoSyncLog("自动同步已跳过:未配置访问令牌或未绑定 Apifox 项目");
+        }
+        return;
+      }
+      const analyzed = options.auto
+        ? await prepare()
+        : await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
+            (progress, token) => {
+              progress.report({ message: "扫描 Java 文件..." });
+              return prepare(token);
+            }
+          );
+      if (!analyzed) {
+        return;
+      }
+      if (!analyzed.endpoints.length) {
+        if (!options.auto) {
+          vscode.window.showWarningMessage(emptyHint);
+        }
+        return;
+      }
+      if (options.confirm) {
+        const settings = getSettings();
+        const picked = await vscode.window.showWarningMessage(
+          "确认批量同步到 Apifox？",
+          {
+            modal: true,
+            detail: buildSyncPreflightDetail({
+              teamName: settings.teamName ?? "",
+              projectName: settings.projectName ?? "",
+              projectId: settings.projectId,
+              scopeLabel: options.scopeLabel,
+              endpointCount: analyzed.endpoints.length,
+              endpointConflictBehavior: settings.endpointConflictBehavior,
+              schemaConflictBehavior: settings.schemaConflictBehavior,
+              visibleChecked: options.selection?.visible,
+              hiddenChecked: options.selection?.hidden,
+            }),
+          },
+          "开始同步"
+        );
+        if (picked !== "开始同步") {
+          return;
+        }
+      }
       const settings = getSettings();
-      const outcome = await syncToApifox(client, settings, analyzed);
+      const outcome = await syncToApifox(client, settings, analyzed, { showProgress: !options.auto });
       // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
-      SyncResultPanel.createOrShow(
-        buildSyncReport({
-          counters: outcome.counters,
-          errors: outcome.errors,
-          warnings: analyzed.warnings,
-          endpoints: analyzed.endpoints,
-          target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
-          projectId: settings.projectId,
-          projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
-          scope: options.scopeLabel,
-          endpointConflictBehavior: settings.endpointConflictBehavior,
-          schemaConflictBehavior: settings.schemaConflictBehavior,
-          folderOf: folderKeyForTree,
-          workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        })
-      );
+      const report = buildSyncReport({
+        counters: outcome.counters,
+        errors: outcome.errors,
+        warnings: analyzed.warnings,
+        endpoints: analyzed.endpoints,
+        target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
+        projectId: settings.projectId,
+        projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
+        scope: options.scopeLabel,
+        endpointConflictBehavior: settings.endpointConflictBehavior,
+        schemaConflictBehavior: settings.schemaConflictBehavior,
+        folderOf: folderKeyForTree,
+        workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      });
+      if (options.auto) {
+        // 自动同步不打开结果面板,只记录最近结果并弱提示
+        SyncResultPanel.record(report);
+        reportAutoSyncOutcome(outcome.message, options.scopeLabel);
+        return;
+      }
+      SyncResultPanel.createOrShow(report);
       showResult(outcome.message, () => SyncResultPanel.showLast());
     } catch (err) {
-      vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
+      if (options.auto) {
+        reportAutoSyncFailure(err, options.scopeLabel);
+      } else {
+        vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
+      }
+    } finally {
+      if (isManual) {
+        manualSyncInProgress--;
+      }
     }
   };
 
@@ -426,6 +467,55 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState);
+
+  /** 自动同步:file 模式同步刚保存的文件,checked 模式同步当前勾选集 */
+  const autoSyncScheduler = new AutoSyncScheduler({
+    getMode: () => getSettings().autoSync,
+    isBusy: () => manualSyncInProgress > 0,
+    run: async (request) => {
+      if (request.action === "file") {
+        const target = vscode.Uri.file(request.fsPath);
+        const scopeLabel = `自动同步 ${path.basename(request.fsPath)}`;
+        await doSync(
+          "该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)",
+          async (token) => {
+            const allFiles = await collectFiles(undefined, token, target);
+            if (!allFiles) {
+              return undefined;
+            }
+            return cache.analyzeSubset(
+              allFiles,
+              await analyzeOptions(),
+              (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath
+            );
+          },
+          { scopeLabel, auto: true }
+        );
+        return;
+      }
+
+      const checked = treeProvider.getCheckedEndpoints();
+      if (!checked.length) {
+        appendAutoSyncLog("自动同步已跳过:接口列表中没有勾选任何接口");
+        return;
+      }
+      const wanted = new Set(checked.map((ep) => `${ep.method} ${ep.path}`));
+      await doSync(
+        "勾选的接口未在当前解析结果中",
+        async (token) => {
+          const allFiles = await collectFiles(undefined, token);
+          if (!allFiles) {
+            return undefined;
+          }
+          return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+        },
+        { scopeLabel: `自动同步已勾选 ${checked.length} 个接口`, auto: true }
+      );
+    },
+    onError: (err, request) => {
+      reportAutoSyncFailure(err, request.action === "file" ? path.basename(request.fsPath) : "已勾选接口");
+    },
+  });
 
   // 设置中心一次保存会连续更新多个配置项；仅合并真正影响解析结果的变化。
   const treeAnalysisConfigKeys = [
@@ -548,6 +638,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
+    autoSyncScheduler,
     treeView,
     treeView.onDidExpandElement(recordFolderExpand("expand")),
     treeView.onDidCollapseElement(recordFolderExpand("collapse")),
@@ -583,6 +674,8 @@ export function activate(context: vscode.ExtensionContext): void {
         saveRefreshTimer = setTimeout(() => {
           refreshApiTreeIfVisible();
         }, 800);
+        // 自动同步与接口树刷新共用同一防抖语义;是否启用/范围每次保存时重新读取配置
+        autoSyncScheduler.noteSave(doc.uri.fsPath, doc.languageId);
       }
     }),
     vscode.commands.registerCommand("apifoxHelper.refreshApiTree", async () => {
@@ -1096,6 +1189,54 @@ function getHelperOutputChannel(): vscode.OutputChannel {
     helperOutputChannel = vscode.window.createOutputChannel("ApiGen for Apifox");
   }
   return helperOutputChannel;
+}
+
+/** 自动同步的静默日志:不打断编辑,详情留在输出面板 */
+function appendAutoSyncLog(message: string): void {
+  getHelperOutputChannel().appendLine(`[${new Date().toLocaleTimeString()}] ${message}`);
+}
+
+function autoSyncLines(message: string): string[] {
+  return message.split("\n").map((s) => s.trim()).filter(Boolean);
+}
+
+/** 自动同步成功/有告警:摘要进状态栏或弱通知,明细进输出面板 */
+function reportAutoSyncOutcome(message: string, scopeLabel: string): void {
+  const lines = autoSyncLines(message);
+  const summary = lines[0] || "同步完成";
+  const channel = getHelperOutputChannel();
+  channel.appendLine(`[${new Date().toLocaleTimeString()}] ${scopeLabel}:`);
+  for (const line of lines) {
+    channel.appendLine(line);
+  }
+  const hasWarningsOrErrors = lines.slice(1).some((l) => l.startsWith("⚠") || l.includes("失败") || l.includes("错误"));
+  if (!hasWarningsOrErrors) {
+    vscode.window.setStatusBarMessage(`$(check) ApiGen ${scopeLabel}: ${summary}`, 6000);
+    return;
+  }
+  const picked = vscode.window.showWarningMessage(`${scopeLabel}: ${summary}`, "查看日志");
+  void picked.then((action) => {
+    if (action === "查看日志") {
+      channel.show(true);
+    }
+  });
+}
+
+/** 自动同步失败:警告弱提示 + 输出面板保留完整错误链 */
+function reportAutoSyncFailure(err: unknown, scopeLabel: string): void {
+  const detail = errorMessage(err);
+  const channel = getHelperOutputChannel();
+  channel.appendLine(`[${new Date().toLocaleTimeString()}] ${scopeLabel} 失败:`);
+  for (const line of detail.split("\n")) {
+    channel.appendLine(line);
+  }
+  const summary = detail.split("\n")[0] || "未知错误";
+  const picked = vscode.window.showWarningMessage(`ApiGen 自动同步失败(${scopeLabel}): ${summary}`, "查看日志");
+  void picked.then((action) => {
+    if (action === "查看日志") {
+      channel.show(true);
+    }
+  });
 }
 
 function showResult(message: string, onOpenReport?: () => void): void {

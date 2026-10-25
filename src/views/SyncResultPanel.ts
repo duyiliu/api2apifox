@@ -34,6 +34,11 @@ export class SyncResultPanel {
     SyncResultPanel.current._render(report);
   }
 
+  /** 记录一次同步结果但不主动打开面板(自动同步用) */
+  public static record(report: SyncReport): void {
+    SyncResultPanel.lastReport = report;
+  }
+
   /** 重新打开上次结果(面板被关掉后仍可从命令/状态栏菜单进入)。 */
   public static showLast(): void {
     if (SyncResultPanel.current) {

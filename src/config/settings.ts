@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { AutoSyncMode, normalizeAutoSyncMode } from "../ui/autoSync";
 
 export interface ApifoxSettings {
   projectId: number;
@@ -32,6 +33,8 @@ export interface ApifoxSettings {
   maxDependencyJars: number;
   /** 是否在 Java Controller 方法上方显示 CodeLens「同步此接口」(默认 true) */
   enableCodeLens: boolean;
+  /** 保存 Java 文件后自动同步:off / file / checked(默认 off) */
+  autoSync: AutoSyncMode;
 }
 
 export function getSettings(): ApifoxSettings {
@@ -57,6 +60,7 @@ export function getSettings(): ApifoxSettings {
     dependencyJars: cfg.get<string[]>("dependencyJars", []),
     maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),
     enableCodeLens: cfg.get<boolean>("enableCodeLens", true),
+    autoSync: normalizeAutoSyncMode(cfg.get<string>("autoSync", "off")),
   };
 }
 

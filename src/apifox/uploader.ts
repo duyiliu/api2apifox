@@ -243,6 +243,11 @@ export interface SyncOutcome {
   errors: { message?: string; code?: string }[];
 }
 
+export interface SyncToApifoxOptions {
+  /** 是否在通知区显示进度(自动同步可关闭,避免每次保存都弹进度条) */
+  showProgress?: boolean;
+}
+
 /**
  * 同步:依赖 Apifox 导入的官方目录机制。
  * 官方导入 OpenAPI 时,operation 上的 x-apifox-folder(优先)或 tags[0] 会作为接口目录,
@@ -255,40 +260,46 @@ export interface SyncOutcome {
 export async function syncToApifox(
   client: ApifoxClient,
   settings: ApifoxSettings,
-  analyzed: AnalyzeOutput
+  analyzed: AnalyzeOutput,
+  options: SyncToApifoxOptions = {}
 ): Promise<SyncOutcome> {
   const { spec, endpoints, warnings } = analyzed;
   if (!endpoints.length) {
     return { ok: true, message: "未发现任何 REST 接口,未同步任何内容", counters: {}, errors: [] };
   }
 
-  const result = await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "ApiGen for Apifox:同步中...",
-      cancellable: false,
-    },
-    async (progress) => {
-      // 可选的数据模型目录:仅支持数字 ID 直配(Apifox 已下线目录列表接口,无法按名查找)
-      let schemaFolderId: number | undefined;
-      if (settings.schemaFolderId > 0) {
-        schemaFolderId = settings.schemaFolderId;
-      } else if (settings.schemaFolderName.trim()) {
-        warnings.push(
-          `schemaFolderName 已不被支持(Apifox 下线了目录查询接口),请在设置中改用 schemaFolderId(数字 ID);本次模型将导入根目录`
-        );
-      }
-
-      progress.report({ message: "导入全部接口..." });
-      // x-apifox-folder 已在 spec 各 operation 中,Apifox 会自动建目录;此处只做一次全量导入
-      return client.importOpenapi(settings.projectId, JSON.stringify(spec), {
-        targetEndpointFolderId: undefined,
-        targetSchemaFolderId: schemaFolderId,
-        endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
-        schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
-      });
+  const runImport = async (progress?: vscode.Progress<{ message?: string }>): Promise<ImportResult> => {
+    // 可选的数据模型目录:仅支持数字 ID 直配(Apifox 已下线目录列表接口,无法按名查找)
+    let schemaFolderId: number | undefined;
+    if (settings.schemaFolderId > 0) {
+      schemaFolderId = settings.schemaFolderId;
+    } else if (settings.schemaFolderName.trim()) {
+      warnings.push(
+        `schemaFolderName 已不被支持(Apifox 下线了目录查询接口),请在设置中改用 schemaFolderId(数字 ID);本次模型将导入根目录`
+      );
     }
-  );
+
+    progress?.report({ message: "导入全部接口..." });
+    // x-apifox-folder 已在 spec 各 operation 中,Apifox 会自动建目录;此处只做一次全量导入
+    return client.importOpenapi(settings.projectId, JSON.stringify(spec), {
+      targetEndpointFolderId: undefined,
+      targetSchemaFolderId: schemaFolderId,
+      endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
+      schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
+    });
+  };
+
+  const result =
+    options.showProgress === false
+      ? await runImport()
+      : await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "ApiGen for Apifox:同步中...",
+            cancellable: false,
+          },
+          (progress) => runImport(progress)
+        );
 
   return { ok: true, message: formatResult(result, warnings), counters: result.counters, errors: result.errors };
 }

@@ -309,6 +309,21 @@
           "default": true,
           "description": "是否在 Java Controller 方法上方显示「同步此接口」的 CodeLens 快捷按钮。"
         },
+        "apifoxHelper.autoSync": {
+          "type": "string",
+          "enum": [
+            "off",
+            "file",
+            "checked"
+          ],
+          "default": "off",
+          "enumDescriptions": [
+            "关闭自动同步(默认)",
+            "保存 Java 文件后自动同步该文件中的接口",
+            "保存 Java 文件后自动同步接口列表中已勾选的接口"
+          ],
+          "description": "保存 Java 文件后自动同步到 Apifox 的时机。大范围同步进行中会自动跳过;失败仅在状态栏/通知弱提示,详情见输出面板。"
+        },
         "apifoxHelper.projectId": {
           "type": "number",
           "default": 0,
