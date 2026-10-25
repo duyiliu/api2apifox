@@ -175,6 +175,7 @@ function qualify(source: string, simpleName: string, enclosing: string[] = []): 
 function classInfoOf(
   decl: CstNode,
   source: string,
+  fsPath: string,
   enclosing: string[] = [],
   ...javadocCarriers: (CstNode | undefined)[]
 ): ClassInfo | undefined {
@@ -193,6 +194,7 @@ function classInfoOf(
   const base = {
     simpleName,
     qualifiedName: qualify(source, simpleName, enclosing),
+    fsPath,
     ...(enclosing.length ? { enclosing: [...enclosing] } : {}),
     annotations: collectAnnotations(annotationsOf(decl, inner), source),
     javadoc: javadocOf(...javadocCarriers, decl, inner),
@@ -276,7 +278,7 @@ function indexTypeDecl(
   enclosing: string[],
   out: { types: Map<string, ClassInfo>; nested: Map<string, ClassInfo>; names: string[] }
 ): void {
-  const info = classInfoOf(decl, pf.source, enclosing, carrier);
+  const info = classInfoOf(decl, pf.source, pf.fsPath, enclosing, carrier);
   if (!info) {
     return;
   }

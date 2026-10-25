@@ -53,6 +53,44 @@ public class Api { @GetMapping("/x") public String x() { return ""; } }
   }
 });
 
+test("多模块仓库:模块规则按目录作用域生效,模块外回落到根规则", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-rule-scope-"));
+  try {
+    for (const [module, className, route] of [
+      ["mod-a", "AApi", "/a"],
+      ["mod-b", "BApi", "/b"],
+    ] as const) {
+      fs.mkdirSync(path.join(root, module), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, module, `${className}.java`),
+        `import org.springframework.web.bind.annotation.*;
+@RestController
+public class ${className} { @GetMapping("${route}") public String get() { return ""; } }
+`
+      );
+    }
+    fs.writeFileSync(
+      path.join(root, "RootApi.java"),
+      `import org.springframework.web.bind.annotation.*;
+@RestController
+public class RootApi { @GetMapping("/root") public String get() { return ""; } }
+`
+    );
+    fs.writeFileSync(path.join(root, ".apifox-helper.properties"), "folder.name=全局");
+    fs.writeFileSync(path.join(root, "mod-a", ".apifox-helper.properties"), "folder.name=A模块");
+    fs.writeFileSync(path.join(root, "mod-b", ".apifox-helper.properties"), "folder.name=B模块");
+
+    const config = resolveConfig(root, { include: ["**/*.java"], exclude: [] }).config;
+    const result = await analyzeProject({ config });
+    const tagOf = (controller: string) => result.endpoints.find((e) => e.controller === controller)?.tag;
+    assert.equal(tagOf("RootApi"), "全局");
+    assert.equal(tagOf("AApi"), "A模块");
+    assert.equal(tagOf("BApi"), "B模块");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("--endpoint 精确匹配 METHOD PATH", async () => {
   const result = await analyzeProject({
     config: sampleConfig(),

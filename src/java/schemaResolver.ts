@@ -1,7 +1,7 @@
 import { annBool, annStr, ClassInfo, FieldInfo, findAnn, TypeIndex } from "./model";
 import { parseTypeText, simpleName, TypeRef, typeToKeyText } from "./typeText";
 import { AnnotationInfo } from "./annotation";
-import { HelperProperties } from "../config/helperProperties";
+import { HelperProperties, ruleEntriesForJarType, ruleEntriesForSource } from "../config/helperProperties";
 import { detectValueSyntax, evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import { resolveScopedType, typeScopeOf } from "./typeIndex";
 
@@ -717,6 +717,11 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   if (!rules) {
     return result;
   }
+  // 字段规则按类文件所在模块过滤:模块 A 的 field.* 不应影响模块 B 的 DTO。
+  // jar 中的类型没有源文件路径,只应用项目根规则。
+  const entries = classInfo.fsPath
+    ? ruleEntriesForSource(rules, classInfo.fsPath)
+    : ruleEntriesForJarType(rules);
   const rctx = fieldRuleContext(field, classInfo, ctx);
   const warn = (msg: string) => {
     ctx.fieldWarnings?.push(msg);
@@ -725,7 +730,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   // field.ignore:任一命中 → 忽略
   // 语义:#tag/@ann 命中即忽略;groovy 安全形态返回非空/true 才忽略;
   // 字面量值视为“字段名等于该值”才忽略(对齐 demo 的 field.ignore=ignoreLog 用法)。
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.ignore" && e.key !== "json.rule.field.ignore") {
       continue;
     }
@@ -758,7 +763,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   }
 
   // field.name:覆盖输出名(仅字面量/简单值;规则命中且值可用才生效)
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.name") {
       continue;
     }
@@ -773,7 +778,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   }
 
   // field.required:命中 true → required;false → 非 required
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.required") {
       continue;
     }
@@ -789,7 +794,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
 
   // field.doc / field.description:收集全部命中规则(追加)
   const docRules: { text: string }[] = [];
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
       continue;
     }

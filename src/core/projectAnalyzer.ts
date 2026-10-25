@@ -99,7 +99,7 @@ async function loadProjectHelperProperties(config: ResolvedConfig, signal?: Abor
     } catch {
       return undefined;
     }
-  });
+  }, config.projectRoot);
 }
 
 async function buildProjectJarIndex(
