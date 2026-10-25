@@ -874,6 +874,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
   const parameters: ParameterInfo[] = [];
   const formFields: ParameterInfo[] = [];
   let requestBody: RequestBodyInfo | undefined;
+  let matrixVarWarned = false;
   const paramDocs = { ...a.classJavadoc?.params, ...javadoc?.params };
 
   for (const fp of childAll(paramList, "formalParameter").filter(isCstNode)) {
@@ -891,6 +892,10 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     if (isHiddenParam(annotations)) {
       continue;
     }
+    // 容器/框架注入参数由服务器提供,不是请求参数,静默跳过(不产生“无法识别参数”告警)
+    if (isServerInjectedParam(annotations, typeText)) {
+      continue;
+    }
 
     const docDesc = paramDocs[paramName]?.trim() || undefined;
     const paramAnn = findAnn(annotations, "Parameter");
@@ -902,6 +907,8 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     const selector = findAnn(annotations, "Selector");
     const reqParam = findAnn(annotations, "RequestParam", "QueryParam");
     const reqHeader = findAnn(annotations, "RequestHeader", "HeaderParam");
+    const reqCookie = findAnn(annotations, "CookieValue", "CookieParam");
+    const matrixVar = findAnn(annotations, "MatrixVariable", "MatrixParam");
     const reqBody = findAnn(annotations, "RequestBody");
     const defaultValueAnn = findAnn(annotations, "DefaultValue");
 
@@ -947,6 +954,29 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
         defaultValue: dv,
         annotations,
       });
+    } else if (reqCookie) {
+      // @CookieValue 输出为 in: cookie;required/defaultValue 语义与 @RequestParam 一致
+      // (Spring 默认必填,声明 defaultValue 后隐式可选;JAX-RS @CookieParam 缺失取 null)
+      const dv = annStr(reqCookie.args, "defaultValue") ?? (defaultValueAnn ? annStr(defaultValueAnn.args, "value") : undefined);
+      parameters.push({
+        name: annStr(reqCookie.args, "value", "name") ?? paramName,
+        in: "cookie",
+        typeText,
+        required: dv !== undefined ? false : annBool(reqCookie.args, "required") ?? a.flavor !== "jaxrs",
+        description,
+        example: example ?? dv,
+        defaultValue: dv,
+        annotations,
+      });
+    } else if (matrixVar) {
+      // 矩阵变量(`;key=value` 路径段)在 OpenAPI 3.0 无直接表达,按 path 参数输出会误导;
+      // 显式跳过,同一方法多个矩阵变量只提示一次
+      if (!matrixVarWarned) {
+        matrixVarWarned = true;
+        warnings.push(
+          `${a.controller}.${a.methodName}: 参数 ${paramName} 为 @MatrixVariable(矩阵变量),OpenAPI 3.0 无对应表达,已跳过`
+        );
+      }
     } else if (isPageableType(typeText)) {
       // Spring Data Pageable -> page/size/sort 查询参数
       parameters.push(
@@ -1200,6 +1230,81 @@ function isHiddenParam(annotations: AnnotationInfo[]): boolean {
   }
   const ap = findAnn(annotations, "ApiParam");
   return !!ap && annBool(ap.args, "hidden") === true;
+}
+
+/** 容器注入参数的注解(@SessionAttribute/@RequestAttribute/@Value/@Autowired 等) */
+const SERVER_INJECTED_PARAM_ANNOTATIONS = [
+  "SessionAttribute",
+  "RequestAttribute",
+  "Value",
+  "Autowired",
+  "Resource",
+  "Context",
+  "AuthenticationPrincipal",
+];
+
+/** 由 Servlet/Spring/安全框架注入的控制器方法参数类型(简单名口径) */
+const SERVER_INJECTED_PARAM_TYPES = new Set([
+  "HttpServletRequest",
+  "HttpServletResponse",
+  "ServletRequest",
+  "ServletResponse",
+  "HttpSession",
+  "SessionStatus",
+  "WebRequest",
+  "NativeWebRequest",
+  "ServletWebRequest",
+  "Principal",
+  "Authentication",
+  "SecurityContext",
+  "HttpHeaders",
+  "UriInfo",
+  "Locale",
+  "TimeZone",
+  "ZoneId",
+  "HttpMethod",
+  "PushBuilder",
+  "InputStream",
+  "OutputStream",
+  "Reader",
+  "Writer",
+  "Model",
+  "ModelMap",
+  "ModelAndView",
+  "BindingResult",
+  "Errors",
+  "RedirectAttributes",
+  "UriComponentsBuilder",
+]);
+
+/** 是否为容器/框架注入参数:不是请求参数,应静默忽略 */
+function isServerInjectedParam(annotations: AnnotationInfo[], typeText: string): boolean {
+  if (findAnn(annotations, ...SERVER_INJECTED_PARAM_ANNOTATIONS)) {
+    return true;
+  }
+  // 显式请求绑定注解优先:避免与注入类型同名的 DTO 被误判(如 @RequestBody Model)
+  if (
+    findAnn(
+      annotations,
+      "RequestBody",
+      "RequestParam",
+      "QueryParam",
+      "PathVariable",
+      "PathParam",
+      "RequestHeader",
+      "HeaderParam",
+      "CookieValue",
+      "CookieParam",
+      "MatrixVariable",
+      "MatrixParam",
+      "Selector",
+      "RequestPart",
+      "ModelAttribute"
+    )
+  ) {
+    return false;
+  }
+  return SERVER_INJECTED_PARAM_TYPES.has(typeTextName(typeText));
 }
 
 function isPageableType(typeText: string): boolean {
