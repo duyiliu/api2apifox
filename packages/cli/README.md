@@ -22,11 +22,29 @@ npx @duyiliu/api2apifox scan --project . --format json
 api2apifox scan --project . --format json
 api2apifox export --project . --output openapi.gen.json --force
 api2apifox sync --project . --dry-run --format json
+api2apifox sync --project . --project-id 123456 --changed-only --yes --format json
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json
 ```
 
 `sync` 真正写入 Apifox 时必须在交互终端确认，或显式传入 `--yes`。非交互环境不会等待输入。
+
+## 增量同步与差异预览
+
+成功同步后，CLI 会在项目根写入 `.api2apifox-sync-baseline.json`（默认已加入仓库 `.gitignore`），以 `projectId + method + path` 记录上次成功同步的 operation 摘要。基线按同步 scope 隔离：`--file` / `--endpoint` 指定的不同来源不会互相覆盖；切换项目或接口改名会自然形成新的基线键。
+
+```bash
+# 输出新增 / 变更 / 未变化 / 源码已删除四类清单，不写入 Apifox
+api2apifox sync --project . --project-id 123456 --dry-run --format json
+
+# 只上传相对上次成功同步新增/变更的接口
+API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --changed-only --yes
+
+# 显式清理 Apifox 中源码已删除的接口（仅全量工作区同步生效；默认只告警）
+API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --prune-unmatched --yes
+```
+
+JSON 模式下 `result.diff` 包含 `added` / `changed` / `unchanged` / `deleted` 四个数组及 `counts`；text 模式会逐项列出。导入存在失败项时不会更新基线；源码已删除的接口默认保留在基线中持续告警，只有显式 `--prune-unmatched` 才会从基线移除并让 Apifox 清理。局部同步（`--file` / `--endpoint`）即使传入 `--prune-unmatched` 也会被忽略，避免误删其他来源接口。
 
 首次导入需要创建目录、接口和数据模型，可能持续较长时间；请求等待上限默认 300000 毫秒，可用 `--timeout-ms` 覆盖：
 

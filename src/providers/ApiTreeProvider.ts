@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { EndpointInfo } from "../java/model";
 import { getSettings } from "../config/settings";
+import { AnalyzeOutput } from "../pipeline";
+import { endpointChangeStatus, SyncChangeStatus, SyncDiff, SyncDiffEntry, syncStatusMap } from "../core/syncBaseline";
 import {
   buildFolderTree,
   countFolderEndpoints,
@@ -30,6 +32,8 @@ export type ApiTreeNode =
       hiddenChecked: number;
     }
   | { kind: "empty"; message: string }
+  | { kind: "syncStatus"; diff: SyncDiff }
+  | { kind: "deletedEndpoint"; entry: SyncDiffEntry }
   | { kind: "folder"; key: string; label: string; endpoints: EndpointInfo[]; children: FolderTree[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
 
@@ -44,6 +48,13 @@ const METHOD_ICON: Record<string, { id: string; color: string }> = {
   PUT: { id: "edit", color: "charts.orange" },
   PATCH: { id: "diff", color: "charts.purple" },
   DELETE: { id: "trash", color: "testing.iconFailed" },
+};
+
+const SYNC_STATUS_TEXT: Record<SyncChangeStatus, string> = {
+  added: "新增",
+  changed: "已变更",
+  unchanged: "未变化",
+  deleted: "源码已删除",
 };
 
 /** 关键字匹配高亮区间计算(纯函数,可单测) */
@@ -106,7 +117,9 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   private checked: Set<string>; // `${method} ${path}`
   /** 用户主动展开(true)/收起(false)过的目录,未操作过的目录跟随默认状态 */
   private readonly folderUserExpanded = new Map<string, boolean>();
-  private analysis: { endpoints: EndpointInfo[] } | undefined;
+  private analysis: AnalyzeOutput | undefined;
+  private syncDiff: SyncDiff | undefined;
+  private syncStatuses: Map<string, SyncChangeStatus> | undefined;
   private filterKeyword: string = "";
   private filteredEndpoints: EndpointInfo[] = [];
   private checkedProjectId: number;
@@ -114,11 +127,13 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
   constructor(
     /** 重新解析工作区(与同步命令共用 analyzeOptions/collectFiles) */
-    private readonly analyzeAll: () => Promise<{ endpoints: EndpointInfo[] } | undefined>,
+    private readonly analyzeAll: () => Promise<AnalyzeOutput | undefined>,
     /** 目录命名(与同步 folderOf 一致;返回目录 key) */
     private readonly folderKeyOf: (ep: EndpointInfo) => string,
     /** 工作区状态存储(勾选集合跨会话保持) */
-    private readonly workspaceState: vscode.Memento
+    private readonly workspaceState: vscode.Memento,
+    /** 计算相对上次成功同步基线的差异(可选;失败时不影响树刷新) */
+    private readonly syncDiffOf?: (analysis: AnalyzeOutput) => SyncDiff | undefined
   ) {
     this.checkedProjectId = getSettings().projectId;
     const scopedKey = this.checkedStorageKey(this.checkedProjectId);
@@ -142,8 +157,31 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       return;
     }
     this.analysis = analysis;
+    this.syncDiff = analysis && this.syncDiffOf ? this.safeSyncDiff(analysis) : undefined;
+    this.syncStatuses = this.syncDiff ? syncStatusMap(this.syncDiff) : undefined;
     this.rebuild();
     this._onDidChange.fire();
+  }
+
+  private safeSyncDiff(analysis: AnalyzeOutput): SyncDiff | undefined {
+    try {
+      return this.syncDiffOf?.(analysis);
+    } catch {
+      // 基线损坏/不可读时不影响接口树展示
+      return undefined;
+    }
+  }
+
+  /** 同步成功后直接更新状态，无需重新扫描源码。 */
+  setSyncDiff(diff: SyncDiff | undefined): void {
+    this.syncDiff = diff;
+    this.syncStatuses = diff ? syncStatusMap(diff) : undefined;
+    this.rebuild();
+    this.fireChanged();
+  }
+
+  getSyncDiff(): SyncDiff | undefined {
+    return this.syncDiff;
   }
 
   /** Apifox 项目切换后加载该项目独立的勾选集合，避免跨项目误同步。 */
@@ -153,6 +191,9 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       return;
     }
     this.checkedProjectId = normalized;
+    // 项目切换后旧项目的差异状态不再适用；基线与状态键都按 projectId 隔离。
+    this.syncDiff = undefined;
+    this.syncStatuses = undefined;
     const saved = this.workspaceState.get<string[]>(this.checkedStorageKey(normalized));
     this.checked = new Set(Array.isArray(saved) ? saved : []);
     this.rebuild();
@@ -255,6 +296,38 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       item.contextValue = "filterBar";
       return item;
     }
+    if (element.kind === "syncStatus") {
+      const counts = element.diff.counts;
+      const item = new vscode.TreeItem(
+        `同步状态: 新增 ${counts.added} · 变更 ${counts.changed} · 未变化 ${counts.unchanged} · 已删除 ${counts.deleted}`,
+        counts.deleted > 0
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.None
+      );
+      item.iconPath = new vscode.ThemeIcon(
+        counts.deleted > 0 ? "warning" : counts.added + counts.changed > 0 ? "diff" : "check",
+        counts.deleted > 0 ? new vscode.ThemeColor("problemsWarningIcon.foreground") : undefined
+      );
+      item.description = `相对上次成功同步${element.diff.scope === "workspace" ? " (工作区)" : ""}`;
+      item.tooltip = [
+        `基线 scope: ${element.diff.scope}`,
+        `新增 ${counts.added}，变更 ${counts.changed}，未变化 ${counts.unchanged}，源码已删除 ${counts.deleted}`,
+        counts.deleted > 0 ? "默认不清理 Apifox 中的过期接口；可在同步时显式开启清理。" : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      item.contextValue = "syncStatus";
+      return item;
+    }
+    if (element.kind === "deletedEndpoint") {
+      const entry = element.entry;
+      const item = new vscode.TreeItem(`${entry.method}  ${entry.path}`, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon("trash", new vscode.ThemeColor("testing.iconFailed"));
+      item.description = `源码已删除${entry.summary ? ` · ${entry.summary}` : ""}`;
+      item.tooltip = `源码已删除: ${entry.method} ${entry.path}\n默认不清理 Apifox 中的过期接口，需显式开启清理。`;
+      item.contextValue = "deletedEndpoint";
+      return item;
+    }
     if (element.kind === "empty") {
       const isFiltered = this.isFiltered();
       const item = new vscode.TreeItem(element.message, vscode.TreeItemCollapsibleState.None);
@@ -313,9 +386,12 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
     const icon = METHOD_ICON[ep.method] ?? { id: "circle-filled", color: "charts.blue" };
     item.iconPath = new vscode.ThemeIcon(icon.id, new vscode.ThemeColor(icon.color));
-    item.description = ep.summary ?? "";
+    const status = endpointChangeStatus(this.syncStatuses, ep);
+    const statusText = status ? SYNC_STATUS_TEXT[status] : "";
+    item.description = [statusText, ep.summary].filter(Boolean).join(" · ");
     item.tooltip = new vscode.MarkdownString(
       `**${ep.summary ?? ep.path}**\n\n\`${ep.method} ${ep.path}\`\n\n${ep.controller}.${ep.operationId}` +
+        (statusText ? `\n\n同步状态: ${statusText}` : "") +
         (ep.deprecated ? "\n\n⚠ 已废弃(@Deprecated)" : "")
     );
     item.checkboxState = this.checked.has(`${ep.method} ${ep.path}`)
@@ -373,11 +449,17 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
         });
         return nodes;
       }
+      if (this.syncDiff && (this.syncDiff.hasBaseline || this.syncDiff.deleted.length > 0)) {
+        nodes.push({ kind: "syncStatus", diff: this.syncDiff });
+      }
       return [...nodes, ...this.roots];
     }
     if (element.kind === "folder") {
       // 先子目录后直属接口:与 Apifox 目录树一致
       return [...element.children.map(toFolderNode), ...element.endpoints.map((endpoint) => ({ kind: "endpoint" as const, endpoint }))];
+    }
+    if (element.kind === "syncStatus") {
+      return element.diff.deleted.map((entry) => ({ kind: "deletedEndpoint" as const, entry }));
     }
     return [];
   }

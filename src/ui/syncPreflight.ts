@@ -8,6 +8,8 @@ export interface SyncPreflightInput {
   schemaConflictBehavior: string;
   visibleChecked?: number;
   hiddenChecked?: number;
+  /** 增量差异摘要（有基线时展示，帮助用户在确认前审阅） */
+  changeSummary?: string;
 }
 
 const CONFLICT_LABELS: Record<string, string> = {
@@ -38,6 +40,9 @@ export function buildSyncPreflightDetail(input: SyncPreflightInput): string {
 
   if (input.visibleChecked !== undefined || input.hiddenChecked !== undefined) {
     lines.push(`选择：当前可见 ${input.visibleChecked ?? 0} 个，过滤隐藏 ${input.hiddenChecked ?? 0} 个`);
+  }
+  if (input.changeSummary) {
+    lines.push(`差异：${input.changeSummary}`);
   }
 
   lines.push(

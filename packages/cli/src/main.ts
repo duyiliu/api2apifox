@@ -6,6 +6,18 @@ import { analyzeProject } from "../../../src/core/projectAnalyzer";
 import { ConfigOverrides, resolveConfig } from "../../../src/core/config";
 import { EndpointSummary, ProjectAnalysisResult, ResolvedConfigResult, SyncResult } from "../../../src/core/types";
 import { hasImportFailures, syncProject } from "../../../src/core/syncService";
+import {
+  BASELINE_FILE_NAME,
+  baselinePathForProject,
+  changedOperationKeys,
+  diffSyncBaseline,
+  readSyncBaselineFile,
+  recordSyncBaseline,
+  subsetAnalysisForKeys,
+  syncCandidates,
+  SyncDiff,
+  writeSyncBaselineFile,
+} from "../../../src/core/syncBaseline";
 import { CliOptions, parseCliArgs } from "./args";
 import { CliError, toCliError } from "./errors";
 import { diagnosticMessages, FailureEnvelope, SuccessEnvelope, writeJson, writeText } from "./output";
@@ -57,22 +69,82 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       case "sync": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
-        validateSyncConfig(resolved, options);
-        if (!options.dryRun) {
-          await confirmSync(resolved, analyzed, options);
+        validateSyncProject(resolved);
+        const scopeKey = syncScopeKey(options, analyzed.projectRoot);
+        const baselineFile = baselinePathForProject(resolved.config.projectRoot);
+        const baseline = await readSyncBaselineFile(baselineFile);
+        const diff = diffSyncBaseline(
+          baseline,
+          resolved.config.projectId,
+          scopeKey,
+          syncCandidates(analyzed)
+        );
+        // 仅同步变更时上传的是子集，开启 deleteUnmatched 会把未变更接口误删，必须禁用。
+        const canPrune = options.pruneUnmatched && scopeKey === "workspace" && !options.changedOnly;
+        warnings = [...analyzed.warnings, ...baselineWarnings(diff, canPrune)];
+        const upload = options.changedOnly
+          ? subsetAnalysisForKeys(analyzed, changedOperationKeys(diff))
+          : analyzed;
+        const noChanges = options.changedOnly && upload.endpoints.length === 0;
+        if (options.dryRun || noChanges) {
+          if (noChanges) {
+            warnings.push("本次没有新增或变更的接口，未写入 Apifox");
+          }
+          result = {
+            dryRun: options.dryRun,
+            target: { projectId: resolved.config.projectId, apiBaseUrl: resolved.config.apiBaseUrl },
+            scope: { type: scopeType(options), key: scopeKey, endpointCount: analyzed.endpoints.length },
+            counters: {},
+            errors: [],
+            diff,
+            imported: false,
+            baselineUpdated: false,
+          } satisfies SyncResult;
+          break;
+        }
+        validateSyncToken(resolved, options);
+        await confirmSync(resolved, upload, options);
+        if (options.pruneUnmatched && !canPrune) {
+          warnings.push(
+            options.changedOnly
+              ? "仅同步变更时不能同时清理过期接口，本次已忽略 --prune-unmatched"
+              : "非全量工作区同步不允许清理过期接口，本次已忽略 --prune-unmatched"
+          );
         }
         const synced = await syncProject({
           config: resolved.config,
           token: resolved.token ?? "",
-          analyzed,
-          dryRun: options.dryRun,
+          analyzed: upload,
+          dryRun: false,
           scopeType: scopeType(options),
+          scopeKey,
+          deleteUnmatchedResources: canPrune,
           signal: controller.signal,
         });
-        result = synced;
-        warnings = analyzed.warnings;
+        let baselineUpdated = false;
         if (hasImportFailures(synced)) {
-          throw new CliError("IMPORT_PARTIAL_FAILURE", "Apifox 导入完成，但存在失败项", 6, false, undefined, synced);
+          warnings.push("存在导入失败项，本次未更新本地同步基线");
+        } else {
+          // 记录当前源码的完整候选（含未变化项），同时保留历史已删除项用于持续告警。
+          const nextBaseline = recordSyncBaseline(
+            baseline,
+            resolved.config.projectId,
+            scopeKey,
+            syncCandidates(analyzed),
+            { prune: canPrune }
+          );
+          try {
+            await writeSyncBaselineFile(baselineFile, nextBaseline);
+            baselineUpdated = true;
+          } catch (error) {
+            warnings.push(
+              `同步成功但本地基线写入失败:${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+        result = { ...synced, diff, baselineUpdated } satisfies SyncResult;
+        if (hasImportFailures(synced)) {
+          throw new CliError("IMPORT_PARTIAL_FAILURE", "Apifox 导入完成，但存在失败项", 6, false, undefined, result);
         }
         break;
       }
@@ -172,13 +244,45 @@ async function exportResult(
   };
 }
 
-function validateSyncConfig(resolved: ResolvedConfigResult, options: CliOptions): void {
+function validateSyncProject(resolved: ResolvedConfigResult): void {
   if (resolved.config.projectId <= 0) {
     throw new CliError("PROJECT_ID_REQUIRED", "sync 需要 projectId，可通过配置、环境变量或 --project-id 提供", 2);
   }
+}
+
+function validateSyncToken(resolved: ResolvedConfigResult, options: CliOptions): void {
   if (!options.dryRun && !resolved.token) {
     throw new CliError("TOKEN_REQUIRED", "sync 需要 API2APIFOX_TOKEN 环境变量或 --token", 2);
   }
+}
+
+function baselineWarnings(diff: SyncDiff, canPrune: boolean): string[] {
+  if (!diff.deleted.length) {
+    return [];
+  }
+  if (canPrune) {
+    return [];
+  }
+  return [
+    `有 ${diff.deleted.length} 个接口在上次同步后已从源码删除；默认不清理 Apifox 中的过期接口，确认后可使用 --prune-unmatched 删除`,
+  ];
+}
+
+/** 基线按同步来源隔离：不同文件/目录/勾选集合不能互相覆盖。 */
+function syncScopeKey(options: CliOptions, projectRoot: string): string {
+  const files = options.files
+    .map((file) => path.resolve(projectRoot, file).replace(/\\/g, "/"))
+    .sort();
+  const endpoints = options.endpoints
+    .map((endpoint) => endpoint.trim().replace(/\s+/, " ").toUpperCase())
+    .sort();
+  if (!files.length && !endpoints.length) {
+    return "workspace";
+  }
+  if (files.length && endpoints.length) {
+    return `selection:${files.join(",")}|${endpoints.join(",")}`;
+  }
+  return files.length ? `file:${files.join(",")}` : `endpoint:${endpoints.join(",")}`;
 }
 
 async function confirmSync(
@@ -293,11 +397,40 @@ function formatTextResult(command: CliOptions["command"], result: unknown, warni
   }
   if (command === "sync") {
     const sync = result as unknown as SyncResult;
-    return sync.dryRun
-      ? `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox${warningText}`
-      : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口${warningText}`;
+    const lines = sync.dryRun
+      ? [
+          `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox`,
+          ...formatDiffText(sync.diff),
+        ]
+      : [
+          sync.imported === false
+            ? `同步完成:项目 ${sync.target.projectId}，本次没有需要写入的接口`
+            : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口`,
+          ...formatDiffText(sync.diff),
+        ];
+    return `${lines.filter(Boolean).join("\n")}${warningText}`;
   }
   return `${JSON.stringify(result, null, 2)}${warningText}`;
+}
+
+function formatDiffText(diff: SyncDiff | undefined): string[] {
+  if (!diff) {
+    return [];
+  }
+  const sections: [string, SyncDiff["added"], string][] = [
+    ["新增", diff.added, ""],
+    ["变更", diff.changed, ""],
+    ["未变化", diff.unchanged, ""],
+    ["源码已删除", diff.deleted, "(默认不清理，使用 --prune-unmatched 显式清理)"],
+  ];
+  const lines: string[] = [];
+  for (const [label, entries, hint] of sections) {
+    lines.push(`${label} ${entries.length} 个${hint ? ` ${hint}` : ""}`);
+    for (const entry of entries) {
+      lines.push(`  ${entry.method} ${entry.path}${entry.summary ? `  ${entry.summary}` : ""}`);
+    }
+  }
+  return lines;
 }
 
 function folderOf(endpoint: ProjectAnalysisResult["endpoints"][number], resolved: ResolvedConfigResult): string {
@@ -417,6 +550,8 @@ ${FILTER_NOTE}`;
 选项:
 ${COMMON_HELP}
   --dry-run                 只预检，不写入 Apifox（无需 token）
+  --changed-only            只上传相对上次成功同步新增/变更的接口
+  --prune-unmatched         显式删除 Apifox 中本次未出现的接口（仅全量工作区同步生效；默认只告警）
   -y, --yes                 跳过交互确认；非交互环境必须显式传入
   --project-id <id>         目标 Apifox 项目 ID
   --token <token>           Apifox 访问令牌，推荐改用 API2APIFOX_TOKEN 环境变量
@@ -427,6 +562,8 @@ ${FILTER_HELP}
 ${HELP_FLAG}
 
 ${FILTER_NOTE}
+  基线文件为项目根的 ${BASELINE_FILE_NAME}，按 projectId + 同步 scope 隔离；
+  同一项目下不同 --file/--endpoint 范围不会互相覆盖基线。
   返回 REQUEST_TIMEOUT 表示本地已停止等待，服务端可能仍在导入：请先查询目标项目确认结果，不要立即重试。`;
     case "config":
       return `api2apifox config [options]

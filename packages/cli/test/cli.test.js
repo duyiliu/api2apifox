@@ -126,3 +126,65 @@ test("默认等待上限允许首次导入较慢的建目录与建模型", () =>
   assert.equal(payload.result.fields.timeoutMs.value, 300000);
   assert.equal(payload.result.fields.timeoutMs.source, "default");
 });
+
+test("sync dry-run 输出新增/变更/未变化/源码已删除四类清单", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-diff-"));
+  const source = path.join(dir, "DemoController.java");
+  const baselineFile = path.join(dir, ".api2apifox-sync-baseline.json");
+  fs.writeFileSync(
+    source,
+    '@RestController @RequestMapping("/api") class DemoController { @GetMapping("/ping") public String ping() { return null; } }'
+  );
+  fs.writeFileSync(
+    baselineFile,
+    JSON.stringify({
+      schemaVersion: 1,
+      projects: {
+        "42": {
+          scopes: {
+            workspace: {
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              operations: {
+                "GET /api/ping": {
+                  method: "GET",
+                  path: "/api/ping",
+                  digest: "stale-digest",
+                  summary: "旧接口",
+                  syncedAt: "2026-01-01T00:00:00.000Z",
+                },
+                "DELETE /api/old": {
+                  method: "DELETE",
+                  path: "/api/old",
+                  digest: "old-digest",
+                  summary: "已删除接口",
+                  syncedAt: "2026-01-01T00:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+  );
+  try {
+    const result = run([
+      "sync",
+      "--project",
+      dir,
+      "--include",
+      "**/*.java",
+      "--project-id",
+      "42",
+      "--dry-run",
+      "--format",
+      "json",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const diff = JSON.parse(result.stdout).result.diff;
+    assert.deepEqual(diff.counts, { added: 0, changed: 1, unchanged: 0, deleted: 1 });
+    assert.deepEqual(diff.changed.map((entry) => `${entry.method} ${entry.path}`), ["GET /api/ping"]);
+    assert.deepEqual(diff.deleted.map((entry) => `${entry.method} ${entry.path}`), ["DELETE /api/old"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

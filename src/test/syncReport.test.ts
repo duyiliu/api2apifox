@@ -112,3 +112,28 @@ test("时间文本与目标标签为固定格式", () => {
   assert.equal(syncTargetLabel("", "", 7), "项目 7（ID: 7）");
   assert.equal(syncTargetLabel("团队", "项目", 7), "团队 / 项目（ID: 7）");
 });
+
+test("增量差异状态写入结果行与报告汇总", () => {
+  const diff = {
+    projectId: 42,
+    scope: "workspace",
+    hasBaseline: true,
+    added: [{ method: "GET", path: "/api/patients", status: "added" as const, summary: "分页查询患者" }],
+    changed: [],
+    unchanged: [{ method: "POST", path: "/api/patients", status: "unchanged" as const, summary: "" }],
+    deleted: [],
+    counts: { added: 1, changed: 0, unchanged: 1, deleted: 0 },
+  };
+  const report = buildSyncReport({
+    ...baseInput,
+    counters: { endpointCreated: 1, endpointIgnored: 1 },
+    errors: [],
+    warnings: [],
+    diff,
+    baselineUpdated: true,
+  });
+  assert.equal(report.endpoints[0].status, "added");
+  assert.equal(report.endpoints[1].status, "unchanged");
+  assert.deepEqual(report.changes, { added: 1, changed: 0, unchanged: 1, deleted: 0 });
+  assert.equal(report.baselineUpdated, true);
+});

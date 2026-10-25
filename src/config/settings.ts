@@ -20,6 +20,8 @@ export interface ApifoxSettings {
   schemaFolderId: number;
   /** @deprecated 已废弃:Apifox 下线了目录查询接口,请改用 schemaFolderId */
   schemaFolderName: string;
+  /** 全量工作区同步时是否显式删除 Apifox 中源码已不存在的接口(默认 false,只告警) */
+  pruneUnmatchedEndpoints: boolean;
   /** 是否启用 .apifox-helper.properties(默认 true) */
   helperProperties: boolean;
   /** 枚举字段自动追加「(枚举类:X)」(默认 false,对应团队 groovy 规则意图) */
@@ -51,6 +53,7 @@ export function getSettings(): ApifoxSettings {
     rootFolderName: cfg.get<string>("rootFolderName", ""),
     schemaFolderId: cfg.get<number>("schemaFolderId", 0),
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
+    pruneUnmatchedEndpoints: cfg.get<boolean>("pruneUnmatchedEndpoints", false),
     helperProperties: cfg.get<boolean>("helperProperties.enabled", true),
     enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
     dependencyRepos: cfg.get<string[]>("dependencyRepos", []),

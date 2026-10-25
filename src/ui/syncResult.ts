@@ -1,5 +1,6 @@
 import { EndpointInfo } from "../java/model";
 import { conflictBehaviorLabel } from "./syncPreflight";
+import { endpointChangeStatus, SyncChangeStatus, SyncDiff, syncStatusMap } from "../core/syncBaseline";
 
 /** Apifox 导入接口返回的计数（键名与 Apifox 开放 API 一致） */
 export type ImportCounters = Record<string, number>;
@@ -34,6 +35,8 @@ export interface SyncEndpointRow {
   fsPath: string;
   /** 方法起始偏移，缺失时打开文件但不定位。 */
   startOffset?: number;
+  /** 相对上次成功同步的状态：added/changed/unchanged/deleted */
+  status?: SyncChangeStatus;
 }
 
 /** 一次同步的结果快照，用于结果面板/通知展示 */
@@ -52,6 +55,10 @@ export interface SyncReport {
   conflict: string;
   summary: SyncSummaryRow[];
   endpoints: SyncEndpointRow[];
+  /** 相对上次成功基线的差异计数（无基线时为空） */
+  changes?: Record<SyncChangeStatus, number>;
+  /** 本次是否成功更新本地基线 */
+  baselineUpdated?: boolean;
   errors: string[];
   warnings: string[];
 }
@@ -72,6 +79,9 @@ export interface BuildSyncReportInput {
   folderOf: (ep: EndpointInfo) => string;
   /** 工作区根目录：把源文件路径显示为相对路径 */
   workspaceRoot?: string;
+  /** 同步前计算的增量差异（有基线/成功读取时提供） */
+  diff?: SyncDiff;
+  baselineUpdated?: boolean;
   finishedAt?: Date;
 }
 
@@ -146,16 +156,21 @@ export function projectWebUrl(apiBaseUrl: string, projectId: number): string | u
 
 export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
   const root = (input.workspaceRoot ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
-  const endpoints: SyncEndpointRow[] = input.endpoints.map((ep) => ({
-    name: ep.summary?.trim() || ep.operationId,
-    method: ep.method,
-    path: ep.path,
-    folder: input.folderOf(ep),
-    controller: ep.controller,
-    file: relativePath(ep.fsPath, root),
-    fsPath: ep.fsPath,
-    startOffset: ep.methodRange?.startOffset,
-  }));
+  const statuses = input.diff ? syncStatusMap(input.diff) : undefined;
+  const endpoints: SyncEndpointRow[] = input.endpoints.map((ep) => {
+    const status = endpointChangeStatus(statuses, ep);
+    return {
+      name: ep.summary?.trim() || ep.operationId,
+      method: ep.method,
+      path: ep.path,
+      folder: input.folderOf(ep),
+      controller: ep.controller,
+      file: relativePath(ep.fsPath, root),
+      fsPath: ep.fsPath,
+      startOffset: ep.methodRange?.startOffset,
+      ...(status ? { status } : {}),
+    };
+  });
 
   return {
     projectId: input.projectId,
@@ -168,6 +183,8 @@ export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
     )}`,
     summary: toSummaryRows(input.counters),
     endpoints,
+    changes: input.diff?.counts,
+    baselineUpdated: input.baselineUpdated,
     errors: input.errors.map((e) => e.message || e.code || "未知错误"),
     warnings: [...input.warnings],
   };

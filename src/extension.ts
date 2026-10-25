@@ -16,6 +16,20 @@ import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDepende
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
 import { buildSyncReport, projectWebUrl } from "./ui/syncResult";
+import {
+  changedOperationKeys,
+  diffSyncBaseline,
+  parseSyncBaseline,
+  recordSyncBaseline,
+  serializeSyncBaseline,
+  subsetAnalysisForKeys,
+  syncCandidates,
+  SyncBaseline,
+  SyncDiff,
+} from "./core/syncBaseline";
+import { AnalyzeOutput } from "./pipeline";
+
+const SYNC_BASELINE_STATE_KEY = "apifoxHelper.syncBaselineV1";
 
 const cache = new AnalyzeCache();
 
@@ -230,6 +244,18 @@ function withoutIgnoredSources(uris: vscode.Uri[], keepCheckoutOf?: vscode.Uri):
 
 export function activate(context: vscode.ExtensionContext): void {
   const secrets = context.secrets;
+  const loadSyncBaseline = (): SyncBaseline =>
+    parseSyncBaseline(context.workspaceState.get<string>(SYNC_BASELINE_STATE_KEY));
+  const saveSyncBaseline = async (baseline: SyncBaseline): Promise<void> => {
+    await context.workspaceState.update(SYNC_BASELINE_STATE_KEY, serializeSyncBaseline(baseline));
+  };
+  const diffForScope = (scopeKey: string, analyzed: AnalyzeOutput): SyncDiff | undefined => {
+    const settings = getSettings();
+    if (settings.projectId <= 0) {
+      return undefined;
+    }
+    return diffSyncBaseline(loadSyncBaseline(), settings.projectId, scopeKey, syncCandidates(analyzed));
+  };
   // 扩展停用时释放 jar 索引持有的 fd 并清空会话缓存
   context.subscriptions.push({
     dispose: () => {
@@ -337,9 +363,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   type SyncOptions = {
     scopeLabel: string;
+    /** 基线隔离键；同一项目下不同文件/目录/勾选集合互不覆盖 */
+    scopeKey: string;
     confirm?: boolean;
+    /** 只上传相对上次成功基线新增/变更的接口 */
+    changedOnly?: boolean;
     selection?: { visible: number; hidden: number };
   };
+
+  /** 结果面板与基线失败判定：Apifox 返回错误或任一 *Failed 计数则视为部分失败。 */
+  const importFailed = (counters: Record<string, number>, errors: { message?: string; code?: string }[]): boolean =>
+    errors.length > 0 || Object.entries(counters).some(([key, value]) => /Failed$/i.test(key) && value > 0);
 
   /** 同步一组接口(整包/单文件/单接口共用):先校验账号项目,再解析、确认并上传。 */
   const doSync = async (
@@ -366,8 +400,37 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showWarningMessage(emptyHint);
       return;
     }
+    const settings = getSettings();
+    const baseline = loadSyncBaseline();
+    const diff = diffForScope(options.scopeKey, analyzed);
+    let upload = analyzed;
+    if (options.changedOnly && diff) {
+      upload = subsetAnalysisForKeys(analyzed, changedOperationKeys(diff));
+      if (!upload.endpoints.length) {
+        treeProvider.setSyncDiff(diffForScope("workspace", analyzed));
+        vscode.window.showInformationMessage(
+          `没有新增或变更的接口${diff.deleted.length ? `；另有 ${diff.deleted.length} 个源码已删除接口仅告警，未清理 Apifox` : ""}`
+        );
+        return;
+      }
+    }
+    // 仅同步变更时上传的是子集，开启 deleteUnmatched 会把未变更接口误删，必须禁用。
+    const canPrune = settings.pruneUnmatchedEndpoints && options.scopeKey === "workspace" && !options.changedOnly;
+    const syncWarnings = [...upload.warnings];
+    if (diff?.deleted.length && !canPrune) {
+      syncWarnings.push(
+        `有 ${diff.deleted.length} 个接口在上次同步后已从源码删除；默认不清理 Apifox 中的过期接口，如需清理请在设置中开启 pruneUnmatchedEndpoints 并执行全量工作区同步`
+      );
+    }
+    if (settings.pruneUnmatchedEndpoints && !canPrune) {
+      syncWarnings.push(
+        options.changedOnly
+          ? "仅同步变更时不会清理过期接口，已忽略 pruneUnmatchedEndpoints，避免误删未变更接口"
+          : "局部同步不会清理过期接口，已忽略 pruneUnmatchedEndpoints，避免误删其他来源接口"
+      );
+    }
+    upload = { ...upload, warnings: syncWarnings };
     if (options.confirm) {
-      const settings = getSettings();
       const picked = await vscode.window.showWarningMessage(
         "确认批量同步到 Apifox？",
         {
@@ -377,11 +440,14 @@ export function activate(context: vscode.ExtensionContext): void {
             projectName: settings.projectName ?? "",
             projectId: settings.projectId,
             scopeLabel: options.scopeLabel,
-            endpointCount: analyzed.endpoints.length,
+            endpointCount: upload.endpoints.length,
             endpointConflictBehavior: settings.endpointConflictBehavior,
             schemaConflictBehavior: settings.schemaConflictBehavior,
             visibleChecked: options.selection?.visible,
             hiddenChecked: options.selection?.hidden,
+            changeSummary: diff
+              ? `新增 ${diff.counts.added}，变更 ${diff.counts.changed}，未变化 ${diff.counts.unchanged}，源码已删除 ${diff.counts.deleted}`
+              : undefined,
           }),
         },
         "开始同步"
@@ -391,15 +457,30 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
     try {
-      const settings = getSettings();
-      const outcome = await syncToApifox(client, settings, analyzed);
+      const outcome = await syncToApifox(client, settings, upload, { deleteUnmatchedResources: canPrune });
+      let baselineUpdated = false;
+      if (!importFailed(outcome.counters, outcome.errors)) {
+        try {
+          const next = recordSyncBaseline(baseline, settings.projectId, options.scopeKey, syncCandidates(analyzed), {
+            prune: canPrune,
+          });
+          await saveSyncBaseline(next);
+          baselineUpdated = true;
+          treeProvider.setSyncDiff(diffForScope("workspace", analyzed));
+        } catch (error) {
+          upload.warnings.push(`同步成功但本地基线写入失败:${errorMessage(error)}`);
+        }
+      } else {
+        upload.warnings.push("存在导入失败项，本次未更新本地同步基线");
+      }
+      const reportDiff = diff;
       // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
       SyncResultPanel.createOrShow(
         buildSyncReport({
           counters: outcome.counters,
           errors: outcome.errors,
-          warnings: analyzed.warnings,
-          endpoints: analyzed.endpoints,
+          warnings: upload.warnings,
+          endpoints: upload.endpoints,
           target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
           projectId: settings.projectId,
           projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
@@ -408,6 +489,8 @@ export function activate(context: vscode.ExtensionContext): void {
           schemaConflictBehavior: settings.schemaConflictBehavior,
           folderOf: folderKeyForTree,
           workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+          diff: reportDiff,
+          baselineUpdated,
         })
       );
       showResult(outcome.message, () => SyncResultPanel.showLast());
@@ -425,7 +508,9 @@ export function activate(context: vscode.ExtensionContext): void {
     return rootFolder ? `${rootFolder}/${key}` : key;
   };
 
-  const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState);
+  const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState, (analysis) =>
+    diffForScope("workspace", analysis)
+  );
 
   // 设置中心一次保存会连续更新多个配置项；仅合并真正影响解析结果的变化。
   const treeAnalysisConfigKeys = [
@@ -736,7 +821,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      }, { scopeLabel: `目录「${node.key}」`, confirm: true });
+      }, { scopeLabel: `目录「${node.key}」`, scopeKey: `folder:${node.key}`, confirm: true });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
       const stats = treeProvider.getSelectionStats();
@@ -784,7 +869,12 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      }, { scopeLabel, confirm: true, selection });
+      }, {
+        scopeLabel,
+        scopeKey: `selection:${[...wanted].sort().join(",")}`,
+        confirm: true,
+        selection,
+      });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -801,7 +891,7 @@ export function activate(context: vscode.ExtensionContext): void {
           await analyzeOptions(),
           (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
         );
-      }, { scopeLabel: `${ep.method} ${ep.path}` });
+      }, { scopeLabel: `${ep.method} ${ep.path}`, scopeKey: `endpoint:${ep.method} ${ep.path}` });
     }),
     vscode.commands.registerCommand("apifoxHelper.copyEndpointPath", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -835,6 +925,11 @@ export function activate(context: vscode.ExtensionContext): void {
           label: "$(check-all) 同步勾选的接口",
           description: "同步侧边栏已勾选的接口",
           action: () => vscode.commands.executeCommand("apifoxHelper.syncCheckedApis"),
+        },
+        {
+          label: "$(diff) 仅同步变更的接口",
+          description: "只上传相对上次成功同步新增/变更的接口",
+          action: () => vscode.commands.executeCommand("apifoxHelper.syncChangedApis"),
         },
         {
           label: "$(search) 搜索接口",
@@ -932,7 +1027,18 @@ export function activate(context: vscode.ExtensionContext): void {
       await doSync(
         "没有扫描到任何 Java 源文件",
         (token) => analyzeWorkspace(undefined, token),
-        { scopeLabel: "整个工作区", confirm: true }
+        { scopeLabel: "整个工作区", scopeKey: "workspace", confirm: true }
+      );
+    })
+  );
+
+  // 命令:仅同步相对上次成功同步新增/变更的接口
+  context.subscriptions.push(
+    vscode.commands.registerCommand("apifoxHelper.syncChangedApis", async () => {
+      await doSync(
+        "没有扫描到任何 Java 源文件",
+        (token) => analyzeWorkspace(undefined, token),
+        { scopeLabel: "仅变更接口", scopeKey: "workspace", confirm: true, changedOnly: true }
       );
     })
   );
@@ -952,7 +1058,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return undefined;
         }
         return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
-      }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
+      }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}`, scopeKey: `file:${target.fsPath.replace(/\\/g, "/")}` });
     })
   );
 
@@ -988,7 +1094,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const allFiles = await collectFiles(undefined, token, target);
         const source = allFiles ?? files;
         return cache.analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
-      }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
+      }, { scopeLabel: `${endpoint.method} ${endpoint.path}`, scopeKey: `endpoint:${endpoint.method} ${endpoint.path}` });
     })
   );
 

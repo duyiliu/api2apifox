@@ -7,6 +7,9 @@ export interface SyncProjectRequest {
   analyzed: ProjectAnalysisResult;
   dryRun?: boolean;
   scopeType?: SyncResult["scope"]["type"];
+  scopeKey?: string;
+  /** 仅在调用方显式开启且为全量 scope 时删除 Apifox 中本次未出现的接口 */
+  deleteUnmatchedResources?: boolean;
   signal?: AbortSignal;
 }
 
@@ -15,9 +18,10 @@ export async function syncProject(request: SyncProjectRequest): Promise<SyncResu
   const base: SyncResult = {
     dryRun: request.dryRun ?? false,
     target: { projectId: config.projectId, apiBaseUrl: config.apiBaseUrl },
-    scope: { type: request.scopeType ?? "workspace", endpointCount: analyzed.endpoints.length },
+    scope: { type: request.scopeType ?? "workspace", key: request.scopeKey, endpointCount: analyzed.endpoints.length },
     counters: {},
     errors: [],
+    imported: false,
   };
   if (request.dryRun || !analyzed.endpoints.length) {
     return base;
@@ -27,9 +31,9 @@ export async function syncProject(request: SyncProjectRequest): Promise<SyncResu
     targetSchemaFolderId: config.schemaFolderId > 0 ? config.schemaFolderId : undefined,
     endpointOverwriteBehavior: config.endpointConflictBehavior,
     schemaOverwriteBehavior: config.schemaConflictBehavior,
-    deleteUnmatchedResources: false,
+    deleteUnmatchedResources: request.deleteUnmatchedResources === true,
   });
-  return { ...base, counters: imported.counters, errors: imported.errors };
+  return { ...base, imported: true, counters: imported.counters, errors: imported.errors };
 }
 
 export function hasImportFailures(result: SyncResult): boolean {

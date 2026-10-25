@@ -23,6 +23,7 @@
 - **依赖 jar 类型还原**:自动发现本地 Maven 仓库,按需解析 `.class` 字节码,把源码之外的类型(如自定义 `ResponseDto<T>`、MyBatis-Plus 的 `Page`)还原为完整模型——字段、泛型、`@ApiModelProperty` 描述均可带出,与 IDEA 插件的 classpath 能力等效
 - **规则引擎兼容**:识别 `.apifox-helper.properties` 声明式规则(与 IDEA 版 Apifox Helper / easyyapi 兼容的子集),团队既有规则可直接复用
 - **细粒度同步**:整个项目 / 单个文件 / 单个接口,随取随传
+- **增量同步**:持久化上次成功同步基线,`--dry-run`/接口树/结果面板可预览新增、变更、未变化与源码已删除;支持“仅同步变更”,过期接口默认只告警
 - **CLI 一等公民**:与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
 
 ## 📟 独立 CLI（AI Agent / CI / 脚本）
@@ -39,7 +40,8 @@ npm install -g @duyiliu/api2apifox        # 或免安装:npx @duyiliu/api2apifox
 api2apifox scan --project . --format json                    # 扫描并输出接口清单
 api2apifox export --project . --output openapi.gen.json      # 导出 OpenAPI 3.0 文件
 api2apifox export --project . --stdout                       # OpenAPI 直接输出到 stdout
-api2apifox sync --project . --dry-run --format json          # 同步预演(不写入)
+api2apifox sync --project . --dry-run --format json          # 同步预演(输出增量差异四类清单)
+api2apifox sync --project . --project-id 123456 --changed-only --yes  # 只同步新增/变更
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json                  # 查看生效配置
 ```
@@ -63,6 +65,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 - `--format json` 时 stdout 只输出一个 JSON 信封，按 `ok` / `error.code` 分支；`--quiet` 隐藏非致命告警。
 - 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误。
 - 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
+- 成功同步后基线写入项目根 `.api2apifox-sync-baseline.json`（已加入 `.gitignore` 默认忽略），按 `projectId + method + path` 记录 operation 摘要，并按工作区/文件/接口等 scope 隔离；`--dry-run` 输出新增/变更/未变化/源码已删除四类清单，`--changed-only` 只上传新增/变更。源码已删除的接口默认只告警；确认后可加 `--prune-unmatched`（仅全量工作区同步生效）让 Apifox 删除过期接口。
 
 > CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
 
@@ -147,7 +150,8 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - 目录命名来源可配(`@Tag` 注解值或 Controller 类名),可选根目录与数据模型目录(自动创建)
 - 冲突策略可配:覆盖 / 自动合并 / 保留现有 / 新建
-- 同步完成后打开「同步结果」面板:导入计数按「接口 / 数据模型 / 目录 × 新增 / 更新 / 忽略 / 失败」成表,并列出本次同步的接口清单(名称 / 方法 / 路径 / 目录 / 源文件),支持排序、过滤与一键复制(TSV / Markdown);通知栏保留一行摘要,可点「查看结果表」重新打开面板(命令 `查看上次同步结果`)
+- 同步完成后打开「同步结果」面板:导入计数按「接口 / 数据模型 / 目录 × 新增 / 更新 / 忽略 / 失败」成表,并列出本次同步的接口清单(名称 / 方法 / 路径 / 目录 / 源文件 / 同步状态),支持排序、过滤与一键复制(TSV / Markdown);通知栏保留一行摘要,可点「查看结果表」重新打开面板(命令 `查看上次同步结果`)
+- 扩展内也会维护增量基线：接口树用「新增 / 已变更 / 未变化 / 源码已删除」标记接口，并显示同步状态汇总；源码已删除的接口默认只在树和结果面板告警，不自动清理。勾选/文件/目录同步的基线按来源隔离，互不覆盖。
 
 ### 依赖 jar 类型识别(零配置)
 
@@ -167,6 +171,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | 命令 | 说明 |
 | --- | --- |
 | `同步整个项目到 Apifox` | 扫描全部源码并同步 |
+| `仅同步变更的接口到 Apifox` | 只同步相对上次成功同步新增/变更的接口 |
 | `同步勾选的接口到 Apifox` | 只同步列表中勾选的接口 |
 | `同步当前文件到 Apifox` | 右键 Java 文件(资源管理器/编辑器)或命令面板 |
 | `同步光标处接口到 Apifox` | 光标停在接口方法内执行,或点方法上方 CodeLens「▲ 同步此接口」 |
@@ -192,6 +197,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |
 | `apifoxHelper.maxDependencyJars` | `120` | 依赖 jar 解析总数上限(直接 + 传递依赖);超出按依赖距离丢弃并提示,`0` 表示不做依赖解析 |
+| `apifoxHelper.pruneUnmatchedEndpoints` | `false` | 显式开启后,仅全量工作区同步会删除 Apifox 中源码已不存在的接口;默认关闭,只在接口树/结果面板告警。局部同步永不清理 |
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 

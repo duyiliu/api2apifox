@@ -376,6 +376,8 @@ export class SyncResultPanel {
     const setText = (id, text) => { el(id).textContent = text; };
 
     const METHOD_CLASS = { GET: "method-get", POST: "method-post", PUT: "method-put", DELETE: "method-delete", PATCH: "method-patch" };
+    const STATUS_LABEL = { added: "新增", changed: "已变更", unchanged: "未变化", deleted: "源码已删除" };
+    const STATUS_KIND = { added: "ok", changed: "info", unchanged: "muted-badge", deleted: "error" };
 
     function badge(value, kind) {
       const span = document.createElement("span");
@@ -428,6 +430,10 @@ export class SyncResultPanel {
       if (endpoint.failed > 0) { parts.push("失败 " + endpoint.failed); }
       if (errorCount > 0) { parts.push("错误 " + errorCount); }
       if (warningCount > 0) { parts.push("警告 " + warningCount); }
+      if (report.changes) {
+        parts.push("差异 新增 " + report.changes.added + " / 变更 " + report.changes.changed + " / 未变化 " + report.changes.unchanged + " / 源码已删除 " + report.changes.deleted);
+      }
+      if (report.baselineUpdated) { parts.push("基线已更新"); }
       setText("resultDetail", parts.join(" · "));
     }
 
@@ -460,7 +466,14 @@ export class SyncResultPanel {
       for (const row of rows) {
         const tr = document.createElement("tr");
         const name = document.createElement("td");
-        name.textContent = row.name;
+        if (row.status) {
+          const status = document.createElement("span");
+          status.className = "badge " + (STATUS_KIND[row.status] || "muted-badge");
+          status.textContent = STATUS_LABEL[row.status] || row.status;
+          status.style.marginRight = "6px";
+          name.appendChild(status);
+        }
+        name.appendChild(document.createTextNode(row.name));
         tr.appendChild(name);
 
         const method = document.createElement("td");
@@ -549,9 +562,9 @@ export class SyncResultPanel {
     }
 
     function endpointTsv() {
-      const lines = ["接口名称\t方法\t路径\t目录\t源文件"];
+      const lines = ["接口名称\t方法\t路径\t目录\t同步状态\t源文件"];
       for (const row of visibleEndpoints()) {
-        lines.push([row.name, row.method, row.path, row.folder, row.file].join("\t"));
+        lines.push([row.name, row.method, row.path, row.folder, STATUS_LABEL[row.status] || "", row.file].join("\t"));
       }
       return lines.join("\\n");
     }
@@ -569,9 +582,9 @@ export class SyncResultPanel {
       for (const row of report.summary) {
         lines.push("| " + mdCell(row.category) + " | " + row.created + " | " + row.updated + " | " + row.ignored + " | " + row.failed + " | " + row.total + " |");
       }
-      lines.push("", "| 接口名称 | 方法 | 路径 | 目录 |", "| --- | --- | --- | --- |");
+      lines.push("", "| 接口名称 | 方法 | 路径 | 目录 | 同步状态 |", "| --- | --- | --- | --- | --- |");
       for (const row of visibleEndpoints()) {
-        lines.push("| " + mdCell(row.name) + " | " + mdCell(row.method) + " | " + mdCell(row.path) + " | " + mdCell(row.folder) + " |");
+        lines.push("| " + mdCell(row.name) + " | " + mdCell(row.method) + " | " + mdCell(row.path) + " | " + mdCell(row.folder) + " | " + mdCell(STATUS_LABEL[row.status] || "") + " |");
       }
       if ((report.errors || []).length) {
         lines.push("", "**错误**");

@@ -128,6 +128,11 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "apifoxHelper.syncChangedApis",
+        "title": "ApiGen for Apifox: 仅同步变更的接口到 Apifox (Sync Changed APIs)",
+        "icon": "$(diff)"
+      },
+      {
         "command": "apifoxHelper.gotoEndpoint",
         "title": "ApiGen for Apifox: 跳转到接口定义 (Goto Definition)"
       },
@@ -184,6 +189,11 @@
         {
           "command": "apifoxHelper.syncCheckedApis",
           "group": "navigation@1",
+          "when": "view == apifoxHelper.apiTree"
+        },
+        {
+          "command": "apifoxHelper.syncChangedApis",
+          "group": "navigation@2",
           "when": "view == apifoxHelper.apiTree"
         },
         {
@@ -428,6 +438,11 @@
           "type": "string",
           "default": "",
           "description": "已废弃(Apifox 开放 API 已下线目录查询接口,无法按名查找)。请改用 apifoxHelper.schemaFolderId。"
+        },
+        "apifoxHelper.pruneUnmatchedEndpoints": {
+          "type": "boolean",
+          "default": false,
+          "description": "显式开启后,全量工作区同步时删除 Apifox 中本次源码未出现的接口。默认关闭,只在接口树/结果中告警源码已删除的接口;文件/目录/勾选等局部同步永不清理,避免误删其他来源接口。"
         },
         "apifoxHelper.helperProperties.enabled": {
           "type": "boolean",

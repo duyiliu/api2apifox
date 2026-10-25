@@ -21,6 +21,10 @@ export interface CliOptions {
   projectId?: number;
   token?: string;
   dryRun: boolean;
+  /** 只上传相对上次成功基线新增/变更的接口 */
+  changedOnly: boolean;
+  /** 显式删除 Apifox 中本次未出现的接口（仅全量工作区同步允许） */
+  pruneUnmatched: boolean;
   yes: boolean;
   endpointConflictBehavior?: ConflictBehavior;
   schemaConflictBehavior?: ConflictBehavior;
@@ -50,6 +54,8 @@ const argumentOptions = {
   "project-id": { type: "string" },
   token: { type: "string" },
   "dry-run": { type: "boolean", default: false },
+  "changed-only": { type: "boolean", default: false },
+  "prune-unmatched": { type: "boolean", default: false },
   yes: { type: "boolean", short: "y", default: false },
   "endpoint-conflict": { type: "string" },
   "schema-conflict": { type: "string" },
@@ -104,6 +110,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     projectId,
     token: parsed.values.token,
     dryRun: parsed.values["dry-run"] ?? false,
+    changedOnly: parsed.values["changed-only"] ?? false,
+    pruneUnmatched: parsed.values["prune-unmatched"] ?? false,
     yes: parsed.values.yes ?? false,
     endpointConflictBehavior: parseConflict(parsed.values["endpoint-conflict"], "--endpoint-conflict"),
     schemaConflictBehavior: parseConflict(parsed.values["schema-conflict"], "--schema-conflict"),

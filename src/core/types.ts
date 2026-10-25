@@ -1,5 +1,6 @@
 import { AnalyzeOutput } from "../pipeline";
 import { EndpointInfo } from "../java/model";
+import { SyncDiff } from "./syncBaseline";
 
 export type ConflictBehavior = "OVERWRITE_EXISTING" | "AUTO_MERGE" | "KEEP_EXISTING" | "CREATE_NEW";
 
@@ -71,8 +72,16 @@ export interface SyncResult {
   };
   scope: {
     type: "workspace" | "file" | "endpoint" | "selection";
+    /** 基线隔离键：同一类型下不同文件/目录/勾选集合互不覆盖 */
+    key?: string;
     endpointCount: number;
   };
   counters: Record<string, number>;
   errors: { message?: string; code?: string }[];
+  /** 本次同步前相对上次成功基线的差异（dry-run 与真实同步都会返回） */
+  diff?: SyncDiff;
+  /** 是否真正发起了 Apifox 导入（仅同步变更且无变化时为 false） */
+  imported?: boolean;
+  /** 本次是否成功更新了本地基线 */
+  baselineUpdated?: boolean;
 }

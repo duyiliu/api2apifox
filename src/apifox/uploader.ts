@@ -255,7 +255,8 @@ export interface SyncOutcome {
 export async function syncToApifox(
   client: ApifoxClient,
   settings: ApifoxSettings,
-  analyzed: AnalyzeOutput
+  analyzed: AnalyzeOutput,
+  options: { deleteUnmatchedResources?: boolean } = {}
 ): Promise<SyncOutcome> {
   const { spec, endpoints, warnings } = analyzed;
   if (!endpoints.length) {
@@ -286,6 +287,7 @@ export async function syncToApifox(
         targetSchemaFolderId: schemaFolderId,
         endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
         schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
+        deleteUnmatchedResources: options.deleteUnmatchedResources === true,
       });
     }
   );
