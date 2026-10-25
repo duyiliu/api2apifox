@@ -196,6 +196,9 @@ function toClassInfo(pc: ParsedClassFile): ClassInfo {
     fields,
     recordComponents: [],
     enumConstants: pc.enumConstants,
+    // jar 枚举没有源码,保持只输出常量名
+    enumValues: [...pc.enumConstants],
+    enumDocs: pc.enumConstants.map(() => undefined),
     annotations: pc.annotations.map(toAnnotationInfo),
     superClass: pc.superClass,
   };

@@ -1,8 +1,8 @@
 import { parse } from "java-parser";
-import { collectAnnotations } from "./annotation";
+import { collectAnnotations, parseArgsText } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
-import { ClassInfo, FieldInfo, TypeIndex, TypeKind } from "./model";
+import { AnnotationInfo, annStr, ClassInfo, FieldInfo, findAnn, TypeIndex, TypeKind } from "./model";
 import { parseTypeText, simpleName } from "./typeText";
 
 export interface ParsedFile {
@@ -83,11 +83,158 @@ function typeParamsOf(decl: CstNode | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-function enumConstantsOf(decl: CstNode): string[] {
+interface EnumConstantDetail {
+  name: string;
+  annotations: AnnotationInfo[];
+  args: string[];
+  javadoc?: string;
+}
+
+interface EnumDetails {
+  constants: string[];
+  values: string[];
+  docs: (string | undefined)[];
+  warning?: string;
+}
+
+function enumConstantsOf(decl: CstNode, source: string): EnumConstantDetail[] {
   const list = childNode(childNode(decl, "enumBody"), "enumConstantList");
-  return childNodes(list, "enumConstant")
-    .map((c) => tokenImage(c, "Identifier") ?? "")
-    .filter((s) => s.length > 0);
+  // 首个常量前的 javadoc 会挂到 enumConstantList 上(后续常量挂各自节点),与 record 组件一致
+  const listJavadoc = nodeJavadoc(list);
+  const out: EnumConstantDetail[] = [];
+  childNodes(list, "enumConstant").forEach((c, index) => {
+    const name = tokenImage(c, "Identifier");
+    if (!name) {
+      return;
+    }
+    const args = childNodes(childNode(c, "argumentList"), "expression").map((e) => nodeText(source, e).trim());
+    const javadocRaw = nodeJavadoc(c) ?? (index === 0 ? listJavadoc : undefined);
+    const jd = parseJavadoc(javadocRaw);
+    out.push({
+      name,
+      annotations: collectAnnotations(childNodes(c, "enumConstantModifier"), source),
+      args,
+      javadoc: jd?.description || jd?.firstLine || undefined,
+    });
+  });
+  return out;
+}
+
+/** 枚举构造器及其形参名(按声明顺序,用于常量实参定位) */
+function enumConstructorsOf(decl: CstNode): { node: CstNode; params: string[] }[] {
+  const decls = childNode(childNode(decl, "enumBody"), "enumBodyDeclarations");
+  const out: { node: CstNode; params: string[] }[] = [];
+  for (const bd of childNodes(decls, "classBodyDeclaration")) {
+    const ctor = childNode(bd, "constructorDeclaration");
+    if (!ctor) {
+      continue;
+    }
+    const list = childNode(childNode(ctor, "constructorDeclarator"), "formalParameterList");
+    const params = childNodes(list, "formalParameter").map((p) => {
+      const vd = findAll(p, "variableDeclaratorId")[0];
+      return tokenImage(vd, "Identifier") ?? "";
+    });
+    out.push({ node: ctor, params });
+  }
+  return out;
+}
+
+/** @JsonValue 方法及其 return 的字段名(仅支持 return code / return this.code) */
+function jsonValueFieldOf(decl: CstNode, source: string): { found: boolean; field?: string } {
+  const decls = childNode(childNode(decl, "enumBody"), "enumBodyDeclarations");
+  for (const bd of childNodes(decls, "classBodyDeclaration")) {
+    const member = childNode(bd, "classMemberDeclaration") ?? childNode(bd, "memberDeclaration") ?? bd;
+    const method = childNode(member, "methodDeclaration");
+    if (!method) {
+      continue;
+    }
+    if (!findAnn(collectAnnotations(childNodes(method, "methodModifier"), source), "JsonValue")) {
+      continue;
+    }
+    const expression = childNode(findAll(method, "returnStatement")[0], "expression");
+    const text = expression ? nodeText(source, expression).trim() : "";
+    const m = /^(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)$/.exec(text);
+    return m ? { found: true, field: m[1] } : { found: true };
+  }
+  return { found: false };
+}
+
+/** 返回值字段对应到构造参数下标的路径:优先同名形参,其次 this.field = param 赋值 */
+function constructorParamIndexFor(field: string, ctors: { node: CstNode; params: string[] }[], source: string): number | undefined {
+  for (const ctor of ctors) {
+    const index = ctor.params.indexOf(field);
+    if (index >= 0) {
+      return index;
+    }
+  }
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const ctor of ctors) {
+    const body = childNode(ctor.node, "constructorBody");
+    if (!body) {
+      continue;
+    }
+    const m = new RegExp(`this\\s*\\.\\s*${escaped}\\s*=\\s*([A-Za-z_$][\\w$]*)\\s*;`).exec(nodeText(source, body));
+    const param = m?.[1];
+    const index = param ? ctor.params.indexOf(param) : -1;
+    if (index >= 0) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+/** 枚举构造实参的简单字面量 -> 文档值;非字面量表达式视为不可解析 */
+function enumArgumentValue(text: string): string | undefined {
+  const t = text.trim();
+  if (!t) {
+    return undefined;
+  }
+  if (t === "null" || t === "true" || t === "false") {
+    return t;
+  }
+  if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[fFdDlL]?$/.test(t)) {
+    return t.replace(/[fFdDlL]$/, "");
+  }
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    const value = parseArgsText(t).value;
+    return typeof value === "string" ? value : undefined;
+  }
+  return undefined;
+}
+
+function enumDetailsOf(decl: CstNode, source: string, displayName: string): EnumDetails {
+  const details = enumConstantsOf(decl, source);
+  const constants = details.map((d) => d.name);
+  const docs = details.map((d) => d.javadoc);
+  const jsonValue = jsonValueFieldOf(decl, source);
+  const ctors = enumConstructorsOf(decl);
+  const paramIndex = jsonValue.field ? constructorParamIndexFor(jsonValue.field, ctors, source) : undefined;
+  let unresolved = false;
+  const values = details.map((d) => {
+    // @JsonProperty 优先于 @JsonValue
+    const prop = findAnn(d.annotations, "JsonProperty");
+    const propValue = prop ? annStr(prop.args, "value", "name") : undefined;
+    if (propValue !== undefined) {
+      return propValue;
+    }
+    if (!jsonValue.found) {
+      return d.name;
+    }
+    if (paramIndex !== undefined && paramIndex < d.args.length) {
+      const value = enumArgumentValue(d.args[paramIndex]);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+    unresolved = true;
+    return d.name;
+  });
+  return {
+    constants,
+    values,
+    docs,
+    ...(unresolved ? { warning: `枚举 ${displayName} 的 @JsonValue 无法解析,已回退常量名` } : {}),
+  };
 }
 
 function recordComponentsOf(decl: CstNode, source: string): FieldInfo[] {
@@ -205,17 +352,23 @@ function classInfoOf(
       fields: collectFields(childNode(normal, "classBody"), source),
       recordComponents: [],
       enumConstants: [],
+      enumValues: [],
+      enumDocs: [],
       superClass: superClassOf(normal, source),
     };
   }
   if (enumDecl) {
+    const details = enumDetailsOf(enumDecl, source, base.qualifiedName);
     return {
       ...base,
       kind: "enum",
       typeParams: [],
       fields: [],
       recordComponents: [],
-      enumConstants: enumConstantsOf(enumDecl),
+      enumConstants: details.constants,
+      enumValues: details.values,
+      enumDocs: details.docs,
+      ...(details.warning ? { enumValueWarning: details.warning } : {}),
     };
   }
   if (recordDecl) {
@@ -226,6 +379,8 @@ function classInfoOf(
       fields: [],
       recordComponents: recordComponentsOf(recordDecl, source),
       enumConstants: [],
+      enumValues: [],
+      enumDocs: [],
     };
   }
   return {
@@ -235,6 +390,8 @@ function classInfoOf(
     fields: [],
     recordComponents: [],
     enumConstants: [],
+    enumValues: [],
+    enumDocs: [],
   };
 }
 
