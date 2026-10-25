@@ -43,6 +43,30 @@ jobs:
       - name: Verify VSIX contents
         run: npx @vscode/vsce ls --no-dependencies
 
+  host-smoke:
+    name: Extension Host smoke (VS Code 1.85)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Xvfb and Electron runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgbm1 libasound2 libnss3
+
+      - name: Run VS Code 1.85 Extension Host smoke
+        run: xvfb-run -a npm run test:host
+
   cli:
     name: CLI (typecheck, tests)
     runs-on: ubuntu-latest

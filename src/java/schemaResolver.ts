@@ -147,6 +147,8 @@ export class SchemaRegistry {
   }
 
   private registerNullable(name: string, target: JsonSchema): void {
+    // 基础 schema 构建时,Optional 递归字段已指向本可空变体;
+    // 非 Optional 递归字段仍指向基础组件(它们本就不应接受 null)。
     const clone = JSON.parse(JSON.stringify(target)) as JsonSchema;
     clone.nullable = true;
     if (!clone.type) {

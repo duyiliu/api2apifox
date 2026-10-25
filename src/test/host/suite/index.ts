@@ -133,7 +133,6 @@ export async function run(): Promise<void> {
     showInputBox: (...args: unknown[]) => Thenable<unknown>;
     showQuickPick: (...args: unknown[]) => Thenable<unknown>;
     withProgress: (...args: unknown[]) => Thenable<unknown>;
-    createWebviewPanel: (...args: unknown[]) => unknown;
   };
   const originals = {
     showInformationMessage: windowAny.showInformationMessage,
@@ -296,7 +295,13 @@ export async function run(): Promise<void> {
         createOrShow(secrets: vscode.SecretStorage): {
           handleMessage(message: Record<string, any>): Promise<void>;
           dispose(): void;
-          _panel: { webview: { postMessage(message: unknown): Thenable<boolean> } };
+          _panel: {
+            webview: {
+              html: string;
+              postMessage(message: unknown): Thenable<boolean>;
+              onDidReceiveMessage(handler: (message: unknown) => unknown, thisArgs?: unknown): { dispose(): void };
+            };
+          };
         };
       };
     };
@@ -310,86 +315,98 @@ export async function run(): Promise<void> {
         secretStore.delete(key);
       },
     } as unknown as vscode.SecretStorage;
-    let messageHandler: ((message: unknown) => unknown) | undefined;
-    const posted: Record<string, any>[] = [];
-    const fakePanel = {
-      webview: {
-        cspSource: "vscode-webview://test",
-        html: "",
-        onDidReceiveMessage(handler: (message: unknown) => unknown) {
-          messageHandler = handler;
-          return { dispose() {} };
-        },
-        postMessage(message: unknown) {
-          posted.push(message as Record<string, any>);
-          return Promise.resolve(true);
-        },
-        asWebviewUri(uri: unknown) {
-          return uri;
-        },
-      },
-      onDidDispose() {
-        return { dispose() {} };
-      },
-      reveal() {},
-      dispose() {},
-    };
-    const originalCreateWebviewPanel = windowAny.createWebviewPanel;
-    windowAny.createWebviewPanel = () => fakePanel;
     const settingsPanel = SettingsPanel.createOrShow(fakeSecrets);
-    assert.ok(messageHandler, "SettingsPanel 应注册 Webview 消息接收回调");
-    const sendMessage = async (message: Record<string, any>): Promise<void> => {
-      await messageHandler!(message);
+    const panel = settingsPanel._panel;
+    const observed: Record<string, any>[] = [];
+    let webviewLoaded: (() => void) | undefined;
+    const loaded = new Promise<void>((resolve) => {
+      webviewLoaded = resolve;
+    });
+    panel.webview.onDidReceiveMessage((message: unknown) => {
+      const record = message as Record<string, any>;
+      if (record?.__testLoaded === true) {
+        webviewLoaded?.();
+      }
+      if (record?.__testObserved) {
+        observed.push(record.__testObserved as Record<string, any>);
+      }
+    }, null);
+    // 用真实 Webview 脚本走完整的 webview -> extension -> webview 消息链路
+    panel.webview.html = `<!DOCTYPE html><html><body><script>
+      const vscode = acquireVsCodeApi();
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (data && data.__testCommand) { vscode.postMessage(data.__testCommand); }
+        else { vscode.postMessage({ __testObserved: data }); }
+      });
+      vscode.postMessage({ __testLoaded: true });
+    </script></body></html>`;
+    await Promise.race([
+      loaded,
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error("Webview 未加载")), 15000)),
+    ]);
+    const sendMessage = async (message: Record<string, any>, expected: string): Promise<Record<string, any>> => {
+      const before = observed.length;
+      await panel.webview.postMessage({ __testCommand: message });
+      await waitFor(
+        () => observed.slice(before).some((item) => item.command === expected),
+        15000,
+        `Webview 返回 ${expected}`
+      );
+      return observed.slice(before).find((item) => item.command === expected)!;
     };
     try {
-      await sendMessage({ command: "ready" });
-      assert.equal(posted.at(-1)?.command, "init");
-      assert.equal(posted.at(-1)?.data.settings.projectId, 1);
+      const init = await sendMessage({ command: "ready" }, "init");
+      assert.equal(init.data.settings.projectId, 1);
 
-      await sendMessage({
-        command: "testConnection",
-        token: "APS-host",
-        apiBaseUrl: server.baseUrl,
-        requestKey: "conn-ok",
-      });
-      const connOk = posted.at(-1)!;
-      assert.equal(connOk.command, "testResult");
+      const connOk = await sendMessage(
+        {
+          command: "testConnection",
+          token: "APS-host",
+          apiBaseUrl: server.baseUrl,
+          requestKey: "conn-ok",
+        },
+        "testResult"
+      );
       assert.equal(connOk.ok, true);
       assert.equal(connOk.requestKey, "conn-ok");
       assert.equal(connOk.teams.length, 1);
 
       server.failNextTeams();
-      await sendMessage({
-        command: "testConnection",
-        token: "APS-host",
-        apiBaseUrl: server.baseUrl,
-        requestKey: "conn-fail",
-      });
-      const connFail = posted.at(-1)!;
-      assert.equal(connFail.command, "testResult");
+      const connFail = await sendMessage(
+        {
+          command: "testConnection",
+          token: "APS-host",
+          apiBaseUrl: server.baseUrl,
+          requestKey: "conn-fail",
+        },
+        "testResult"
+      );
       assert.equal(connFail.ok, false);
       assert.equal(connFail.requestKey, "conn-fail");
 
-      await sendMessage({
-        command: "fetchProjects",
-        token: "APS-host",
-        apiBaseUrl: server.baseUrl,
-        teamId: 1,
-      });
-      const projOk = posted.at(-1)!;
-      assert.equal(projOk.command, "projectsResult");
+      const projOk = await sendMessage(
+        {
+          command: "fetchProjects",
+          token: "APS-host",
+          apiBaseUrl: server.baseUrl,
+          teamId: 1,
+        },
+        "projectsResult"
+      );
       assert.equal(projOk.ok, true);
       assert.equal(projOk.projects.length, 1);
 
       server.failNextProjects();
-      await sendMessage({
-        command: "fetchProjects",
-        token: "APS-host",
-        apiBaseUrl: server.baseUrl,
-        teamId: 1,
-      });
-      const projFail = posted.at(-1)!;
-      assert.equal(projFail.command, "projectsResult");
+      const projFail = await sendMessage(
+        {
+          command: "fetchProjects",
+          token: "APS-host",
+          apiBaseUrl: server.baseUrl,
+          teamId: 1,
+        },
+        "projectsResult"
+      );
       assert.equal(projFail.ok, false);
       assert.equal(projFail.teamId, 1);
 
@@ -407,22 +424,17 @@ export async function run(): Promise<void> {
         schemaFolderId: 0,
         enumFieldDoc: false,
       };
-      await sendMessage({ command: "save", data: saveData });
-      const saveOk = posted.at(-1)!;
-      assert.equal(saveOk.command, "saveResult");
+      const saveOk = await sendMessage({ command: "save", data: saveData }, "saveResult");
       assert.equal(saveOk.ok, true);
       assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
       assert.equal(vscode.workspace.getConfiguration("apifoxHelper").get("projectName"), "Host Project Saved");
 
       // 保存失败:缺少 token,应返回可见错误且不覆盖已保存的令牌
-      await sendMessage({ command: "save", data: { ...saveData, token: "" } });
-      const saveFail = posted.at(-1)!;
-      assert.equal(saveFail.command, "saveResult");
+      const saveFail = await sendMessage({ command: "save", data: { ...saveData, token: "" } }, "saveResult");
       assert.equal(saveFail.ok, false);
       assert.ok(String(saveFail.message).includes("令牌"), `失败应说明原因:${JSON.stringify(saveFail)}`);
       assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
     } finally {
-      windowAny.createWebviewPanel = originalCreateWebviewPanel;
       settingsPanel.dispose();
     }
   } finally {

@@ -697,8 +697,62 @@ class Node {
   const validateNullable = compileOasSchema(nullable, schemas);
   assert.equal(validateNullable(null), true, "自递归 Optional<DTO> 必须接受 null");
   assert.equal(validateNullable({ name: "n" }), true);
+  assert.equal(validateNullable({ name: "n", parent: null, children: [null] }), true);
+  assert.equal(validateNullable({ name: "n", parent: { name: "p" }, children: [{ name: "c" }] }), true);
+  assert.equal(validateNullable({ name: "n", parent: 42 }), false);
   assert.equal(validateNullable(42), false);
   assert.equal(compileOasSchema(node, schemas)(null), false, "基础 DTO 不应接受 null");
+});
+
+test("互递归 DTO 的 Optional 集合元素与响应使用可空变体", () => {
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/MutualController.java",
+      content: `package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+public class MutualController {
+  @GetMapping("/a")
+  public A getA() { return null; }
+
+  @GetMapping("/a-optional")
+  public java.util.Optional<A> getOptionalA() { return null; }
+}
+
+class A {
+  private String aOnly;
+  private java.util.Optional<B> next;
+  private java.util.List<java.util.Optional<B>> links;
+}
+
+class B {
+  private String bOnly;
+  private A back;
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+  const schemas = res.spec.components!.schemas;
+  const a = schemas["A"];
+  assert.equal(a.nullable, undefined);
+  assert.equal(a.properties!.next.$ref, "#/components/schemas/BNullable");
+  assert.equal(a.properties!.links.items!.$ref, "#/components/schemas/BNullable");
+  const optionalResponse = (res.spec.paths["/a-optional"].get as Record<string, any>)
+    .responses["200"].content["*/*"].schema;
+  assert.equal(optionalResponse.$ref, "#/components/schemas/ANullable");
+
+  for (const name of ["ANullable", "BNullable"]) {
+    const schema = schemas[name];
+    assert.equal(schema.type, "object", name);
+    assert.equal(schema.nullable, true, name);
+    assert.equal(schema.allOf, undefined, name);
+    const validate = compileOasSchema(schema, schemas);
+    assert.equal(validate(null), true, `${name} 必须接受 null`);
+    assert.equal(validate({ [name === "ANullable" ? "aOnly" : "bOnly"]: "x" }), true, `${name} 应接受有效 DTO`);
+  }
+  assert.equal(compileOasSchema(schemas["A"], schemas)(null), false);
+  assert.equal(compileOasSchema(schemas["B"], schemas)(null), false);
 });
 
 test("泛型继承与自递归字段保留已绑定的嵌套类型身份", () => {
