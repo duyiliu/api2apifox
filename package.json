@@ -73,6 +73,10 @@
         "title": "ApiGen for Apifox: 导出 OpenAPI 预览文件 (Export openapi.gen.json)"
       },
       {
+        "command": "apifoxHelper.exportCliConfig",
+        "title": "ApiGen for Apifox: 导出 CLI 配置 / 复制等效命令 (Export CLI Config)"
+      },
+      {
         "command": "apifoxHelper.showLastSyncResult",
         "title": "ApiGen for Apifox: 查看上次同步结果 (Sync Result)",
         "icon": "$(table)"

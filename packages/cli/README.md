@@ -94,7 +94,7 @@ $env:API2APIFOX_PROJECT_ID = "123456"
 
 配置优先级：CLI 参数 > 环境变量 > `.api2apifox.json` > 默认值。
 
-本配置只作用于 CLI：它与 VS Code 扩展「ApiGen for Apifox」的 `apifoxHelper.*` 设置（以及扩展 SecretStorage 中的令牌）**相互独立**，两边需分别配置，改一边不会影响另一边。反过来，扩展也不会读取本文件。
+本配置只作用于 CLI：它与 VS Code 扩展「ApiGen for Apifox」的 `apifoxHelper.*` 设置（以及扩展 SecretStorage 中的令牌）**相互独立**，两边需分别配置，改一边不会影响另一边。扩展也不会读取本文件；需要两端扫描范围一致时，可在扩展中执行「导出 CLI 配置 / 复制等效命令」按扩展当前生效设置生成或更新本文件（不写入 token），并检测字段漂移。
 
 `timeoutMs` 可在配置文件中设置，用于慢速网络或大型项目：
 

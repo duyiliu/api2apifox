@@ -5,6 +5,15 @@ import { ApifoxClient } from "./apifox/client";
 import { errorMessage, ensureToken, selectProject, syncToApifox } from "./apifox/uploader";
 import { setToken } from "./config/secret";
 import { getSettings } from "./config/settings";
+import {
+  buildCliConfig,
+  cliEquivalentCommand,
+  CLI_CONFIG_FILENAME,
+  compareCliConfig,
+  formatCliConfigDrift,
+  mergeCliConfig,
+  parseCliConfig,
+} from "./config/cliConfig";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { fileSetFingerprint } from "./config/fileFingerprint";
 import { EndpointInfo, SourceFile } from "./java/model";
@@ -857,6 +866,11 @@ export function activate(context: vscode.ExtensionContext): void {
           action: () => vscode.commands.executeCommand("apifoxHelper.exportOpenapi"),
         },
         {
+          label: "$(json) 导出 CLI 配置",
+          description: "生成 / 更新 .api2apifox.json，并复制等效命令",
+          action: () => vscode.commands.executeCommand("apifoxHelper.exportCliConfig"),
+        },
+        {
           label: "$(gear) 打开设置中心",
           description: "配置访问令牌、团队、目录规则等",
           action: () => vscode.commands.executeCommand("apifoxHelper.openSettingsPanel"),
@@ -1018,6 +1032,60 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // 命令:导出 CLI 配置 / 复制等效命令
+  context.subscriptions.push(
+    vscode.commands.registerCommand("apifoxHelper.exportCliConfig", async () => {
+      const folder = await pickExportWorkspaceFolder();
+      if (!folder) {
+        return;
+      }
+      // 按目标工作区读取生效值，合并用户级、工作区级与文件夹级设置
+      const desired = buildCliConfig(getSettings(folder));
+      const target = path.join(folder.uri.fsPath, CLI_CONFIG_FILENAME);
+      const existing = readExistingCliConfig(target);
+
+      if (existing.exists && existing.parseError) {
+        const overwrite = await vscode.window.showWarningMessage(
+          `现有 ${CLI_CONFIG_FILENAME} 无法解析，是否覆盖？`,
+          { modal: true, detail: `${target}\n\n${existing.parseError}` },
+          "覆盖文件"
+        );
+        if (overwrite !== "覆盖文件") {
+          return;
+        }
+      } else if (existing.data) {
+        const drifts = compareCliConfig(desired, existing.data);
+        if (drifts.length) {
+          const update = await vscode.window.showWarningMessage(
+            `CLI 配置与扩展设置存在 ${drifts.length} 处漂移`,
+            {
+              modal: true,
+              detail: `${target}\n\n${formatCliConfigDrift(drifts)}\n\n一键更新只覆盖上述字段，保留 $schema/title/timeoutMs 等 CLI 自有配置；不会写入 token。`,
+            },
+            "一键更新"
+          );
+          if (update !== "一键更新") {
+            return;
+          }
+        }
+      }
+
+      try {
+        const merged = mergeCliConfig(existing.data, desired);
+        await fs.promises.writeFile(target, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+      } catch (error) {
+        vscode.window.showErrorMessage(`写入 ${CLI_CONFIG_FILENAME} 失败:${errorMessage(error)}`);
+        return;
+      }
+      const action = await vscode.window.showInformationMessage(
+        `已导出 CLI 配置到 ${CLI_CONFIG_FILENAME}（未写入 token）`,
+        "复制等效命令",
+        "打开文件"
+      );
+      await handleCliConfigAction(action, target, folder.uri.fsPath);
+    })
+  );
+
   // CodeLens:接口方法上方「同步此接口」
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ language: "java" }, {
@@ -1058,6 +1126,47 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     })
   );
+}
+
+async function pickExportWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (!folders.length) {
+    vscode.window.showWarningMessage("请先打开一个工作区，再导出 CLI 配置");
+    return undefined;
+  }
+  if (folders.length === 1) {
+    return folders[0];
+  }
+  const picked = await vscode.window.showQuickPick(
+    folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })),
+    { placeHolder: `选择要写入 ${CLI_CONFIG_FILENAME} 的工作区文件夹` }
+  );
+  return picked?.folder;
+}
+
+function readExistingCliConfig(filePath: string): {
+  exists: boolean;
+  data?: Record<string, unknown>;
+  parseError?: string;
+} {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false };
+  }
+  try {
+    return { exists: true, ...parseCliConfig(fs.readFileSync(filePath, "utf8")) };
+  } catch (error) {
+    return { exists: true, parseError: errorMessage(error) };
+  }
+}
+
+async function handleCliConfigAction(action: string | undefined, target: string, projectRoot: string): Promise<void> {
+  if (action === "复制等效命令") {
+    await vscode.env.clipboard.writeText(cliEquivalentCommand(projectRoot));
+    vscode.window.showInformationMessage("等效命令已复制：读取同一份 CLI 配置，仅扫描不写入 Apifox");
+  } else if (action === "打开文件") {
+    const doc = await vscode.workspace.openTextDocument(target);
+    await vscode.window.showTextDocument(doc);
+  }
 }
 
 /** 简化版 glob 判断(仅用于 CodeLens 粗过滤,精度不够时宁可多解析) */

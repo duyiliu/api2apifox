@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { CLI_CONFIG_DEFAULTS } from "./defaults";
 
 export interface ApifoxSettings {
   projectId: number;
@@ -34,28 +35,33 @@ export interface ApifoxSettings {
   enableCodeLens: boolean;
 }
 
-export function getSettings(): ApifoxSettings {
-  const cfg = vscode.workspace.getConfiguration("apifoxHelper");
+/**
+ * 读取扩展的生效设置。
+ * 传入 resource（工作区文件夹）时会合并用户级、工作区级与文件夹级设置，
+ * 导出 CLI 配置需按目标工作区取值，避免多根工作区误用其他文件夹的覆盖值。
+ */
+export function getSettings(resource?: vscode.Uri | vscode.WorkspaceFolder): ApifoxSettings {
+  const cfg = vscode.workspace.getConfiguration("apifoxHelper", resource);
   return {
-    projectId: cfg.get<number>("projectId", 0),
+    projectId: cfg.get<number>("projectId", CLI_CONFIG_DEFAULTS.projectId),
     projectName: cfg.get<string>("projectName", ""),
     teamName: cfg.get<string>("teamName", ""),
-    apiBaseUrl: cfg.get<string>("apiBaseUrl", "https://api.apifox.com"),
-    endpointConflictBehavior: cfg.get<string>("endpointConflictBehavior", "OVERWRITE_EXISTING"),
-    schemaConflictBehavior: cfg.get<string>("schemaConflictBehavior", "OVERWRITE_EXISTING"),
-    include: cfg.get<string[]>("include", ["**/src/main/java/**/*.java"]),
-    exclude: cfg.get<string[]>("exclude", ["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**", "**/.*/**"]),
-    exportPath: cfg.get<string>("exportPath", "openapi.gen.json"),
-    pageTypeStyle: cfg.get<"mybatis-plus" | "spring-data">("pageTypeStyle", "mybatis-plus"),
-    folderNameSource: cfg.get<"tag" | "controller">("folderNameSource", "tag"),
-    rootFolderName: cfg.get<string>("rootFolderName", ""),
-    schemaFolderId: cfg.get<number>("schemaFolderId", 0),
+    apiBaseUrl: cfg.get<string>("apiBaseUrl", CLI_CONFIG_DEFAULTS.apiBaseUrl),
+    endpointConflictBehavior: cfg.get<string>("endpointConflictBehavior", CLI_CONFIG_DEFAULTS.endpointConflictBehavior),
+    schemaConflictBehavior: cfg.get<string>("schemaConflictBehavior", CLI_CONFIG_DEFAULTS.schemaConflictBehavior),
+    include: cfg.get<string[]>("include", [...CLI_CONFIG_DEFAULTS.include]),
+    exclude: cfg.get<string[]>("exclude", [...CLI_CONFIG_DEFAULTS.exclude]),
+    exportPath: cfg.get<string>("exportPath", CLI_CONFIG_DEFAULTS.exportPath),
+    pageTypeStyle: cfg.get<"mybatis-plus" | "spring-data">("pageTypeStyle", CLI_CONFIG_DEFAULTS.pageTypeStyle),
+    folderNameSource: cfg.get<"tag" | "controller">("folderNameSource", CLI_CONFIG_DEFAULTS.folderNameSource),
+    rootFolderName: cfg.get<string>("rootFolderName", CLI_CONFIG_DEFAULTS.rootFolderName),
+    schemaFolderId: cfg.get<number>("schemaFolderId", CLI_CONFIG_DEFAULTS.schemaFolderId),
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
-    helperProperties: cfg.get<boolean>("helperProperties.enabled", true),
-    enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
-    dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
-    dependencyJars: cfg.get<string[]>("dependencyJars", []),
-    maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),
+    helperProperties: cfg.get<boolean>("helperProperties.enabled", CLI_CONFIG_DEFAULTS.helperPropertiesEnabled),
+    enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", CLI_CONFIG_DEFAULTS.enumFieldDoc),
+    dependencyRepos: cfg.get<string[]>("dependencyRepos", [...CLI_CONFIG_DEFAULTS.dependencyRepos]),
+    dependencyJars: cfg.get<string[]>("dependencyJars", [...CLI_CONFIG_DEFAULTS.dependencyJars]),
+    maxDependencyJars: cfg.get<number>("maxDependencyJars", CLI_CONFIG_DEFAULTS.maxDependencyJars),
     enableCodeLens: cfg.get<boolean>("enableCodeLens", true),
   };
 }

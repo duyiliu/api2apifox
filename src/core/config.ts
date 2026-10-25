@@ -1,9 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { CLI_CONFIG_DEFAULTS } from "../config/defaults";
 import { ConfigSource, ConflictBehavior, Diagnostic, ResolvedConfig, ResolvedConfigResult } from "./types";
 
-const DEFAULT_INCLUDE = ["**/src/main/java/**/*.java"];
-const DEFAULT_EXCLUDE = ["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**", "**/.*/**"];
 const CONFLICT_BEHAVIORS: ConflictBehavior[] = ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"];
 
 interface FileConfig {
@@ -85,23 +84,23 @@ export function resolveConfig(
   const defaults: ResolvedConfig = {
     projectRoot: root,
     title: path.basename(root) || "API",
-    projectId: 0,
-    apiBaseUrl: "https://api.apifox.com",
-    endpointConflictBehavior: "OVERWRITE_EXISTING",
-    schemaConflictBehavior: "OVERWRITE_EXISTING",
-    include: [...DEFAULT_INCLUDE],
-    exclude: [...DEFAULT_EXCLUDE],
-    exportPath: "openapi.gen.json",
-    pageTypeStyle: "mybatis-plus",
-    folderNameSource: "tag",
-    rootFolderName: "",
-    schemaFolderId: 0,
-    helperPropertiesEnabled: true,
-    enumFieldDoc: false,
-    dependencyRepos: [],
-    dependencyJars: [],
+    projectId: CLI_CONFIG_DEFAULTS.projectId,
+    apiBaseUrl: CLI_CONFIG_DEFAULTS.apiBaseUrl,
+    endpointConflictBehavior: CLI_CONFIG_DEFAULTS.endpointConflictBehavior,
+    schemaConflictBehavior: CLI_CONFIG_DEFAULTS.schemaConflictBehavior,
+    include: [...CLI_CONFIG_DEFAULTS.include],
+    exclude: [...CLI_CONFIG_DEFAULTS.exclude],
+    exportPath: CLI_CONFIG_DEFAULTS.exportPath,
+    pageTypeStyle: CLI_CONFIG_DEFAULTS.pageTypeStyle,
+    folderNameSource: CLI_CONFIG_DEFAULTS.folderNameSource,
+    rootFolderName: CLI_CONFIG_DEFAULTS.rootFolderName,
+    schemaFolderId: CLI_CONFIG_DEFAULTS.schemaFolderId,
+    helperPropertiesEnabled: CLI_CONFIG_DEFAULTS.helperPropertiesEnabled,
+    enumFieldDoc: CLI_CONFIG_DEFAULTS.enumFieldDoc,
+    dependencyRepos: [...CLI_CONFIG_DEFAULTS.dependencyRepos],
+    dependencyJars: [...CLI_CONFIG_DEFAULTS.dependencyJars],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
-    maxDependencyJars: 120,
+    maxDependencyJars: CLI_CONFIG_DEFAULTS.maxDependencyJars,
     // OpenAPI 导入首次创建目录、接口和模型可能超过一分钟；CLI 默认等待五分钟。
     timeoutMs: 300_000,
   };
