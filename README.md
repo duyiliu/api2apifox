@@ -171,19 +171,20 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `同步当前文件到 Apifox` | 右键 Java 文件(资源管理器/编辑器)或命令面板 |
 | `同步光标处接口到 Apifox` | 光标停在接口方法内执行,或点方法上方 CodeLens「▲ 同步此接口」 |
 | `查看上次同步结果` | 重新打开「同步结果」面板(导入计数表 + 接口清单) |
-| `导出 OpenAPI 预览文件` | 生成 `openapi.gen.json` 本地验证 |
+| `导出 OpenAPI 预览文件` | 生成 `openapi.gen.json` 本地验证(多根工作区按文件夹分别导出) |
+| `迁移旧项目绑定到各文件夹` | 多根工作区下把单根时期的工作区级项目绑定复制到尚未单独绑定的文件夹 |
 
 ## ⚙️ 扩展设置
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `apifoxHelper.projectId` | `0` | Apifox 项目 ID(推荐用「选择项目」命令自动写入) |
+| `apifoxHelper.projectId` | `0` | Apifox 项目 ID(推荐用「选择项目」命令自动写入;多根工作区下为文件夹级配置) |
 | `apifoxHelper.apiBaseUrl` | `https://api.apifox.com` | 开放 API 地址,私有化部署可改 |
 | `apifoxHelper.endpointConflictBehavior` | `OVERWRITE_EXISTING` | 接口冲突:`OVERWRITE_EXISTING` / `AUTO_MERGE` / `KEEP_EXISTING` / `CREATE_NEW` |
 | `apifoxHelper.schemaConflictBehavior` | `OVERWRITE_EXISTING` | 数据模型冲突策略,取值同上 |
 | `apifoxHelper.include` | `["**/src/main/java/**/*.java"]` | 扫描 glob |
 | `apifoxHelper.exclude` | `["**/target/**", "**/build/**", "**/src/test/**", "**/sample/**", "**/.*/**"]` | 排除 glob；工作区根下隐藏目录还会被强制过滤 |
-| `apifoxHelper.exportPath` | `openapi.gen.json` | 预览导出路径 |
+| `apifoxHelper.exportPath` | `openapi.gen.json` | 预览导出路径(多根工作区下为文件夹级配置) |
 | `apifoxHelper.pageTypeStyle` | `mybatis-plus` | 简单名 `Page` 的展开形态:`mybatis-plus`(records/total/current)或 `spring-data`(content/totalElements/number) |
 | `apifoxHelper.folderNameSource` | `tag` | 接口目录命名来源:`tag`(@Tag 注解,缺省类名)或 `controller`(类名) |
 | `apifoxHelper.helperProperties.enabled` | `true` | 是否识别工作区 `.apifox-helper.properties` 规则 |
@@ -196,6 +197,15 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 
 > 设置中心保存的项目绑定(`projectId`/`projectName`/`teamName`/`apiBaseUrl` 等)写入**工作区** `.vscode/settings.json`,会随仓库提交共享给团队(便于成员共用同一目标项目);访问令牌始终存在系统 SecretStorage,不落任何文件。
+
+### 多根工作区:按文件夹绑定 Apifox 项目
+
+当一个窗口打开多个服务仓库时,扩展会识别根目录包含 `pom.xml` / `build.gradle` / `build.gradle.kts` 的工作区文件夹(一个都识别不到时退回全部文件夹):
+
+- `apifoxHelper.projectId` / `projectName` / `teamName` / `exportPath` 支持 **文件夹级配置**:多根工作区下「选择 Apifox 项目」和设置中心会把绑定写入当前文件所在文件夹的 `.vscode/settings.json`(VS Code 的 `WorkspaceFolder` scope),其读取通过 `getConfiguration(section, uri)` 完成。
+- 接口树按工作区文件夹分组(单根时不显示多余前缀);勾选键包含文件夹,同名接口在不同文件夹互不影响,勾选集合仍按「文件夹 + Apifox 项目」隔离并跨会话保存。
+- 「同步整个工作区」「同步勾选的接口」「导出 OpenAPI」按文件夹分别执行:每个文件夹只扫描自己的源码、使用自己的项目绑定与导出路径,避免把 A 服务的接口同步进 B 项目。
+- **单根配置迁移**:单根工作区继续把绑定写在工作区级配置,`getConfiguration(section, folder.uri)` 会自动读取该旧值。升级为多根工作区后,执行命令「迁移旧项目绑定到各文件夹」即可把旧绑定复制到尚未单独绑定的文件夹;已单独绑定的文件夹不会被覆盖。
 
 ## 📄 .apifox-helper.properties 支持
 

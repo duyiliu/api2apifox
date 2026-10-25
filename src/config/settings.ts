@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { BindingSource, FolderBindingState } from "./workspaceScopes";
 
 export interface ApifoxSettings {
   projectId: number;
@@ -34,8 +35,10 @@ export interface ApifoxSettings {
   enableCodeLens: boolean;
 }
 
-export function getSettings(): ApifoxSettings {
-  const cfg = vscode.workspace.getConfiguration("apifoxHelper");
+/** 读取指定工作区文件夹(scope)的配置;不传 scope 时保持原有工作区级行为 */
+export function getSettings(scope?: vscode.Uri | vscode.WorkspaceFolder): ApifoxSettings {
+  const uri = scope && "uri" in scope ? scope.uri : scope;
+  const cfg = uri ? vscode.workspace.getConfiguration("apifoxHelper", uri) : vscode.workspace.getConfiguration("apifoxHelper");
   return {
     projectId: cfg.get<number>("projectId", 0),
     projectName: cfg.get<string>("projectName", ""),
@@ -60,9 +63,38 @@ export function getSettings(): ApifoxSettings {
   };
 }
 
-export async function saveProjectId(projectId: number, projectName?: string, teamName?: string): Promise<void> {
-  const cfg = vscode.workspace.getConfiguration("apifoxHelper");
-  const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+/**
+ * 写入配置的目标:
+ * - 多根工作区且指定了 folder:WorkspaceFolder(各自独立的 .vscode/settings.json)
+ * - 单根/无 folder:WorkSpace(单根没有独立的 folder 层级,兼容旧配置)
+ * - 未打开文件夹:Global
+ */
+export function configurationTargetFor(folder?: vscode.WorkspaceFolder): vscode.ConfigurationTarget {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folder && folders.length > 1) {
+    return vscode.ConfigurationTarget.WorkspaceFolder;
+  }
+  return folders.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+}
+
+function configurationFor(folder?: vscode.WorkspaceFolder): vscode.WorkspaceConfiguration {
+  return folder
+    ? vscode.workspace.getConfiguration("apifoxHelper", folder.uri)
+    : vscode.workspace.getConfiguration("apifoxHelper");
+}
+
+/**
+ * 保存项目绑定。多根工作区写入 folder 级配置;单根继续写 Workspace,
+ * 使旧配置仍可通过 getConfiguration(section, folder.uri) 读取(迁移路径见命令)。
+ */
+export async function saveProjectId(
+  projectId: number,
+  projectName?: string,
+  teamName?: string,
+  folder?: vscode.WorkspaceFolder
+): Promise<void> {
+  const cfg = configurationFor(folder);
+  const target = configurationTargetFor(folder);
   await cfg.update("projectId", projectId, target);
   if (projectName !== undefined) {
     await cfg.update("projectName", projectName, target);
@@ -70,4 +102,23 @@ export async function saveProjectId(projectId: number, projectName?: string, tea
   if (teamName !== undefined) {
     await cfg.update("teamName", teamName, target);
   }
+}
+
+/** 解析某个作用域下实际生效的项目绑定,并标记值来自 folder / workspace / global */
+export function getProjectBinding(scope?: vscode.Uri | vscode.WorkspaceFolder): FolderBindingState {
+  const uri = scope && "uri" in scope ? scope.uri : scope;
+  const cfg = uri ? vscode.workspace.getConfiguration("apifoxHelper", uri) : vscode.workspace.getConfiguration("apifoxHelper");
+  const projectId = cfg.get<number>("projectId", 0);
+  const projectName = cfg.get<string>("projectName", "");
+  const teamName = cfg.get<string>("teamName", "");
+  const inspected = cfg.inspect<number>("projectId");
+  let source: BindingSource = "none";
+  if (inspected?.workspaceFolderValue !== undefined) {
+    source = "folder";
+  } else if (inspected?.workspaceValue !== undefined) {
+    source = "workspace";
+  } else if (inspected?.globalValue !== undefined) {
+    source = "global";
+  }
+  return { projectId, projectName, teamName, source };
 }

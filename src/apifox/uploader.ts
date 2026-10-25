@@ -51,7 +51,7 @@ interface ProjectQuickPickItem extends vscode.QuickPickItem {
  *  - 步骤 1/2: 选择团队 (支持右上角刷新、输入搜索)
  *  - 步骤 2/2: 选择项目 (支持左上角返回上级重新选团队、右上角刷新)
  */
-export async function selectProject(client: ApifoxClient): Promise<boolean> {
+export async function selectProject(client: ApifoxClient, folder?: vscode.WorkspaceFolder): Promise<boolean> {
   const refreshButton: vscode.QuickInputButton = {
     iconPath: new vscode.ThemeIcon("refresh"),
     tooltip: "刷新列表",
@@ -225,9 +225,10 @@ export async function selectProject(client: ApifoxClient): Promise<boolean> {
       return false; // 用户在第二步取消
     }
     if (result.action === "selected" && result.project) {
-      await saveProjectId(result.project.id, result.project.name, currentTeam.name);
+      await saveProjectId(result.project.id, result.project.name, currentTeam.name, folder);
+      const scopeHint = folder ? `「${folder.name}」` : "";
       vscode.window.showInformationMessage(
-        `已选择 Apifox 项目「${result.project.name}」(ID: ${result.project.id} · 所属团队: ${currentTeam.name})`
+        `已选择 Apifox 项目${scopeHint}「${result.project.name}」(ID: ${result.project.id} · 所属团队: ${currentTeam.name})`
       );
       return true;
     }

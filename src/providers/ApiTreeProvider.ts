@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { EndpointInfo } from "../java/model";
 import { getSettings } from "../config/settings";
+import { endpointSelectionKey } from "../config/workspaceScopes";
 import {
   buildFolderTree,
   countFolderEndpoints,
@@ -20,7 +21,7 @@ import {
  */
 
 export type ApiTreeNode =
-  | { kind: "banner"; projectId: number; projectName: string; teamName: string }
+  | { kind: "banner"; projectId: number; projectName: string; teamName: string; scopeSummary?: string }
   | {
       kind: "filterBar";
       keyword: string;
@@ -32,6 +33,15 @@ export type ApiTreeNode =
   | { kind: "empty"; message: string }
   | { kind: "folder"; key: string; label: string; endpoints: EndpointInfo[]; children: FolderTree[] }
   | { kind: "endpoint"; endpoint: EndpointInfo };
+
+/** 每个工作区文件夹的勾选作用域(文件夹 + 其绑定的 Apifox 项目) */
+export interface FolderBindingScope {
+  folderKey: string;
+  projectId: number;
+  label?: string;
+  projectName?: string;
+  teamName?: string;
+}
 
 /** 目录树节点 → 视图节点 */
 function toFolderNode(node: FolderTree): ApiTreeNode {
@@ -109,7 +119,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   private analysis: { endpoints: EndpointInfo[] } | undefined;
   private filterKeyword: string = "";
   private filteredEndpoints: EndpointInfo[] = [];
-  private checkedProjectId: number;
+  private currentBindings: FolderBindingScope[];
   private refreshGeneration = 0;
 
   constructor(
@@ -118,19 +128,62 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     /** 目录命名(与同步 folderOf 一致;返回目录 key) */
     private readonly folderKeyOf: (ep: EndpointInfo) => string,
     /** 工作区状态存储(勾选集合跨会话保持) */
-    private readonly workspaceState: vscode.Memento
+    private readonly workspaceState: vscode.Memento,
+    /** 接口归属的工作区文件夹键(勾选键命名空间) */
+    private readonly scopeKeyOf: (ep: EndpointInfo) => string = () => "",
+    /** 当前各文件夹的项目绑定;多根工作区下每个文件夹独立保存勾选 */
+    private readonly bindingScopes: () => FolderBindingScope[] = () => [
+      { folderKey: "", projectId: getSettings().projectId },
+    ]
   ) {
-    this.checkedProjectId = getSettings().projectId;
-    const scopedKey = this.checkedStorageKey(this.checkedProjectId);
-    const scopedSaved = workspaceState.get<string[]>(scopedKey);
-    const migrationDone = workspaceState.get<boolean>("checkedEndpointsScopedV1", false);
-    const legacySaved = !migrationDone ? workspaceState.get<string[]>("checkedEndpoints") : undefined;
-    const saved = Array.isArray(scopedSaved) ? scopedSaved : legacySaved;
-    this.checked = new Set(Array.isArray(saved) ? saved : []);
-    if (!migrationDone) {
-      void workspaceState.update(scopedKey, [...this.checked]);
-      void workspaceState.update("checkedEndpointsScopedV1", true);
+    this.currentBindings = this.normalizeBindings(this.bindingScopes());
+    this.checked = this.loadChecked(this.currentBindings);
+  }
+
+  private normalizeBindings(bindings: FolderBindingScope[]): FolderBindingScope[] {
+    return bindings.length ? bindings : [{ folderKey: "", projectId: getSettings().projectId }];
+  }
+
+  private loadChecked(bindings: FolderBindingScope[]): Set<string> {
+    const loaded = new Set<string>();
+    let migrated = false;
+    let foundScoped = false;
+    for (const binding of bindings) {
+      const scoped = this.workspaceState.get<string[]>(this.scopedCheckedStorageKey(binding));
+      if (Array.isArray(scoped)) {
+        foundScoped = true;
+        for (const key of scoped) {
+          loaded.add(key);
+        }
+      }
     }
+    if (!foundScoped) {
+      // 旧版本只有按项目保存、不含文件夹的键:迁移到第一个文件夹作用域
+      const first = bindings[0];
+      if (first) {
+        const legacy = this.workspaceState.get<string[]>(this.checkedStorageKey(first.projectId));
+        if (Array.isArray(legacy)) {
+          for (const key of legacy) {
+            loaded.add(this.migrateLegacyKey(key, first.folderKey));
+          }
+          migrated = true;
+        }
+      }
+    }
+    if (migrated) {
+      this.persistChecked(loaded, bindings);
+    }
+    return loaded;
+  }
+
+  private migrateLegacyKey(key: string, folderKey: string): string {
+    if (key.includes("\u0000")) {
+      return key;
+    }
+    const index = key.indexOf(" ");
+    const method = index > 0 ? key.slice(0, index) : "";
+    const path = index > 0 ? key.slice(index + 1) : key;
+    return endpointSelectionKey(folderKey, { method, path });
   }
 
   /** 重新解析并刷新树 */
@@ -148,19 +201,37 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
   /** Apifox 项目切换后加载该项目独立的勾选集合，避免跨项目误同步。 */
   setProjectScope(projectId: number): void {
-    const normalized = Number(projectId) || 0;
-    if (normalized === this.checkedProjectId) {
+    const folderKey = this.currentBindings[0]?.folderKey ?? "";
+    this.setProjectScopes([{ folderKey, projectId }]);
+  }
+
+  /** 多根工作区:按文件夹/项目组合加载各自独立的勾选集合 */
+  setProjectScopes(bindings: FolderBindingScope[]): void {
+    const normalized = this.normalizeBindings(bindings);
+    const same = normalized.length === this.currentBindings.length && normalized.every((binding, index) => {
+      const current = this.currentBindings[index];
+      return current.folderKey === binding.folderKey && current.projectId === binding.projectId;
+    });
+    const changed = !same;
+    this.currentBindings = normalized;
+    if (!changed) {
       return;
     }
-    this.checkedProjectId = normalized;
-    const saved = this.workspaceState.get<string[]>(this.checkedStorageKey(normalized));
-    this.checked = new Set(Array.isArray(saved) ? saved : []);
+    this.checked = this.loadChecked(normalized);
     this.rebuild();
     this.fireChanged();
   }
 
   private checkedStorageKey(projectId: number): string {
     return `checkedEndpoints:${projectId > 0 ? projectId : "unbound"}`;
+  }
+
+  private scopedCheckedStorageKey(binding: FolderBindingScope): string {
+    return `${this.checkedStorageKey(binding.projectId)}:${binding.folderKey || "workspace"}`;
+  }
+
+  private endpointKey(ep: EndpointInfo): string {
+    return endpointSelectionKey(this.scopeKeyOf(ep), ep);
   }
 
   /** 获取当前拆分后的过滤词 tokens */
@@ -189,7 +260,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
 
     // 仅在确实完成过一次分析时清掉已消失接口；未扫描/扫描取消不能抹掉历史选择。
     if (this.analysis !== undefined) {
-      const alive = new Set(allEndpoints.map((e) => `${e.method} ${e.path}`));
+      const alive = new Set(allEndpoints.map((e) => this.endpointKey(e)));
       let pruned = false;
       for (const k of [...this.checked]) {
         if (!alive.has(k)) {
@@ -208,28 +279,45 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     this.folderUserExpanded.set(key, expanded);
   }
 
-  /** 将勾选集合写入工作区状态(重启后恢复) */
-  private persistChecked(): void {
-    void this.workspaceState.update(this.checkedStorageKey(this.checkedProjectId), [...this.checked]);
+  /** 将勾选集合按文件夹/项目写入工作区状态(重启后恢复) */
+  private persistChecked(checked: Set<string> = this.checked, bindings: FolderBindingScope[] = this.currentBindings): void {
+    const byFolder = new Map<string, string[]>();
+    for (const key of checked) {
+      const folderKey = key.includes("\u0000") ? key.slice(0, key.indexOf("\u0000")) : "";
+      const list = byFolder.get(folderKey) ?? [];
+      list.push(key);
+      byFolder.set(folderKey, list);
+    }
+    for (const binding of bindings) {
+      const scoped = byFolder.get(binding.folderKey) ?? [];
+      void this.workspaceState.update(this.scopedCheckedStorageKey(binding), scoped);
+    }
   }
 
   getTreeItem(element: ApiTreeNode): vscode.TreeItem {
     if (element.kind === "banner") {
-      const configured = element.projectId > 0;
-      const title = configured
-        ? `项目: ${element.projectName || `项目 ${element.projectId}`}`
-        : "未绑定 Apifox 项目 (点击设置)";
+      const multiScope = !!element.scopeSummary;
+      const configured = multiScope || element.projectId > 0;
+      const title = multiScope
+        ? `项目: ${element.scopeSummary}`
+        : configured
+          ? `项目: ${element.projectName || `项目 ${element.projectId}`}`
+          : "未绑定 Apifox 项目 (点击设置)";
       const item = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
       item.iconPath = new vscode.ThemeIcon(
         configured ? "project" : "warning",
         configured ? undefined : new vscode.ThemeColor("problemsWarningIcon.foreground")
       );
-      item.description = configured
-        ? `${element.teamName ? `团队: ${element.teamName}` : `ID: ${element.projectId}`} · 点击配置`
-        : "点击打开设置中心";
-      item.tooltip = configured
-        ? `当前绑定项目: ${element.projectName || `ID: ${element.projectId}`}\n所属团队: ${element.teamName || "未记录"}\n项目 ID: ${element.projectId}\n点击打开设置中心修改`
-        : "尚未绑定 Apifox 项目，点击打开设置中心进行配置";
+      item.description = element.scopeSummary
+        ? `${element.scopeSummary} · 点击配置`
+        : configured
+          ? `${element.teamName ? `团队: ${element.teamName}` : `ID: ${element.projectId}`} · 点击配置`
+          : "点击打开设置中心";
+      item.tooltip = element.scopeSummary
+        ? `${element.scopeSummary}\n每个工作区文件夹可绑定不同的 Apifox 项目（设置中心或「选择 Apifox 项目」会写入当前文件夹）\n点击打开设置中心修改`
+        : configured
+          ? `当前绑定项目: ${element.projectName || `ID: ${element.projectId}`}\n所属团队: ${element.teamName || "未记录"}\n项目 ID: ${element.projectId}\n点击打开设置中心修改`
+          : "尚未绑定 Apifox 项目，点击打开设置中心进行配置";
       item.command = {
         command: "apifoxHelper.openSettingsPanel",
         title: "打开设置中心",
@@ -281,7 +369,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       item.iconPath = new vscode.ThemeIcon("folder-library");
       // 统计含子目录:父目录上直接反映整棵子树的接口量与勾选情况
       const total = countFolderEndpoints(element);
-      const state = folderSelectionState(element, (ep) => this.checked.has(`${ep.method} ${ep.path}`));
+      const state = folderSelectionState(element, (ep) => this.checked.has(this.endpointKey(ep)));
       const checkedInFolder = state === "all" ? total : state === "some" ? undefined : 0;
       const direct = element.endpoints.length;
       const scope = direct === total ? `${total} 个接口` : `含子目录 ${total} 个`;
@@ -318,7 +406,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
       `**${ep.summary ?? ep.path}**\n\n\`${ep.method} ${ep.path}\`\n\n${ep.controller}.${ep.operationId}` +
         (ep.deprecated ? "\n\n⚠ 已废弃(@Deprecated)" : "")
     );
-    item.checkboxState = this.checked.has(`${ep.method} ${ep.path}`)
+    item.checkboxState = this.checked.has(this.endpointKey(ep))
       ? vscode.TreeItemCheckboxState.Checked
       : vscode.TreeItemCheckboxState.Unchecked;
     if (ep.fsPath && ep.methodRange) {
@@ -335,11 +423,16 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   getChildren(element?: ApiTreeNode): ApiTreeNode[] {
     if (!element) {
       const s = getSettings();
+      const bound = this.currentBindings.filter((binding) => binding.projectId > 0);
+      const scopeSummary = this.currentBindings.length > 1
+        ? `${bound.length}/${this.currentBindings.length} 个文件夹已绑定项目`
+        : undefined;
       const bannerNode: ApiTreeNode = {
         kind: "banner",
-        projectId: s.projectId,
-        projectName: s.projectName || "",
-        teamName: s.teamName || "",
+        projectId: bound.length === 1 ? bound[0].projectId : s.projectId,
+        projectName: bound.length === 1 ? bound[0].projectName ?? "" : s.projectName || "",
+        teamName: bound.length === 1 ? bound[0].teamName ?? "" : s.teamName || "",
+        scopeSummary,
       };
 
       const nodes: ApiTreeNode[] = [bannerNode];
@@ -418,14 +511,14 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
     if (!this.isFiltered()) {
       return { total: allChecked.length, visible: allChecked.length, hidden: 0 };
     }
-    const visibleKeys = new Set(this.filteredEndpoints.map((e) => `${e.method} ${e.path}`));
-    const visible = allChecked.filter((e) => visibleKeys.has(`${e.method} ${e.path}`)).length;
+    const visibleKeys = new Set(this.filteredEndpoints.map((e) => this.endpointKey(e)));
+    const visible = allChecked.filter((e) => visibleKeys.has(this.endpointKey(e))).length;
     return { total: allChecked.length, visible, hidden: allChecked.length - visible };
   }
 
   /** 单个接口勾选变化(TreeView checkbox) */
   setChecked(ep: EndpointInfo, checked: boolean): void {
-    const key = `${ep.method} ${ep.path}`;
+    const key = this.endpointKey(ep);
     if (checked) {
       this.checked.add(key);
     } else {
@@ -437,7 +530,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   /** 目录勾选变化(联动该目录及其子目录下的所有接口) */
   setFolderChecked(folder: FolderTree, checked: boolean): void {
     for (const ep of flattenFolderEndpoints(folder)) {
-      const key = `${ep.method} ${ep.path}`;
+      const key = this.endpointKey(ep);
       if (checked) {
         this.checked.add(key);
       } else {
@@ -451,7 +544,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   checkAll(): number {
     const targets = this.isFiltered() ? this.filteredEndpoints : (this.analysis?.endpoints ?? []);
     for (const ep of targets) {
-      this.checked.add(`${ep.method} ${ep.path}`);
+      this.checked.add(this.endpointKey(ep));
     }
     this.persistChecked();
     this.fireChanged();
@@ -462,7 +555,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   uncheckAll(): number {
     const targets = this.isFiltered() ? this.filteredEndpoints : (this.analysis?.endpoints ?? []);
     for (const ep of targets) {
-      this.checked.delete(`${ep.method} ${ep.path}`);
+      this.checked.delete(this.endpointKey(ep));
     }
     this.persistChecked();
     this.fireChanged();
@@ -472,12 +565,12 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<ApiTreeNode> {
   /** 当前勾选的接口；visible 仅返回当前过滤结果中的勾选项。 */
   getCheckedEndpoints(scope: "all" | "visible" = "all"): EndpointInfo[] {
     const all = this.analysis?.endpoints ?? [];
-    const checked = all.filter((e) => this.checked.has(`${e.method} ${e.path}`));
+    const checked = all.filter((e) => this.checked.has(this.endpointKey(e)));
     if (scope === "all" || !this.isFiltered()) {
       return checked;
     }
-    const visibleKeys = new Set(this.filteredEndpoints.map((e) => `${e.method} ${e.path}`));
-    return checked.filter((e) => visibleKeys.has(`${e.method} ${e.path}`));
+    const visibleKeys = new Set(this.filteredEndpoints.map((e) => this.endpointKey(e)));
+    return checked.filter((e) => visibleKeys.has(this.endpointKey(e)));
   }
 
   get checkedCount(): number {

@@ -4,14 +4,24 @@ import * as vscode from "vscode";
 import { ApifoxClient } from "./apifox/client";
 import { errorMessage, ensureToken, selectProject, syncToApifox } from "./apifox/uploader";
 import { setToken } from "./config/secret";
-import { getSettings } from "./config/settings";
+import { getSettings, getProjectBinding, saveProjectId } from "./config/settings";
+import type { ApifoxSettings } from "./config/settings";
+import {
+  apiFolderKey,
+  detectProjectFolders,
+  endpointSelectionKey,
+  planProjectBindingMigration,
+  resolveExportPath,
+  treeFolderKey,
+  workspaceFolderForPath,
+} from "./config/workspaceScopes";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { fileSetFingerprint } from "./config/fileFingerprint";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
-import { AnalyzeCache, endpointAt } from "./pipeline";
+import { AnalyzeCache, AnalyzeOutput, endpointAt } from "./pipeline";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
@@ -19,14 +29,92 @@ import { buildSyncReport, projectWebUrl } from "./ui/syncResult";
 
 const cache = new AnalyzeCache();
 
+/** 一个工作区文件夹对应的解析/同步作用域 */
+interface ProjectScope {
+  folder: vscode.WorkspaceFolder;
+  key: string;
+  label: string;
+  index: number;
+}
+
+let projectScopesCache: { key: string; scopes: ProjectScope[] } | undefined;
+
+/** 工作区文件夹增删/构建文件变化后失效 */
+function invalidateProjectScopes(): void {
+  projectScopesCache = undefined;
+}
+
+/** 识别含 pom.xml / build.gradle(.kts) 的工作区文件夹(都没有时退回全部) */
+function currentProjectScopes(): ProjectScope[] {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const cacheKey = folders.map((folder) => folder.uri.fsPath).join("\n");
+  if (projectScopesCache?.key === cacheKey) {
+    return projectScopesCache.scopes;
+  }
+  const scopes = detectProjectFolders(
+    folders.map((folder, index) => ({ name: folder.name, fsPath: folder.uri.fsPath, index })),
+    (candidate) => fs.existsSync(candidate)
+  ).map((detected) => ({
+    folder: folders[detected.index],
+    key: detected.key,
+    label: detected.label,
+    index: detected.index,
+  }));
+  projectScopesCache = { key: cacheKey, scopes };
+  return scopes;
+}
+
+function scopeForPath(fsPath: string): ProjectScope | undefined {
+  return workspaceFolderForPath(fsPath, currentProjectScopes());
+}
+
+function scopeForUri(uri: vscode.Uri): ProjectScope | undefined {
+  return scopeForPath(uri.fsPath);
+}
+
+function scopeKeyOfEndpoint(ep: EndpointInfo): string {
+  return scopeForPath(ep.fsPath)?.key ?? currentProjectScopes()[0]?.key ?? "";
+}
+
+function endpointKeyOf(ep: EndpointInfo): string {
+  return endpointSelectionKey(scopeKeyOfEndpoint(ep), ep);
+}
+
+/** 侧边栏多根分组用的目录 key;单根保持原目录路径(不含工作区名前缀) */
+function treeFolderKeyOf(ep: { tag: string; controller: string; fsPath?: string }): string {
+  const scope = ep.fsPath ? scopeForPath(ep.fsPath) : currentProjectScopes()[0];
+  const settings = getSettings(scope?.folder.uri);
+  const apiFolder = apiFolderKey(settings, ep);
+  return treeFolderKey(scope?.label ?? "工作区", apiFolder, currentProjectScopes().length > 1);
+}
+
+/** 当前各文件夹的勾选作用域(文件夹 + 项目绑定) */
+function bindingScopesForTree(): { folderKey: string; projectId: number; label: string; projectName: string; teamName: string }[] {
+  const scopes = currentProjectScopes();
+  if (!scopes.length) {
+    const settings = getSettings();
+    return [{ folderKey: "", projectId: settings.projectId, label: "工作区", projectName: settings.projectName ?? "", teamName: settings.teamName ?? "" }];
+  }
+  return scopes.map((scope) => {
+    const settings = getSettings(scope.folder.uri);
+    return {
+      folderKey: scope.key,
+      projectId: settings.projectId,
+      label: scope.label,
+      projectName: settings.projectName ?? "",
+      teamName: settings.teamName ?? "",
+    };
+  });
+}
+
 /**
  * 依赖 jar 索引的会话级缓存:jar 文件集合与内容指纹未变时直接复用,
  * 避免每次保存 Java 文件刷新树都同步重读一遍 jar(大仓下保存后会卡一下)。
  * 显式 jar / 额外仓库目录配置变化、任一匹配 jar 的 mtime/size 变化即失效。
  */
-let jarIndexCache: { key: string; index: JarClassIndex | undefined } | undefined;
-/** 最近一次 jar 索引指纹,参与 AnalyzeCache 结果级缓存键;jar 变化时分析结果需重算 */
-let activeJarIndexKey = "";
+let jarIndexCache = new Map<string, { key: string; index: JarClassIndex | undefined }>();
+/** 最近一次 jar 索引指纹(按作用域),参与 AnalyzeCache 结果级缓存键;jar 变化时分析结果需重算 */
+let activeJarIndexKeys = new Map<string, string>();
 
 const MAX_POMS = 200;
 
@@ -36,7 +124,7 @@ const MAX_POMS = 200;
  * pom 路径由文件监听器在新增/删除/改名时失效;内容变化不影响路径列表,坐标仍每次重读。
  */
 let mavenReposCache: { key: string; repos: string[] } | undefined;
-let pomFilesCache: { key: string; files: vscode.Uri[] } | undefined;
+let pomFilesCache = new Map<string, { key: string; files: vscode.Uri[] }>();
 
 async function cachedMavenRepos(configured: string[]): Promise<string[]> {
   const key = configured.join("\n");
@@ -48,19 +136,23 @@ async function cachedMavenRepos(configured: string[]): Promise<string[]> {
   return repos;
 }
 
-async function cachedPomFiles(): Promise<vscode.Uri[]> {
+async function cachedPomFiles(scope?: ProjectScope): Promise<vscode.Uri[]> {
+  const scopeKey = scope?.key ?? "all";
   const key = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath).join("\n");
-  if (pomFilesCache?.key === key) {
-    return pomFilesCache.files;
+  const cached = pomFilesCache.get(scopeKey);
+  if (cached?.key === key) {
+    return cached.files;
   }
-  const files = await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
-  pomFilesCache = { key, files };
+  const files = scope
+    ? await vscode.workspace.findFiles(new vscode.RelativePattern(scope.folder, "**/pom.xml"), "**/target/**", MAX_POMS)
+    : await vscode.workspace.findFiles("**/pom.xml", "**/target/**", MAX_POMS);
+  pomFilesCache.set(scopeKey, { key, files });
   return files;
 }
 
 /** pom.xml 新增/删除/改名后失效路径列表缓存;内容变化无需失效(坐标每次重读) */
 function invalidatePomFilesCache(): void {
-  pomFilesCache = undefined;
+  pomFilesCache.clear();
 }
 
 /**
@@ -68,7 +160,7 @@ function invalidatePomFilesCache(): void {
  * 避免每次保存 Java 文件刷新树都逐文件重读。properties.additional 已加载/已引用的
  * 文件一并纳入指纹,引用文件变化或缺失文件重新出现时同样失效。
  */
-let helperPropertiesCache: { key: string; props: HelperProperties } | undefined;
+let helperPropertiesCache = new Map<string, { key: string; props: HelperProperties }>();
 
 function jarIndexCacheKey(configSignature: string, jars: string[]): string {
   const parts: string[] = [configSignature];
@@ -84,8 +176,8 @@ function jarIndexCacheKey(configSignature: string, jars: string[]): string {
 }
 
 /** 构建依赖 jar 的类索引(源码之外的类型按需从 .class 解析,如框架的 ResponseDto) */
-async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
-  const settings = getSettings();
+async function buildJarClassIndex(settings: ApifoxSettings, scope?: ProjectScope): Promise<JarClassIndex | undefined> {
+  const cacheKeyScope = scope?.key ?? "all";
   const configSignature = [...settings.dependencyJars, ...settings.dependencyRepos].join("\n");
   const jars: string[] = [];
   // 1. 显式 jar 优先
@@ -101,7 +193,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   // 2. 仓库 + 工作区 pom 坐标
   const repos = await cachedMavenRepos(settings.dependencyRepos);
   if (repos.length) {
-    const poms = await cachedPomFiles();
+    const poms = await cachedPomFiles(scope);
     if (poms.length >= MAX_POMS) {
       vscode.window.showWarningMessage(`pom.xml 数量达到上限 ${MAX_POMS},部分模块的依赖 jar 未纳入识别(可用 dependencyJars 显式补充)`);
     }
@@ -125,14 +217,15 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   }
   // jar 集合与文件指纹未变时复用会话缓存,大仓保存刷新不再同步重读
   const key = jarIndexCacheKey(configSignature, jars);
-  activeJarIndexKey = key;
-  if (jarIndexCache && jarIndexCache.key === key) {
-    return jarIndexCache.index;
+  activeJarIndexKeys.set(cacheKeyScope, key);
+  const cached = jarIndexCache.get(cacheKeyScope);
+  if (cached && cached.key === key) {
+    return cached.index;
   }
   // 索引持有各 jar 的 fd,被替换前先释放
-  jarIndexCache?.index?.dispose();
+  cached?.index?.dispose();
   if (!jars.length) {
-    jarIndexCache = { key, index: undefined };
+    jarIndexCache.set(cacheKeyScope, { key, index: undefined });
     return undefined;
   }
   const idx = JarClassIndex.build(jars);
@@ -140,31 +233,41 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
   if (!result) {
     idx.dispose();
   }
-  jarIndexCache = { key, index: result };
+  jarIndexCache.set(cacheKeyScope, { key, index: result });
   return result;
 }
 
-/** 找到工作区内的 .apifox-helper.properties 并读取(整包同步/导出用) */
-async function loadHelperProperties(): Promise<HelperProperties | undefined> {
-  const settings = getSettings();
+/** 找到工作区/指定文件夹内的 .apifox-helper.properties 并读取(整包同步/导出用) */
+async function loadHelperProperties(settings: ApifoxSettings, scope?: ProjectScope): Promise<HelperProperties | undefined> {
+  const cacheKeyScope = scope?.key ?? "all";
   if (!settings.helperProperties) {
+    helperPropertiesCache.delete(cacheKeyScope);
     return undefined;
   }
   // 隐藏目录/副本内的同名 rules 会因路径更深而覆盖工作区根配置,先剔除
-  const uris = withoutIgnoredSources(await vscode.workspace.findFiles("**/.apifox-helper.properties", "**/node_modules/**", 100));
+  const uris = withoutIgnoredSources(
+    scope
+      ? await vscode.workspace.findFiles(
+          new vscode.RelativePattern(scope.folder, "**/.apifox-helper.properties"),
+          "**/node_modules/**",
+          100
+        )
+      : await vscode.workspace.findFiles("**/.apifox-helper.properties", "**/node_modules/**", 100)
+  );
   const paths = uris.map((uri) => uri.fsPath.replace(/\\/g, "/"));
   if (!paths.length) {
-    helperPropertiesCache = undefined;
+    helperPropertiesCache.delete(cacheKeyScope);
     return undefined;
   }
+  const cached = helperPropertiesCache.get(cacheKeyScope);
   // 指纹含上次 properties.additional 已加载/已引用的文件:引用文件新增或变化都会重新读取
   const watched = new Set(paths);
-  for (const file of helperPropertiesCache?.props.watchedFiles ?? helperPropertiesCache?.props.files ?? []) {
+  for (const file of cached?.props.watchedFiles ?? cached?.props.files ?? []) {
     watched.add(file);
   }
   const cacheKey = fileSetFingerprint(watched);
-  if (helperPropertiesCache?.key === cacheKey) {
-    return helperPropertiesCache.props;
+  if (cached?.key === cacheKey) {
+    return cached.props;
   }
   const contents: { path: string; content: string }[] = [];
   let readAll = true;
@@ -177,7 +280,7 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
     }
   }
   if (!contents.length) {
-    helperPropertiesCache = undefined;
+    helperPropertiesCache.delete(cacheKeyScope);
     return undefined;
   }
   // 更深的路径视为更具体的模块,后加载(优先级高);同级按文件名
@@ -190,9 +293,11 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
       return undefined;
     }
   });
-  helperPropertiesCache = readAll
-    ? { key: fileSetFingerprint([...paths, ...(props.watchedFiles ?? props.files)]), props }
-    : undefined;
+  if (readAll) {
+    helperPropertiesCache.set(cacheKeyScope, { key: fileSetFingerprint([...paths, ...(props.watchedFiles ?? props.files)]), props });
+  } else {
+    helperPropertiesCache.delete(cacheKeyScope);
+  }
   return props;
 }
 
@@ -233,30 +338,38 @@ export function activate(context: vscode.ExtensionContext): void {
   // 扩展停用时释放 jar 索引持有的 fd 并清空会话缓存
   context.subscriptions.push({
     dispose: () => {
-      jarIndexCache?.index?.dispose();
-      jarIndexCache = undefined;
+      for (const cached of jarIndexCache.values()) {
+        cached.index?.dispose();
+      }
+      jarIndexCache.clear();
+      activeJarIndexKeys.clear();
       mavenReposCache = undefined;
-      pomFilesCache = undefined;
-      helperPropertiesCache = undefined;
+      pomFilesCache.clear();
+      helperPropertiesCache.clear();
+      invalidateProjectScopes();
     },
   });
 
-  // pom.xml 路径列表缓存:新增/删除/改名时失效(避免新模块依赖漏识别)
-  const pomWatcher = vscode.workspace.createFileSystemWatcher("**/pom.xml");
+  // pom.xml / Gradle 构建文件变化时失效路径列表与项目文件夹识别
+  const pomWatcher = vscode.workspace.createFileSystemWatcher("**/{pom.xml,build.gradle,build.gradle.kts}");
+  const invalidateBuildFiles = () => {
+    invalidatePomFilesCache();
+    invalidateProjectScopes();
+  };
   context.subscriptions.push(
     pomWatcher,
-    pomWatcher.onDidCreate(invalidatePomFilesCache),
-    pomWatcher.onDidDelete(invalidatePomFilesCache)
+    pomWatcher.onDidCreate(invalidateBuildFiles),
+    pomWatcher.onDidDelete(invalidateBuildFiles)
   );
 
-  const makeClient = async (): Promise<ApifoxClient | undefined> => {
-    const settings = getSettings();
+  const makeClient = async (scope?: ProjectScope): Promise<ApifoxClient | undefined> => {
+    const settings = getSettings(scope?.folder.uri);
     const token = await ensureToken(secrets);
     if (!token) {
       return undefined;
     }
     if (!settings.projectId) {
-      const ok = await selectProject(new ApifoxClient(settings.apiBaseUrl, token));
+      const ok = await selectProject(new ApifoxClient(settings.apiBaseUrl, token), scope?.folder);
       if (!ok) {
         return undefined;
       }
@@ -264,23 +377,24 @@ export function activate(context: vscode.ExtensionContext): void {
     return new ApifoxClient(settings.apiBaseUrl, token);
   };
 
-  /** 收集要分析的 Java 文件;singleFile 限定为一个文件(token 取消即中断读文件循环) */
+  /** 收集要分析的 Java 文件;scope 限定工作区文件夹,singleFile 限定为一个文件 */
   const collectFiles = async (
     singleFile?: vscode.Uri,
     token?: vscode.CancellationToken,
-    keepCheckoutOf?: vscode.Uri
+    keepCheckoutOf?: vscode.Uri,
+    scope?: ProjectScope
   ): Promise<SourceFile[] | undefined> => {
-    const settings = getSettings();
+    const settings = getSettings(scope?.folder.uri);
     let uris: vscode.Uri[];
     if (singleFile) {
       uris = [singleFile];
     } else {
       const MAX_FILES = 5000;
-      uris = await vscode.workspace.findFiles(
-        `{${settings.include.join(",")}}`,
-        `{${settings.exclude.join(",")}}`,
-        MAX_FILES
-      );
+      const include = `{${settings.include.join(",")}}`;
+      const exclude = `{${settings.exclude.join(",")}}`;
+      uris = scope
+        ? await vscode.workspace.findFiles(new vscode.RelativePattern(scope.folder, include), new vscode.RelativePattern(scope.folder, exclude), MAX_FILES)
+        : await vscode.workspace.findFiles(include, exclude, MAX_FILES);
       // findFiles 命中数达到上限即静默截断;大仓被截断会丢接口,明确提示
       if (uris.length >= MAX_FILES) {
         vscode.window.showWarningMessage(`Java 源文件数达到扫描上限 ${MAX_FILES},超出部分未纳入解析(可用 include/exclude 收敛范围)`);
@@ -302,60 +416,86 @@ export function activate(context: vscode.ExtensionContext): void {
     return files.length ? files : undefined;
   };
 
-  const analyzeOptions = async () => {
-    const settings = getSettings();
+  const analyzeOptions = async (scope?: ProjectScope) => {
+    const settings = getSettings(scope?.folder.uri);
     const rootFolder = settings.rootFolderName.trim();
-    const jarIndex = await buildJarClassIndex();
+    const jarIndex = await buildJarClassIndex(settings, scope);
+    const cacheScope = scope?.key ?? "all";
     return {
-      title: vscode.workspace.name ?? "API",
+      title: scope?.label ?? vscode.workspace.name ?? "API",
       pageStyle: settings.pageTypeStyle,
-      rules: await loadHelperProperties(),
+      rules: await loadHelperProperties(settings, scope),
       enumFieldDoc: settings.enumFieldDoc,
       // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
-      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey].join("\u0000"),
+      cacheKey: [cacheScope, settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKeys.get(cacheScope) ?? ""].join("\u0000"),
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
-      folderOf: (ep: { tag: string; controller: string }) => {
-        const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
-        return rootFolder ? `${rootFolder}/${key}` : key;
-      },
+      folderOf: (ep: { tag: string; controller: string }) => apiFolderKey(settings, ep),
       // 框架类识别:源码未覆盖的类型按需从依赖 jar 的 .class 解析
       jarLookup: jarIndex ? (name: string) => jarIndex.lookup(name) : undefined,
     };
   };
 
-  const analyzeWorkspace = async (singleFile?: vscode.Uri, token?: vscode.CancellationToken) => {
-    const files = await collectFiles(singleFile, token);
-    if (token?.isCancellationRequested) {
+  /** 解析单个工作区文件夹(同步/导出按文件夹执行) */
+  const analyzeScope = async (
+    scope: ProjectScope | undefined,
+    token?: vscode.CancellationToken,
+    endpointFilter?: (ep: EndpointInfo) => boolean
+  ): Promise<AnalyzeOutput | undefined> => {
+    const files = await collectFiles(undefined, token, undefined, scope);
+    if (token?.isCancellationRequested || !files) {
       return undefined;
     }
-    if (!files) {
-      vscode.window.showWarningMessage(singleFile ? "该文件不可读" : "没有扫描到任何 Java 源文件(检查 include/exclude 配置)");
+    const options = await analyzeOptions(scope);
+    return endpointFilter ? cache.analyzeSubset(files, options, endpointFilter) : cache.analyze(files, options);
+  };
+
+  /** 接口树用:逐个文件夹解析并合并接口(展示层保持按文件夹分组) */
+  const analyzeWorkspace = async (): Promise<AnalyzeOutput | undefined> => {
+    const scopes = currentProjectScopes();
+    if (!scopes.length) {
       return undefined;
     }
-    return cache.analyze(files, await analyzeOptions());
+    const outputs: AnalyzeOutput[] = [];
+    for (const scope of scopes) {
+      const output = await analyzeScope(scope);
+      if (output?.endpoints.length) {
+        outputs.push(output);
+      }
+    }
+    if (!outputs.length) {
+      vscode.window.showWarningMessage("没有扫描到任何 Java 源文件(检查工作区文件夹与 include/exclude 配置)");
+      return undefined;
+    }
+    return {
+      spec: outputs[0].spec,
+      endpoints: outputs.flatMap((output) => output.endpoints),
+      warnings: [...new Set(outputs.flatMap((output) => output.warnings))],
+    };
   };
 
   type SyncOptions = {
     scopeLabel: string;
     confirm?: boolean;
     selection?: { visible: number; hidden: number };
+    scope?: ProjectScope;
   };
 
   /** 同步一组接口(整包/单文件/单接口共用):先校验账号项目,再解析、确认并上传。 */
   const doSync = async (
     emptyHint: string,
-    prepare: (token?: vscode.CancellationToken) => Promise<Awaited<ReturnType<typeof analyzeWorkspace>> | undefined>,
+    prepare: (token?: vscode.CancellationToken) => Promise<AnalyzeOutput | undefined>,
     options: SyncOptions
   ) => {
+    const scope = options.scope ?? currentProjectScopes()[0];
     // 配置不完整时先引导配置，避免用户等待全量扫描后才发现无法同步。
-    const client = await makeClient();
+    const client = await makeClient(scope);
     if (!client) {
       return;
     }
     const analyzed = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
       (progress, token) => {
-        progress.report({ message: "扫描 Java 文件..." });
+        progress.report({ message: scope ? `扫描 ${scope.label} 的 Java 文件...` : "扫描 Java 文件..." });
         return prepare(token);
       }
     );
@@ -366,10 +506,10 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showWarningMessage(emptyHint);
       return;
     }
+    const settings = getSettings(scope?.folder.uri);
     if (options.confirm) {
-      const settings = getSettings();
       const picked = await vscode.window.showWarningMessage(
-        "确认批量同步到 Apifox？",
+        scope ? `确认把「${scope.label}」的接口同步到 Apifox？` : "确认批量同步到 Apifox？",
         {
           modal: true,
           detail: buildSyncPreflightDetail({
@@ -391,7 +531,6 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
     try {
-      const settings = getSettings();
       const outcome = await syncToApifox(client, settings, analyzed);
       // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
       SyncResultPanel.createOrShow(
@@ -403,11 +542,11 @@ export function activate(context: vscode.ExtensionContext): void {
           target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
           projectId: settings.projectId,
           projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
-          scope: options.scopeLabel,
+          scope: scope && currentProjectScopes().length > 1 ? `${scope.label} · ${options.scopeLabel}` : options.scopeLabel,
           endpointConflictBehavior: settings.endpointConflictBehavior,
           schemaConflictBehavior: settings.schemaConflictBehavior,
-          folderOf: folderKeyForTree,
-          workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+          folderOf: treeFolderKeyOf,
+          workspaceRoot: scope?.folder.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
         })
       );
       showResult(outcome.message, () => SyncResultPanel.showLast());
@@ -418,14 +557,38 @@ export function activate(context: vscode.ExtensionContext): void {
 
   /* ---------- 侧边栏「接口列表」树 ---------- */
   let saveRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-  const folderKeyForTree = (ep: { tag: string; controller: string }): string => {
-    const settings = getSettings();
-    const rootFolder = settings.rootFolderName.trim();
-    const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
-    return rootFolder ? `${rootFolder}/${key}` : key;
-  };
 
-  const treeProvider = new ApiTreeProvider(analyzeWorkspace, folderKeyForTree, context.workspaceState);
+  const treeProvider = new ApiTreeProvider(
+    analyzeWorkspace,
+    treeFolderKeyOf,
+    context.workspaceState,
+    scopeKeyOfEndpoint,
+    bindingScopesForTree
+  );
+
+  /** 多根工作区下让用户选择要操作的文件夹(单根时直接返回) */
+  const pickProjectScope = async (title: string): Promise<ProjectScope | undefined> => {
+    const scopes = currentProjectScopes();
+    if (scopes.length <= 1) {
+      return scopes[0];
+    }
+    const active = vscode.window.activeTextEditor ? scopeForUri(vscode.window.activeTextEditor.document.uri) : undefined;
+    type ScopeItem = vscode.QuickPickItem & { scope: ProjectScope };
+    const items: ScopeItem[] = scopes.map((scope) => {
+      const settings = getSettings(scope.folder.uri);
+      return {
+        label: `$(folder) ${scope.label}`,
+        description: settings.projectId > 0 ? `已绑定 ${settings.projectName || `项目 ${settings.projectId}`}` : "未绑定项目",
+        detail: scope.folder.uri.fsPath,
+        scope,
+      };
+    });
+    const picked = await vscode.window.showQuickPick(items, {
+      title,
+      placeHolder: active ? `当前文件所在文件夹: ${active.label}` : "请选择工作区文件夹",
+    });
+    return picked?.scope;
+  };
 
   // 设置中心一次保存会连续更新多个配置项；仅合并真正影响解析结果的变化。
   const treeAnalysisConfigKeys = [
@@ -450,14 +613,28 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const updateStatusBar = () => {
-    const s = getSettings();
+    const scopes = currentProjectScopes();
     const checked = treeProvider.checkedCount;
-    if (s.projectId > 0) {
-      statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}${checked > 0 ? ` · $(check) ${checked}` : ""}`;
-      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 ApiGen 快捷操作盘`;
+    if (scopes.length > 1) {
+      const bindings = scopes.map((scope) => ({ scope, settings: getSettings(scope.folder.uri) }));
+      const bound = bindings.filter((item) => item.settings.projectId > 0);
+      statusBarItem.text = `$(project) ApiGen: ${bound.length}/${scopes.length} 个文件夹已绑定${checked > 0 ? ` · $(check) ${checked}` : ""}`;
+      statusBarItem.tooltip = [
+        "当前工作区按文件夹绑定 Apifox 项目:",
+        ...bindings.map(({ scope: itemScope, settings }) =>
+          `${itemScope.label}: ${settings.projectId > 0 ? settings.projectName || `ID: ${settings.projectId}` : "未绑定"}`
+        ),
+        "点击打开 ApiGen 快捷操作盘",
+      ].join("\n");
     } else {
-      statusBarItem.text = `$(warning) ApiGen: 未绑定`;
-      statusBarItem.tooltip = "尚未绑定 Apifox 项目，点击进行设置";
+      const s = getSettings(scopes[0]?.folder.uri);
+      if (s.projectId > 0) {
+        statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}${checked > 0 ? ` · $(check) ${checked}` : ""}`;
+        statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 ApiGen 快捷操作盘`;
+      } else {
+        statusBarItem.text = `$(warning) ApiGen: 未绑定`;
+        statusBarItem.tooltip = "尚未绑定 Apifox 项目，点击进行设置";
+      }
     }
     statusBarItem.command = "apifoxHelper.showStatusBarMenu";
     statusBarItem.show();
@@ -481,13 +658,20 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("apifoxHelper")) {
-        treeProvider.setProjectScope(getSettings().projectId);
+        treeProvider.setProjectScopes(bindingScopesForTree());
         updateStatusBar();
         treeProvider.fireChanged();
         if (treeAnalysisConfigKeys.some((key) => e.affectsConfiguration(key))) {
           scheduleConfigRefresh();
         }
       }
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      pomFilesCache.clear();
+      invalidateProjectScopes();
+      treeProvider.setProjectScopes(bindingScopesForTree());
+      updateStatusBar();
+      treeProvider.refresh().catch(() => undefined);
     }),
     secrets.onDidChange((e) => {
       if (e.key === "apifoxHelper.token") {
@@ -722,21 +906,18 @@ export function activate(context: vscode.ExtensionContext): void {
       // 过滤状态下 folder 节点只包含可见接口；命令语义是“整个目录”，因此回到全量树取数。
       // 目录语义含子目录:`测评工作站` 应连带其下 `测评量表-*`
       const endpoints = treeProvider.allEndpoints().filter((ep) => {
-        const key = folderKeyForTree(ep);
+        const key = treeFolderKeyOf(ep);
         return key === node.key || key.startsWith(`${node.key}/`);
       });
       if (!endpoints.length) {
         vscode.window.showWarningMessage("该目录下没有可同步的接口");
         return;
       }
-      const wanted = new Set(endpoints.map((e) => `${e.method} ${e.path}`));
-      await doSync(`目录「${node.key}」下未发现可同步的接口`, async (token) => {
-        const allFiles = await collectFiles(undefined, token);
-        if (!allFiles) {
-          return undefined;
-        }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      }, { scopeLabel: `目录「${node.key}」`, confirm: true });
+      const scope = scopeForPath(endpoints[0].fsPath);
+      const wanted = new Set(endpoints.map((ep) => endpointKeyOf(ep)));
+      await doSync(`目录「${node.key}」下未发现可同步的接口`, async (token) =>
+        analyzeScope(scope, token, (ep) => wanted.has(endpointKeyOf(ep))),
+      { scope, scopeLabel: `目录「${node.key}」`, confirm: true });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
       const stats = treeProvider.getSelectionStats();
@@ -776,32 +957,35 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showInformationMessage("先在接口列表中勾选要同步的接口(接口行前或目录前的复选框)");
         return;
       }
-      // 全量上下文解析,只输出勾选接口(与单接口同步同机制)
-      const wanted = new Set(checked.map((e) => `${e.method} ${e.path}`));
-      await doSync("勾选的接口未在当前解析结果中", async (token) => {
-        const allFiles = await collectFiles(undefined, token);
-        if (!allFiles) {
-          return undefined;
+      // 勾选项可能来自多个工作区文件夹:按文件夹分别解析、分别导入各自绑定的项目
+      const scopes = currentProjectScopes();
+      let anyGroup = false;
+      for (const scope of scopes) {
+        const group = checked.filter((ep) => scopeKeyOfEndpoint(ep) === scope.key);
+        if (!group.length) {
+          continue;
         }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
-      }, { scopeLabel, confirm: true, selection });
+        anyGroup = true;
+        const wanted = new Set(group.map((ep) => endpointKeyOf(ep)));
+        const groupSelection = scopes.length > 1 ? undefined : selection;
+        await doSync("勾选的接口未在当前解析结果中", async (token) =>
+          analyzeScope(scope, token, (ep) => wanted.has(endpointKeyOf(ep))),
+        { scope, scopeLabel, confirm: true, selection: groupSelection });
+      }
+      if (!anyGroup) {
+        vscode.window.showWarningMessage("勾选的接口未归属任何工作区文件夹,请刷新接口列表后重试");
+      }
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
         return;
       }
       const ep = node.endpoint;
-      await doSync(`接口 [${ep.method} ${ep.path}] 未在当前解析结果中`, async (token) => {
-        const allFiles = await collectFiles(undefined, token);
-        if (!allFiles) {
-          return undefined;
-        }
-        return cache.analyzeSubset(
-          allFiles,
-          await analyzeOptions(),
-          (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
-        );
-      }, { scopeLabel: `${ep.method} ${ep.path}` });
+      const scope = scopeForPath(ep.fsPath);
+      const wanted = endpointKeyOf(ep);
+      await doSync(`接口 [${ep.method} ${ep.path}] 未在当前解析结果中`, async (token) =>
+        analyzeScope(scope, token, (e) => endpointKeyOf(e) === wanted),
+      { scope, scopeLabel: `${ep.method} ${ep.path}` });
     }),
     vscode.commands.registerCommand("apifoxHelper.copyEndpointPath", async (node?: ApiTreeNode) => {
       if (!node || node.kind !== "endpoint") {
@@ -819,7 +1003,9 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(`已复制: ${text}`);
     }),
     vscode.commands.registerCommand("apifoxHelper.showStatusBarMenu", async () => {
-      const settings = getSettings();
+      const activeUri = vscode.window.activeTextEditor?.document.uri;
+      const settings = getSettings(activeUri ? scopeForUri(activeUri)?.folder.uri : currentProjectScopes()[0]?.folder.uri);
+      const scopes = currentProjectScopes();
       const items: (vscode.QuickPickItem & { action: () => void })[] = [
         {
           label: "$(cloud-upload) 同步当前文件接口",
@@ -843,9 +1029,18 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         {
           label: "$(project) 切换 Apifox 项目",
-          description: `当前: ${settings.projectName || settings.projectId || "未绑定"}`,
+          description: scopes.length > 1
+            ? `${scopes.length} 个文件夹按文件夹绑定`
+            : `当前: ${settings.projectName || settings.projectId || "未绑定"}`,
           action: () => vscode.commands.executeCommand("apifoxHelper.selectProject"),
         },
+        ...(scopes.length > 1
+          ? [{
+              label: "$(arrow-right) 迁移旧的工作区级项目绑定到各文件夹",
+              description: "把单根工作区的项目配置复制到尚未单独绑定的文件夹",
+              action: () => vscode.commands.executeCommand("apifoxHelper.migrateFolderProjectBindings"),
+            }]
+          : []),
         {
           label: "$(table) 查看上次同步结果",
           description: "同步计数与接口清单",
@@ -864,7 +1059,9 @@ export function activate(context: vscode.ExtensionContext): void {
       ];
 
       const picked = await vscode.window.showQuickPick(items, {
-        placeHolder: `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+        placeHolder: scopes.length > 1
+          ? `ApiGen for Apifox: ${scopes.length} 个工作区文件夹(按文件夹绑定项目)`
+          : `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
       });
       if (picked) {
         picked.action();
@@ -876,7 +1073,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openSettings = () => {
     SettingsPanel.createOrShow(secrets, () => {
-      treeProvider.setProjectScope(getSettings().projectId);
+      treeProvider.setProjectScopes(bindingScopesForTree());
       updateStatusBar();
       treeProvider.fireChanged();
     });
@@ -910,30 +1107,78 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // 命令:选择项目
+  // 命令:选择项目(多根工作区先选择要绑定的文件夹)
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.selectProject", async () => {
-      const settings = getSettings();
+      const scope = await pickProjectScope("选择要绑定 Apifox 项目的工作区文件夹");
+      if (!scope) {
+        return;
+      }
+      const settings = getSettings(scope.folder.uri);
       const token = await ensureToken(secrets);
       if (!token) {
         return;
       }
-      const ok = await selectProject(new ApifoxClient(settings.apiBaseUrl, token));
+      const ok = await selectProject(new ApifoxClient(settings.apiBaseUrl, token), scope.folder);
       if (ok) {
-        treeProvider.setProjectScope(getSettings().projectId);
+        treeProvider.setProjectScopes(bindingScopesForTree());
         updateStatusBar();
       }
+    }),
+    vscode.commands.registerCommand("apifoxHelper.migrateFolderProjectBindings", async () => {
+      const scopes = currentProjectScopes();
+      if (scopes.length < 2) {
+        vscode.window.showInformationMessage("当前是单根工作区,项目绑定已直接作为工作区配置生效,无需迁移");
+        return;
+      }
+      const legacy = getProjectBinding();
+      const folderBindings = Object.fromEntries(scopes.map((scope) => [scope.key, getProjectBinding(scope.folder.uri)]));
+      const plan = planProjectBindingMigration(
+        scopes.map((scope) => ({ key: scope.key, label: scope.label })),
+        folderBindings,
+        legacy
+      );
+      if (!plan.length) {
+        vscode.window.showInformationMessage("没有需要迁移的项目绑定(各文件夹已设置独立绑定,或旧绑定为空)");
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        `将旧的工作区级项目绑定复制到 ${plan.length} 个文件夹？`,
+        { modal: true, detail: plan.map((item) => `${item.label} → ${item.binding.projectName || `项目 ${item.binding.projectId}`}`).join("\n") },
+        "开始迁移"
+      );
+      if (confirm !== "开始迁移") {
+        return;
+      }
+      for (const item of plan) {
+        const scope = scopes.find((candidate) => candidate.key === item.folderKey);
+        if (!scope) {
+          continue;
+        }
+        await saveProjectId(item.binding.projectId, item.binding.projectName, item.binding.teamName, scope.folder);
+      }
+      treeProvider.setProjectScopes(bindingScopesForTree());
+      updateStatusBar();
+      treeProvider.fireChanged();
+      vscode.window.showInformationMessage(`已将项目绑定迁移到 ${plan.length} 个文件夹`);
     })
   );
 
-  // 命令:同步整个项目
+  // 命令:同步整个项目(多根工作区按文件夹分别导入各自项目)
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.syncWorkspace", async () => {
-      await doSync(
-        "没有扫描到任何 Java 源文件",
-        (token) => analyzeWorkspace(undefined, token),
-        { scopeLabel: "整个工作区", confirm: true }
-      );
+      const scopes = currentProjectScopes();
+      if (!scopes.length) {
+        vscode.window.showWarningMessage("没有扫描到任何 Java 源文件");
+        return;
+      }
+      for (const scope of scopes) {
+        await doSync(
+          `文件夹「${scope.label}」没有扫描到任何 Java 源文件`,
+          (token) => analyzeScope(scope, token),
+          { scope, scopeLabel: "整个工作区", confirm: true }
+        );
+      }
     })
   );
 
@@ -945,14 +1190,11 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("请先打开一个 Java 文件");
         return;
       }
-      // 用全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
-      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async (token) => {
-        const allFiles = await collectFiles(undefined, token, target);
-        if (!allFiles) {
-          return undefined;
-        }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
-      }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
+      const scope = scopeForUri(target);
+      // 用该文件夹的全量源码做类型解析,只输出该文件的接口(单文件解析会丢失跨文件 DTO)
+      await doSync("该文件中未发现 REST 接口(@RestController/@Controller/@FeignClient/@Path)", async (token) =>
+        analyzeScope(scope, token, (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath),
+      { scope, scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
     })
   );
 
@@ -973,7 +1215,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("无法定位接口位置");
         return;
       }
-      const files = await collectFiles(target);
+      const scope = scopeForUri(target);
+      const files = await collectFiles(target, undefined, undefined, scope);
       if (!files?.length) {
         return;
       }
@@ -983,36 +1226,40 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("光标附近未发现 REST 接口方法");
         return;
       }
-      // 用全量上下文解析类型,只输出该接口
+      // 用该文件夹的全量上下文解析类型,只输出该接口
       await doSync("未发现可同步的接口", async (token) => {
-        const allFiles = await collectFiles(undefined, token, target);
-        const source = allFiles ?? files;
-        return cache.analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
-      }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
+        const analyzed = await analyzeScope(scope, token, (ep) => endpointKeyOf(ep) === endpointKeyOf(endpoint));
+        return analyzed ?? cache.analyzeSubset(files, await analyzeOptions(scope), (ep) => endpointKeyOf(ep) === endpointKeyOf(endpoint));
+      }, { scope, scopeLabel: `${endpoint.method} ${endpoint.path}` });
     })
   );
 
-  // 命令:导出 OpenAPI 预览
+  // 命令:导出 OpenAPI 预览(多根工作区按文件夹分别导出到各自目录)
   context.subscriptions.push(
     vscode.commands.registerCommand("apifoxHelper.exportOpenapi", async () => {
-      const files = await collectFiles();
-      if (!files) {
+      const scopes = currentProjectScopes();
+      const exported: { path: string; endpoints: number; warnings: number }[] = [];
+      for (const scope of scopes) {
+        const analyzed = await analyzeScope(scope);
+        if (!analyzed) {
+          continue;
+        }
+        const settings = getSettings(scope.folder.uri);
+        const outPath = resolveExportPath(scope.folder.uri.fsPath, settings.exportPath);
+        await fs.promises.writeFile(outPath, JSON.stringify(analyzed.spec, null, 2), "utf8");
+        exported.push({ path: outPath, endpoints: analyzed.endpoints.length, warnings: analyzed.warnings.length });
+      }
+      if (!exported.length) {
+        vscode.window.showWarningMessage("没有扫描到任何 Java 源文件,未导出 OpenAPI");
         return;
       }
-      const analyzed = cache.analyze(files, await analyzeOptions());
-      const folder = vscode.workspace.workspaceFolders?.[0];
-      if (!folder) {
-        return;
-      }
-      const settings = getSettings();
-      const outPath = path.isAbsolute(settings.exportPath) ? settings.exportPath : path.join(folder.uri.fsPath, settings.exportPath);
-      await fs.promises.writeFile(outPath, JSON.stringify(analyzed.spec, null, 2), "utf8");
-      const action = await vscode.window.showInformationMessage(
-        `已导出 ${analyzed.endpoints.length} 个接口到 ${path.basename(outPath)}(解析告警 ${analyzed.warnings.length} 条)`,
-        "打开文件"
-      );
+      const first = exported[0];
+      const summary = exported.length > 1
+        ? `已按 ${exported.length} 个文件夹导出 OpenAPI:${exported.map((item) => `${path.basename(item.path)}(${item.endpoints} 个接口)`).join("、")}`
+        : `已导出 ${first.endpoints} 个接口到 ${path.basename(first.path)}(解析告警 ${first.warnings} 条)`;
+      const action = await vscode.window.showInformationMessage(summary, "打开文件");
       if (action === "打开文件") {
-        const doc = await vscode.workspace.openTextDocument(outPath);
+        const doc = await vscode.workspace.openTextDocument(first.path);
         await vscode.window.showTextDocument(doc);
       }
     })
@@ -1022,7 +1269,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ language: "java" }, {
       provideCodeLenses(document) {
-        const settings = getSettings();
+        const settings = getSettings(vscode.workspace.getWorkspaceFolder(document.uri)?.uri ?? document.uri);
         if (!settings.enableCodeLens) {
           return [];
         }

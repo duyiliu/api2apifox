@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { getToken, setToken } from "../config/secret";
-import { getSettings } from "../config/settings";
+import { configurationTargetFor, getSettings, saveProjectId } from "../config/settings";
 import { ApifoxClient } from "../apifox/client";
 import { errorMessage, TOKEN_HELP_URL } from "../apifox/uploader";
 import { getNonce } from "../ui/nonce";
@@ -80,14 +80,23 @@ export class SettingsPanel {
     );
   }
 
+  /** 设置中心作用于当前文件所在文件夹;没有活动编辑器时取第一个工作区文件夹 */
+  private settingsFolder(): vscode.WorkspaceFolder | undefined {
+    const active = vscode.window.activeTextEditor;
+    const fromActive = active ? vscode.workspace.getWorkspaceFolder(active.document.uri) : undefined;
+    return fromActive ?? vscode.workspace.workspaceFolders?.[0];
+  }
+
   private async _sendInitData(): Promise<void> {
-    const settings = getSettings();
+    const folder = this.settingsFolder();
+    const settings = getSettings(folder?.uri);
     const token = (await getToken(this._secrets)) || "";
     this._panel.webview.postMessage({
       command: "init",
       data: {
         token,
         settings,
+        folderName: folder?.name ?? "",
       },
     });
   }
@@ -188,16 +197,12 @@ export class SettingsPanel {
       // 1. 保存 Token
       await setToken(this._secrets, cleanedToken || undefined);
 
-      // 2. 保存 VS Code 配置项
+      // 2. 保存 VS Code 配置项。项目绑定/导出路径支持多根工作区的文件夹级配置
+      const folder = this.settingsFolder();
+      await saveProjectId(projectId, formData.projectName || "", formData.teamName || "", folder);
       const cfg = vscode.workspace.getConfiguration("apifoxHelper");
-      const target = vscode.workspace.workspaceFolders
-        ? vscode.ConfigurationTarget.Workspace
-        : vscode.ConfigurationTarget.Global;
-
+      const target = configurationTargetFor();
       await cfg.update("apiBaseUrl", cleanedBaseUrl.replace(/\/+$/, ""), target);
-      await cfg.update("teamName", formData.teamName || "", target);
-      await cfg.update("projectId", projectId, target);
-      await cfg.update("projectName", formData.projectName || "", target);
       await cfg.update("endpointConflictBehavior", formData.endpointConflictBehavior, target);
       await cfg.update("schemaConflictBehavior", formData.schemaConflictBehavior, target);
       await cfg.update("folderNameSource", formData.folderNameSource, target);
@@ -205,6 +210,9 @@ export class SettingsPanel {
       await cfg.update("rootFolderName", formData.rootFolderName?.trim() || "", target);
       await cfg.update("schemaFolderId", Number(formData.schemaFolderId) || 0, target);
       await cfg.update("helperProperties.enumFieldDoc", Boolean(formData.enumFieldDoc), target);
+      if (folder && (vscode.workspace.workspaceFolders?.length ?? 0) > 1) {
+        vscode.window.showInformationMessage(`项目绑定已保存到文件夹「${folder.name}」`);
+      }
 
       this._panel.webview.postMessage({
         command: "saveResult",

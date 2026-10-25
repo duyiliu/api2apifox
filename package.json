@@ -41,6 +41,10 @@
         "icon": "$(gear)"
       },
       {
+        "command": "apifoxHelper.migrateFolderProjectBindings",
+        "title": "ApiGen for Apifox: 迁移旧项目绑定到各文件夹 (Migrate Folder Bindings)"
+      },
+      {
         "command": "apifoxHelper.setToken",
         "title": "ApiGen for Apifox: 设置访问令牌 (Access Token)",
         "icon": "$(key)"
@@ -310,16 +314,19 @@
           "description": "是否在 Java Controller 方法上方显示「同步此接口」的 CodeLens 快捷按钮。"
         },
         "apifoxHelper.projectId": {
+          "scope": "resource",
           "type": "number",
           "default": 0,
           "description": "Apifox 项目 ID(可用命令「选择 Apifox 项目」自动获取)。项目设置页可查看。"
         },
         "apifoxHelper.projectName": {
+          "scope": "resource",
           "type": "string",
           "default": "",
           "description": "当前选择绑定的 Apifox 项目名称(选择项目时自动记录)。"
         },
         "apifoxHelper.teamName": {
+          "scope": "resource",
           "type": "string",
           "default": "",
           "description": "当前选择绑定的 Apifox 项目所属团队名称(选择项目时自动记录)。"
@@ -388,6 +395,7 @@
           "description": "排除的 glob。"
         },
         "apifoxHelper.exportPath": {
+          "scope": "resource",
           "type": "string",
           "default": "openapi.gen.json",
           "description": "「导出 OpenAPI 预览」输出文件(相对工作区根目录)。"
