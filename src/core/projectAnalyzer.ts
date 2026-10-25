@@ -26,6 +26,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
       spec: emptySpec(config.title),
       endpoints: [],
       warnings: [],
+      parseDiagnostics: [],
     };
   }
 

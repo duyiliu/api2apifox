@@ -7,7 +7,7 @@ import { setToken } from "./config/secret";
 import { getSettings } from "./config/settings";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { fileSetFingerprint } from "./config/fileFingerprint";
-import { EndpointInfo, SourceFile } from "./java/model";
+import { EndpointInfo, ParseDiagnostic, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
@@ -16,6 +16,7 @@ import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDepende
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
 import { buildSyncReport, projectWebUrl } from "./ui/syncResult";
+import { attributeImportErrors, ProblemDiagnostic, problemsFromParseDiagnostics } from "./ui/diagnostics";
 
 const cache = new AnalyzeCache();
 
@@ -241,6 +242,12 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
+  // Problems 面板诊断集合:解析告警(Warning)与导入错误(Error)共用,owner 固定为 apifox-helper
+  const diagnostics = vscode.languages.createDiagnosticCollection("apifox-helper");
+  context.subscriptions.push(diagnostics);
+  /** 最近一次同步的导入错误归属结果;下一次文件编辑/配置变更时视为过期清空 */
+  let importProblems: ProblemDiagnostic[] = [];
+
   // pom.xml 路径列表缓存:新增/删除/改名时失效(避免新模块依赖漏识别)
   const pomWatcher = vscode.workspace.createFileSystemWatcher("**/pom.xml");
   context.subscriptions.push(
@@ -323,6 +330,50 @@ export function activate(context: vscode.ExtensionContext): void {
     };
   };
 
+  /** 将解析告警与导入错误写入 Problems 面板;clearImport 表示文件/配置已变化,旧的导入错误不再可信 */
+  const applyProblems = (parseDiagnostics: readonly ParseDiagnostic[], clearImport = false) => {
+    if (clearImport) {
+      importProblems = [];
+    }
+    const byFile = new Map<string, vscode.Diagnostic[]>();
+    for (const problem of [...problemsFromParseDiagnostics(parseDiagnostics), ...importProblems]) {
+      const line = Math.max(0, (problem.line ?? 1) - 1);
+      const item = new vscode.Diagnostic(
+        new vscode.Range(line, 0, line, 0),
+        problem.message,
+        problem.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning
+      );
+      item.source = "apifox-helper";
+      const list = byFile.get(problem.filePath) ?? [];
+      list.push(item);
+      byFile.set(problem.filePath, list);
+    }
+    // 先清空:已修复的告警必须从 Problems 面板消失,不能残留
+    diagnostics.clear();
+    for (const [filePath, items] of byFile) {
+      diagnostics.set(vscode.Uri.file(filePath), items);
+    }
+  };
+
+  let diagnosticsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshDiagnostics = async (clearImport = false) => {
+    try {
+      const files = await collectFiles();
+      const analyzed = files ? cache.analyze(files, await analyzeOptions()) : undefined;
+      applyProblems(analyzed?.parseDiagnostics ?? [], clearImport);
+    } catch {
+      // 解析失败时保留上次诊断,避免 Problems 面板闪烁
+    }
+  };
+  /** 保存/配置变更后防抖重解析;诊断刷新与树可见性无关 */
+  const scheduleDiagnosticsRefresh = (clearImport = false) => {
+    clearTimeout(diagnosticsRefreshTimer);
+    diagnosticsRefreshTimer = setTimeout(() => {
+      diagnosticsRefreshTimer = undefined;
+      void refreshDiagnostics(clearImport);
+    }, 800);
+  };
+
   const analyzeWorkspace = async (singleFile?: vscode.Uri, token?: vscode.CancellationToken) => {
     const files = await collectFiles(singleFile, token);
     if (token?.isCancellationRequested) {
@@ -393,6 +444,9 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       const settings = getSettings();
       const outcome = await syncToApifox(client, settings, analyzed);
+      // 导入错误按接口归属到源文件(能唯一识别时),与本次解析告警一起落到 Problems 面板
+      importProblems = attributeImportErrors(outcome.errors, analyzed.endpoints);
+      applyProblems(analyzed.parseDiagnostics);
       // 结果面板：汇总计数与本次同步的接口清单（Apifox 只返回聚合计数，不做逐接口状态推断）
       SyncResultPanel.createOrShow(
         buildSyncReport({
@@ -445,6 +499,7 @@ export function activate(context: vscode.ExtensionContext): void {
     configRefreshTimer = setTimeout(() => {
       configRefreshTimer = undefined;
       treeProvider.refresh().catch(() => undefined);
+      scheduleDiagnosticsRefresh(true);
     }, 500);
   };
 
@@ -498,6 +553,7 @@ export function activate(context: vscode.ExtensionContext): void {
     new vscode.Disposable(() => {
       clearTimeout(configRefreshTimer);
       clearTimeout(saveRefreshTimer);
+      clearTimeout(diagnosticsRefreshTimer);
     })
   );
 
@@ -584,9 +640,15 @@ export function activate(context: vscode.ExtensionContext): void {
           refreshApiTreeIfVisible();
         }, 800);
       }
+      // 解析输入变化即刷新 Problems 面板(与树是否可见无关);旧导入错误此时已过期
+      const savedName = path.basename(doc.uri.fsPath);
+      if (doc.languageId === "java" || savedName === ".apifox-helper.properties" || savedName === "pom.xml") {
+        scheduleDiagnosticsRefresh(true);
+      }
     }),
     vscode.commands.registerCommand("apifoxHelper.refreshApiTree", async () => {
       await vscode.window.withProgress({ location: { viewId: "apifoxHelper.apiTree" } }, () => treeProvider.refresh());
+      await refreshDiagnostics();
     }),
     vscode.commands.registerCommand("apifoxHelper.filterApi", async () => {
       const current = treeProvider.getFilterKeyword();
@@ -873,6 +935,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   // 初始加载(树视图首次可见时即有数据)
   treeProvider.refresh().catch(() => undefined);
+  void refreshDiagnostics();
 
   const openSettings = () => {
     SettingsPanel.createOrShow(secrets, () => {

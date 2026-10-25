@@ -6,7 +6,7 @@ import { HelperProperties } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
   annArray, annBool, annStr, AnnotationInfo, ClassInfo, EndpointFlavor, EndpointInfo, findAnn,
-  ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
+  ParseDiagnostic, ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
 } from "./model";
 import { schemaExample, schemaDescription } from "./schemaResolver";
 import { ParsedFile, resolveScopedType, typeScopeOf } from "./typeIndex";
@@ -60,6 +60,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
   const endpoints: EndpointInfo[] = [];
   const ruleWarnings: string[] = [];
   const warnings: string[] = [];
+  const diagnostics: ParseDiagnostic[] = [];
   // 继承解析需要回到父类型声明处读取方法;无类型索引时不做继承展开。
   // byFile 复用建索引时已算好的站点,避免每个类型重复走 findAll+注解收集
   const sites = index ? buildTypeSites(files) : undefined;
@@ -310,7 +311,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         for (const m of mappings) {
           for (const mp of m.paths) {
             for (const bp of basePaths) {
-              const ep = buildEndpoint(hit.site.pf, warnings, {
+              const ep = buildEndpoint(hit.site.pf, warnings, diagnostics, {
                 flavor,
                 verb: m.method,
                 path: joinPath(bp, mp),
@@ -339,7 +340,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
     }
   }
   warnings.push(...ruleWarnings);
-  return { endpoints, warnings };
+  return { endpoints, warnings, diagnostics };
 }
 
 /**
@@ -705,8 +706,13 @@ interface EndpointArgs {
   index?: TypeIndex;
 }
 
-function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): EndpointInfo {
+function buildEndpoint(pf: ParsedFile, warnings: string[], diagnostics: ParseDiagnostic[], a: EndpointArgs): EndpointInfo {
   const javadoc = parseJavadoc(nodeJavadoc(a.wrapper));
+  /** 告警同时记入 Problems 面板诊断(带源文件与 1-based 行号) */
+  const warnAt = (message: string, node?: CstNode) => {
+    warnings.push(message);
+    diagnostics.push({ message, filePath: pf.fsPath, line: node?.location?.startLine ?? a.method.location?.startLine });
+  };
 
   const operationAnn = findAnn(a.methodAnnotations, "Operation");
   const apiOperation = findAnn(a.methodAnnotations, "ApiOperation");
@@ -833,7 +839,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
       const declaring = a.declaringType ?? a.controller;
       const expansion = expandQueryBean(a.index, paramName, typeText, typeScopeOf(a.index.types.get(declaring)));
       for (const w of expansion.warnings) {
-        warnings.push(`${a.controller}.${a.methodName}: ${w}`);
+        warnAt(`${a.controller}.${a.methodName}: ${w}`, fp);
       }
       if (expansion.params.length) {
         for (const f of expansion.params) {
@@ -842,10 +848,10 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
           }
         }
       } else {
-        warnings.push(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,且无法展开为查询参数,已忽略`);
+        warnAt(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,且无法展开为查询参数,已忽略`, fp);
       }
     } else {
-      warnings.push(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,已忽略`);
+      warnAt(`${a.controller}.${a.methodName}: 参数 ${paramName} (${typeText}) 缺少 @RequestParam/@PathVariable/@RequestBody 注解,已忽略`, fp);
     }
   }
 

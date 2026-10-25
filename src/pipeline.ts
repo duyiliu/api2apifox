@@ -1,6 +1,7 @@
 import { parseControllers } from "./java/controllerParser";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ClassInfo } from "./java/model";
+import { ParseDiagnostic } from "./java/model";
 import { buildIndex, parseJava, ParsedFile } from "./java/typeIndex";
 import { buildOpenApi, OpenApiSpec } from "./openapi/builder";
 import { HelperProperties } from "./config/helperProperties";
@@ -49,6 +50,29 @@ export interface AnalyzeOutput {
   spec: OpenApiSpec;
   endpoints: EndpointInfo[];
   warnings: string[];
+  /** 可定位到源文件/行的告警(供 Problems 面板使用) */
+  parseDiagnostics: ParseDiagnostic[];
+}
+
+/** 诊断去重:同一方法的多条路由/路径会重复收集同一条告警 */
+export function dedupeDiagnostics(diagnostics: readonly ParseDiagnostic[]): ParseDiagnostic[] {
+  const seen = new Set<string>();
+  const out: ParseDiagnostic[] = [];
+  for (const d of diagnostics) {
+    const key = `${d.filePath}\u0000${d.line ?? ""}\u0000${d.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({ ...d });
+  }
+  return out;
+}
+
+/** 子集分析时诊断与告警同口径过滤(告警正文唯一对应其来源接口) */
+function filterDiagnosticsForWarnings(diagnostics: ParseDiagnostic[], warnings: string[]): ParseDiagnostic[] {
+  const kept = new Set(warnings);
+  return diagnostics.filter((d) => kept.has(d.message));
 }
 
 export function filterWarningsForEndpoints(warnings: string[], kept: EndpointInfo[]): string[] {
@@ -95,7 +119,9 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
   });
   const rawWarnings = [...new Set(parseResult.warnings)];
   const warnings = endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings;
-  return { spec, endpoints: kept, warnings };
+  const rawDiagnostics = dedupeDiagnostics(parseResult.diagnostics);
+  const parseDiagnostics = endpointFilter ? filterDiagnosticsForWarnings(rawDiagnostics, warnings) : rawDiagnostics;
+  return { spec, endpoints: kept, warnings, parseDiagnostics };
 }
 
 /** 解析 -> 索引 -> 提取接口 -> 生成 OpenAPI(纯逻辑,便于测试) */
@@ -196,8 +222,12 @@ export class AnalyzeCache {
     const parsed = this.parsedOf(files);
     const key = this.resultKey(opts, endpointFilter);
     if (this.lastResult && this.lastResult.key === key) {
-      // warnings 返回副本:syncToApifox 会原地 push 提示语,不能污染缓存结果
-      return { ...this.lastResult.output, warnings: [...this.lastResult.output.warnings] };
+      // warnings/parseDiagnostics 返回副本:syncToApifox 会原地 push 提示语,不能污染缓存结果
+      return {
+        ...this.lastResult.output,
+        warnings: [...this.lastResult.output.warnings],
+        parseDiagnostics: this.lastResult.output.parseDiagnostics.map((d) => ({ ...d })),
+      };
     }
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
@@ -213,9 +243,15 @@ export class AnalyzeCache {
       folderOf: opts.folderOf,
     });
     const rawWarnings = [...new Set(parseResult.warnings)];
-    const output = { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
+    const warnings = endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings;
+    const rawDiagnostics = dedupeDiagnostics(parseResult.diagnostics);
+    const parseDiagnostics = endpointFilter ? filterDiagnosticsForWarnings(rawDiagnostics, warnings) : rawDiagnostics;
+    const output = { spec, endpoints: kept, warnings, parseDiagnostics };
     // 缓存存副本:调用方(如 syncToApifox)会原地 push warnings,不能污染缓存
-    this.lastResult = { key, output: { ...output, warnings: [...output.warnings] } };
+    this.lastResult = {
+      key,
+      output: { ...output, warnings: [...output.warnings], parseDiagnostics: output.parseDiagnostics.map((d) => ({ ...d })) },
+    };
     return output;
   }
 

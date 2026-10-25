@@ -139,6 +139,20 @@ export interface ParseResult {
   endpoints: EndpointInfo[];
   /** 解析过程中的告警(无法识别的参数等) */
   warnings: string[];
+  /** 可定位到源文件/行的告警,用于写入 VS Code Problems 面板 */
+  diagnostics: ParseDiagnostic[];
+}
+
+/**
+ * 可定位的解析诊断:message 与 warnings 中的同一条告警一致,
+ * 额外携带源文件与 1-based 行号。
+ */
+export interface ParseDiagnostic {
+  message: string;
+  /** 告警所在源文件绝对路径(与 SourceFile.fsPath 同口径) */
+  filePath: string;
+  /** 1-based 行号 */
+  line?: number;
 }
 
 /** AnnotationArgs 便捷读取 */
