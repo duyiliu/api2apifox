@@ -190,7 +190,7 @@ async function loadHelperProperties(): Promise<HelperProperties | undefined> {
     } catch {
       return undefined;
     }
-  });
+  }, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
   helperPropertiesCache = readAll
     ? { key: fileSetFingerprint([...paths, ...(props.watchedFiles ?? props.files)]), props }
     : undefined;

@@ -2,7 +2,7 @@ import { collectAnnotations, parseArgsText } from "./annotation";
 import { CstNode, childAll, childNode, findAll, isCstNode, nodeJavadoc, nodeText, tokenImage, typeNameOf } from "./cst";
 import { parseJavadoc } from "./javadoc";
 import { parseTypeText, simpleName } from "./typeText";
-import { HelperProperties } from "../config/helperProperties";
+import { HelperProperties, ruleEntriesForSource } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import {
   annArray, annBool, annStr, AnnotationInfo, ClassInfo, EndpointFlavor, EndpointInfo, findAnn,
@@ -145,14 +145,16 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       let typeIgnored = false;
 
       // .apifox-helper.properties 类级规则(ignore / folder.name)
+      // 规则按来源目录隔离:只应用位于该类所在模块下的规则文件
       if (rules) {
+        const classRuleEntries = ruleEntriesForSource(rules, site.pf.fsPath);
         const classCtx: RuleContext = {
           annotations: typeAnnotations,
           javadocRaw: nodeJavadoc(site.carrier),
           subject: `类 ${typeName}`,
         };
         // ignore:命中则整类跳过
-        for (const e of rules.entries) {
+        for (const e of classRuleEntries) {
           if (e.key !== "ignore") {
             continue;
           }
@@ -176,7 +178,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         }
         // 类级 folder.name(官方文档 folder.name 以 method 为目标;此处兼容“整类统一目录”的常见用法,
         // 值支持字面量/@注解#attr/#tag。方法级 folder.name(见方法处理)优先级更高,会覆盖此值)
-        for (const e of rules.entries) {
+        for (const e of classRuleEntries) {
           if (e.key !== "folder.name" || typeIgnored) {
             continue;
           }
@@ -237,6 +239,8 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
         let ruleDescAppend: string | undefined;
         let ruleFolder: string | undefined;
         if (rules && !methodIgnored) {
+          // 方法规则作用于方法声明所在源码文件(继承方法按父类型模块口径)
+          const methodRuleEntries = ruleEntriesForSource(rules, hit.site.pf.fsPath);
           const methodRawJavadoc = nodeJavadoc(wrapper);
           const mctx: RuleContext = {
             annotations: methodAnnotations,
@@ -245,7 +249,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
             extraAnnotations: typeAnnotations,
           };
           const warn = (m: string) => ruleWarnings.push(m);
-          for (const e of rules.entries) {
+          for (const e of methodRuleEntries) {
             if (e.key !== "ignore") {
               continue;
             }
@@ -268,7 +272,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
           }
           // folder.name(方法级,优先于类级 folder.name)
           if (!methodIgnored) {
-            for (const e of rules.entries) {
+            for (const e of methodRuleEntries) {
               if (e.key !== "folder.name") {
                 continue;
               }
@@ -290,7 +294,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
               }
             }
             // api.name
-            for (const e of rules.entries) {
+            for (const e of methodRuleEntries) {
               if (e.key !== "api.name") {
                 continue;
               }
@@ -313,7 +317,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
             }
             // method.description(追加,官方语义“额外注释”)
             const appends: string[] = [];
-            for (const e of rules.entries) {
+            for (const e of methodRuleEntries) {
               if (e.key !== "method.description" && e.key !== "method.doc") {
                 continue;
               }

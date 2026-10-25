@@ -26,6 +26,8 @@ export interface ClassInfo {
   simpleName: string;
   /** 全限定名;嵌套类型为 package.Outer.Inner(IDEA/easy-api 的 psiClass.qualifiedName 口径) */
   qualifiedName: string;
+  /** 类型声明所在源文件;来自依赖 jar 的字节码类型无此字段(字段规则只应用项目根规则) */
+  fsPath?: string;
   /**
    * 外层类型简单名链,**由外向内**(如 `Outer.Inner.Leaf` 的 Leaf 为 ["Outer","Inner"]);
    * 顶层类型为 undefined。用于按 Java 作用域解析字段类型(schemaResolver 的 ResolveContext.scope)。

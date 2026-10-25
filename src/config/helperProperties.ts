@@ -22,6 +22,11 @@ export interface HelperPropEntry {
   file: string;
   /** 行号(诊断用) */
   line: number;
+  /**
+   * 规则作用域目录(规则文件所在目录;properties.additional 继承主文件目录)。
+   * 只有位于该目录下的源码文件才应用此规则,避免多模块仓库中规则串到其他模块。
+   */
+  baseDir: string;
 }
 
 export interface HelperProperties {
@@ -32,6 +37,8 @@ export interface HelperProperties {
   files: string[];
   /** 参与加载的文件(含不可读的 properties.additional 引用),用于会话缓存失效判断 */
   watchedFiles?: string[];
+  /** 项目根目录:jar 中的类型没有源码路径,只应用此目录下的规则 */
+  rootDir?: string;
 }
 
 const BACKTICK = "```";
@@ -44,6 +51,7 @@ const BACKTICK = "```";
 export function parseProperties(text: string, file = "<memory>"): { entries: HelperPropEntry[]; warnings: string[] } {
   const entries: HelperPropEntry[] = [];
   const warnings: string[] = [];
+  const baseDir = normalizePath(dirOf(file));
 
   // 预处理:按物理行拆,不吞掉 \n 以便续行判断
   const rawLines = text.split(/\r\n|\r|\n/);
@@ -86,7 +94,7 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
         const value = prefix + "\n" + bodyLines.join("\n");
         const cleaned = trimBlankLines(value);
         if (key) {
-          entries.push({ key, cond, value: cleaned, file, line: startLine });
+          entries.push({ key, cond, value: cleaned, file, line: startLine, baseDir });
         }
         // i 指向 ``` 行或末尾,统一再 ++
         i++;
@@ -142,7 +150,7 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
     // 值:去除尾部空白(注释混排不处理,保持与 IDEA 一致的行尾整体)
     const finalValue = trimTrailingWs(value);
     if (key) {
-      entries.push({ key, cond, value: finalValue, file, line: lineNo });
+      entries.push({ key, cond, value: finalValue, file, line: lineNo, baseDir });
     }
     i++;
   }
@@ -155,10 +163,12 @@ export function parseProperties(text: string, file = "<memory>"): { entries: Hel
  * @param readFile 读取 additional 引用文件的回调(路径已规范化为 / 分隔);
  *   返回 undefined 表示文件不可读,跳过并告警。不传则无法回填引用文件内容,
  *   引用条目会被跳过(与旧行为一致)。
+ * @param rootDir 项目根目录(用于 jar 类型的规则作用域);缺省时取各规则文件目录的公共祖先。
  */
 export function loadPropertiesFiles(
   files: { path: string; content: string }[],
-  readFile?: (path: string) => string | undefined
+  readFile?: (path: string) => string | undefined,
+  rootDir?: string
 ): HelperProperties {
   const entries: HelperPropEntry[] = [];
   const warnings: string[] = [];
@@ -166,7 +176,10 @@ export function loadPropertiesFiles(
   const watched = new Set<string>();
   const loaded: string[] = [];
 
-  const queue = [...files];
+  const queue: { path: string; content: string; baseDir: string }[] = files.map((f) => ({
+    ...f,
+    baseDir: normalizePath(dirOf(f.path)),
+  }));
   while (queue.length) {
     const cur = queue.shift()!;
     if (visited.has(cur.path)) {
@@ -184,20 +197,98 @@ export function loadPropertiesFiles(
     }
     loaded.push(cur.path);
     const r = parseProperties(cur.content, cur.path);
-    entries.push(...r.entries);
+    // properties.additional 继承主文件的模块目录:引用文件里的目录/字段规则仍作用于主文件所在模块
+    entries.push(...r.entries.map((e) => ({ ...e, baseDir: cur.baseDir })));
     warnings.push(...r.warnings);
     // properties.additional:路径相对当前文件目录
     for (const e of r.entries) {
       if (e.key === "properties.additional") {
         const p = resolveAdditionalPath(cur.path, e.value);
         if (p && !visited.has(p)) {
-          queue.push({ path: p, content: "" });
+          queue.push({ path: p, content: "", baseDir: cur.baseDir });
         }
       }
     }
   }
 
-  return { entries, warnings, files: loaded, watchedFiles: [...watched] };
+  // 目录由浅到深应用:模块规则排在项目根规则之后,后命中的规则覆盖先命中的。
+  // Array#sort 稳定,同目录(含 properties.additional)内保持文件加载顺序。
+  entries.sort((a, b) => pathDepth(a.baseDir) - pathDepth(b.baseDir));
+
+  const root = rootDir !== undefined
+    ? normalizePath(rootDir)
+    : commonAncestorDir(files.map((f) => normalizePath(dirOf(f.path))));
+  return { entries, warnings, files: loaded, watchedFiles: [...watched], rootDir: root };
+}
+
+/** 规则文件目录作用域:源码文件位于 baseDir 下(含同目录)才应用该规则 */
+export function ruleEntriesForSource(rules: HelperProperties, fsPath: string): HelperPropEntry[] {
+  return rules.entries.filter((e) => isUnderDir(fsPath, e.baseDir));
+}
+
+/** jar 中的类型没有源码路径:只应用项目根目录规则,避免模块规则跨模块污染 */
+export function ruleEntriesForJarType(rules: HelperProperties): HelperPropEntry[] {
+  const root = rules.rootDir !== undefined ? normalizePath(rules.rootDir) : shallowestBaseDir(rules.entries);
+  if (root === undefined) {
+    return rules.entries;
+  }
+  const normalizedRoot = normalizeRuleDir(root);
+  return rules.entries.filter((e) => normalizeRuleDir(e.baseDir) === normalizedRoot);
+}
+
+/** 路径规范化(统一 / 分隔;Windows 文件系统大小写不敏感) */
+function normalizeRuleDir(p: string): string {
+  const normalized = normalizePath(p).replace(/\/+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+/** fsPath 是否位于 baseDir 下(baseDir 为空表示无目录信息,按全局规则处理) */
+function isUnderDir(fsPath: string, baseDir: string): boolean {
+  if (!baseDir) {
+    return true;
+  }
+  const p = normalizeRuleDir(fsPath);
+  const b = normalizeRuleDir(baseDir);
+  return p === b || p.startsWith(b + "/");
+}
+
+function pathDepth(dir: string): number {
+  return normalizePath(dir).split("/").filter(Boolean).length;
+}
+
+function shallowestBaseDir(entries: HelperPropEntry[]): string | undefined {
+  let best: string | undefined;
+  let bestDepth = Infinity;
+  for (const e of entries) {
+    const depth = pathDepth(e.baseDir);
+    if (depth < bestDepth) {
+      best = e.baseDir;
+      bestDepth = depth;
+    }
+  }
+  return best;
+}
+
+/** 各目录的公共祖先(用于未显式提供项目根时的兜底) */
+function commonAncestorDir(dirs: string[]): string | undefined {
+  if (!dirs.length) {
+    return undefined;
+  }
+  const split = (dir: string) => normalizePath(dir).split("/").filter((part, i) => i === 0 || part.length > 0);
+  let prefix = split(dirs[0]);
+  for (const dir of dirs.slice(1)) {
+    const parts = split(dir);
+    let i = 0;
+    while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) {
+      i++;
+    }
+    prefix = prefix.slice(0, i);
+  }
+  const joined = prefix.join("/");
+  if (joined) {
+    return joined;
+  }
+  return normalizePath(dirs[0]).startsWith("/") ? "/" : "";
 }
 
 /** 路径像真实文件(非调用方为占位构造的空串路径)才尝试读取 */

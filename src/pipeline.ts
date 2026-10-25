@@ -120,7 +120,8 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
       ? {
           files: opts.rules.files,
           warnings: opts.rules.warnings,
-          entries: opts.rules.entries.map((e) => [e.key, e.cond ?? "", e.value, e.file, e.line]),
+          rootDir: opts.rules.rootDir ?? "",
+          entries: opts.rules.entries.map((e) => [e.key, e.cond ?? "", e.value, e.file, e.line, e.baseDir]),
         }
       : null,
   ]);
