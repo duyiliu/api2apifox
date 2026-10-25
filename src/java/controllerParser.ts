@@ -700,11 +700,18 @@ function resolveMapping(
     return [];
   }
   const declared = SPRING_MAPPINGS[mapping.name] ?? normalizeVerbs(annArray(mapping.args, "method"));
-  // 与 Spring RequestMethodsRequestCondition.combine 一致:类级与方法级均声明时合并集合;
-  // 方法级未声明时继承类级动词;两侧都为空才使用常用 verb 集合。
+  // 类级 method 是限制条件:与方法级显式动词取交集;方法级未声明时继承类级限制。
   let verbs: string[];
-  if (baseMethods.length || declared.length) {
-    verbs = [...new Set([...baseMethods, ...declared])];
+  if (baseMethods.length && declared.length) {
+    verbs = [...new Set(declared.filter((method) => baseMethods.includes(method)))];
+    if (!verbs.length) {
+      warn?.(`类级 method [${baseMethods.join(",")}] 与方法级 method [${declared.join(",")}] 无交集,已跳过该映射`);
+      return [];
+    }
+  } else if (baseMethods.length) {
+    verbs = [...new Set(baseMethods)];
+  } else if (declared.length) {
+    verbs = [...new Set(declared)];
   } else {
     warn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
     verbs = [...REQUEST_MAPPING_DEFAULT_VERBS];

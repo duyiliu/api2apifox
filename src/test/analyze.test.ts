@@ -1067,13 +1067,17 @@ public class IntersectController {
   assert.deepEqual(restricted.map((endpoint) => endpoint.method), ["POST"]);
   assert.equal(res.warnings.some((warning) => warning.includes("RestrictedController.pathOnly")), false);
 
-  // 类级 GET+POST 与方法级 @PostMapping 合并为 GET+POST(RequestMethodsRequestCondition.combine)
+  // 类级 GET+POST 限制与方法级 @PostMapping 收敛为 POST
   const mergedPost = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/only-post");
-  assert.deepEqual(mergedPost.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
+  assert.deepEqual(mergedPost.map((endpoint) => endpoint.method), ["POST"]);
   // 方法级未声明 method 时继承类级的 GET+POST
   const inherited = res.endpoints.filter((endpoint) => endpoint.path === "/api/intersect/path-only");
   assert.deepEqual(inherited.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
-  // 类级 POST 与方法级 @GetMapping 合并为 POST+GET
-  const mergedGet = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/get-under-post");
-  assert.deepEqual(mergedGet.map((endpoint) => endpoint.method).sort(), ["GET", "POST"]);
+  // 类级 POST 与方法级 @GetMapping 无交集:不生成接口并告警
+  const emptyIntersection = res.endpoints.filter((endpoint) => endpoint.path === "/api/restricted/get-under-post");
+  assert.deepEqual(emptyIntersection, []);
+  assert.ok(
+    res.warnings.some((warning) => warning.includes("RestrictedController.getUnderPost") && warning.includes("无交集")),
+    "无交集时应产生可定位告警"
+  );
 });
