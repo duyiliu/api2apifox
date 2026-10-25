@@ -57,14 +57,14 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 ### 配置文件与 AI 调用约定
 
-项目根目录可创建 `.api2apifox.json`（`projectId`、`apiBaseUrl`、`include`/`exclude`、冲突策略、`pageTypeStyle` 等）；配置优先级：**CLI 参数 > `API2APIFOX_*` 环境变量 > `.api2apifox.json` > 默认值**。
+项目根目录可创建 `.api2apifox.json`（`projectId`、`apiBaseUrl`、`include`/`exclude`、冲突策略、`pageTypeStyle` 等）；配置优先级：**CLI 参数 > `API2APIFOX_*` 环境变量 > `.api2apifox.json` > 默认值**。在 VS Code 中执行「导出 CLI 配置 / 复制等效命令」可按扩展当前生效设置生成或更新该文件（不写入 token），并复制读取同一份配置的扫描命令。
 
 - Token **不允许**写入配置文件，请用 `API2APIFOX_TOKEN`（及 `API2APIFOX_PROJECT_ID`）环境变量。
 - `--format json` 时 stdout 只输出一个 JSON 信封，按 `ok` / `error.code` 分支；`--quiet` 隐藏非致命告警。
 - 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误。
 - 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
 
-> CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
+> CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会自动影响另一边。需要两端扫描范围一致时，可在扩展中执行「导出 CLI 配置 / 复制等效命令」单向生成 `.api2apifox.json`；目标文件已存在且字段与扩展有效值不一致时会提示漂移并支持一键更新（只覆盖映射字段，不写入 token）。
 
 完整参数表见 [`packages/cli/README.md`](packages/cli/README.md)。
 
@@ -172,6 +172,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `同步光标处接口到 Apifox` | 光标停在接口方法内执行,或点方法上方 CodeLens「▲ 同步此接口」 |
 | `查看上次同步结果` | 重新打开「同步结果」面板(导入计数表 + 接口清单) |
 | `导出 OpenAPI 预览文件` | 生成 `openapi.gen.json` 本地验证 |
+| `导出 CLI 配置 / 复制等效命令` | 把扩展当前生效设置映射为 `.api2apifox.json`（不写 token），检测漂移并支持一键更新，同时可复制等效扫描命令 |
 
 ## ⚙️ 扩展设置
 

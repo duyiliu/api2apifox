@@ -9,6 +9,7 @@
     "src/**/*.ts",
     "../../src/core/**/*.ts",
     "../../src/apifox/client.ts",
+    "../../src/config/defaults.ts",
     "../../src/config/helperProperties.ts",
     "../../src/java/**/*.ts",
     "../../src/openapi/**/*.ts",
