@@ -44,6 +44,8 @@ API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes -
 api2apifox config --project . --format json                  # 查看生效配置
 ```
 
+`sync` 真正写入后会在浏览器自动弹出同步结果报告页（汇总计数、错误警告、接口清单，同 VS Code 结果面板）；`--no-report` 可关闭。
+
 ### 范围与筛选
 
 ```bash

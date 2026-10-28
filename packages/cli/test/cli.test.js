@@ -126,3 +126,94 @@ test("默认等待上限允许首次导入较慢的建目录与建模型", () =>
   assert.equal(payload.result.fields.timeoutMs.value, 300000);
   assert.equal(payload.result.fields.timeoutMs.source, "default");
 });
+
+function sampleReport() {
+  return {
+    projectId: 4242,
+    projectUrl: "https://app.apifox.com/project/4242",
+    target: "Apifox 项目（ID: 4242）",
+    scope: "整个项目",
+    finishedAt: "2025-01-01 12:00:00",
+    conflict: "接口=自动合并；数据模型=自动合并",
+    summary: [
+      { category: "接口", created: 2, updated: 1, ignored: 0, failed: 0, total: 3 },
+      { category: "数据模型", created: 4, updated: 0, ignored: 0, failed: 0, total: 4 },
+    ],
+    endpoints: [
+      {
+        name: "</script><script>alert(1)</script>",
+        method: "GET",
+        path: "/api/v1/users",
+        folder: "系统/UserController",
+        controller: "UserController",
+        file: "src/main/java/demo/UserController.java",
+        fsPath: "D:/demo/src/main/java/demo/UserController.java",
+        startOffset: 120,
+      },
+    ],
+    errors: [],
+    warnings: ["示例警告"],
+  };
+}
+
+test("同步报告 HTML 内嵌数据并转义脚本注入", () => {
+  const { renderReportHtml } = require("../dist/cli.js");
+  const html = renderReportHtml(sampleReport());
+  assert.ok(html.includes("同步结果"));
+  assert.ok(html.includes("Apifox 项目（ID: 4242）"));
+  assert.ok(html.includes("https://app.apifox.com/project/4242"));
+  // 接口名里的 </script> 被转义,不会提前闭合脚本标签
+  assert.ok(!html.includes("<script>alert(1)"));
+  assert.ok(html.includes("\u003c/script>"));
+  // 汇总行与警告进入数据载荷
+  assert.ok(html.includes("示例警告"));
+  assert.ok(html.includes("\"category\":\"接口\""));
+});
+
+test("buildCliSyncReport 汇总 Apifox 计数并推导项目链接", () => {
+  const { buildCliSyncReport } = require("../dist/cli.js");
+  const report = buildCliSyncReport({
+    synced: {
+      dryRun: false,
+      target: { projectId: 4242, apiBaseUrl: "https://api.apifox.com" },
+      scope: { type: "workspace", endpointCount: 1 },
+      counters: { endpointCreated: 1, endpointUpdated: 2, endpointIgnored: 3, schemaCreated: 1 },
+      errors: [{ message: "导入失败示例" }],
+    },
+    analyzed: {
+      endpoints: [
+        {
+          method: "GET",
+          path: "/api/v1/users",
+          tag: "UserController",
+          operationId: "UserController_list",
+          parameters: [],
+          fsPath: "D:/demo/src/main/java/demo/UserController.java",
+          controller: "UserController",
+          flavor: "spring-mvc",
+          summary: "用户列表",
+        },
+      ],
+      warnings: [],
+    },
+    resolved: {
+      config: {
+        projectRoot: "D:/demo",
+        folderNameSource: "controller",
+        rootFolderName: "系统",
+        endpointConflictBehavior: "AUTO_MERGE",
+        schemaConflictBehavior: "AUTO_MERGE",
+      },
+    },
+  });
+  assert.equal(report.projectId, 4242);
+  assert.equal(report.projectUrl, "https://app.apifox.com/project/4242");
+  assert.equal(report.scope, "整个项目");
+  assert.deepEqual(
+    report.summary.filter((row) => row.category === "接口"),
+    [{ category: "接口", created: 1, updated: 2, ignored: 3, failed: 0, total: 6 }]
+  );
+  assert.equal(report.endpoints[0].folder, "系统/UserController");
+  assert.equal(report.endpoints[0].file, "src/main/java/demo/UserController.java");
+  assert.deepEqual(report.errors, ["导入失败示例"]);
+});

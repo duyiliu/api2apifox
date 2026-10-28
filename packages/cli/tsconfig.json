@@ -12,6 +12,8 @@
     "../../src/config/helperProperties.ts",
     "../../src/java/**/*.ts",
     "../../src/openapi/**/*.ts",
+    "../../src/ui/syncPreflight.ts",
+    "../../src/ui/syncResult.ts",
     "../../src/pipeline.ts"
   ],
   "exclude": [

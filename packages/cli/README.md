@@ -36,6 +36,14 @@ api2apifox sync --project . --project-id 123456 --yes --timeout-ms 600000 --form
 
 如果同步返回 `REQUEST_TIMEOUT`，说明本地已停止等待，但 Apifox 服务端可能仍在继续导入。请先查询目标项目确认结果，不要立即重复同步。
 
+## 同步结果报告页
+
+`sync` 真正写入 Apifox 后（含部分失败），会自动生成一份自包含 HTML 报告并用系统默认浏览器打开，与 VS Code 扩展的同步结果面板同源：汇总计数（新增/更新/忽略/失败）、错误与警告、可排序可过滤的接口清单，支持一键复制 TSV / Markdown。
+
+- 报告文件写入系统临时目录 `api2apifox-sync-report-<projectId>.html`，重复同步原地覆盖；路径也会出现在 text 输出与 JSON 信封的 `result.reportPath`（部分失败时在 `error.details.reportPath`）
+- `--no-report` 可关闭弹出；无头/受限环境自动打开失败时仅在 stderr 提示路径，不影响退出码
+- `--dry-run` 预检不生成报告
+
 ## 范围与筛选
 
 ```bash

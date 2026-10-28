@@ -9,6 +9,7 @@ import { hasImportFailures, syncProject } from "../../../src/core/syncService";
 import { CliOptions, parseCliArgs } from "./args";
 import { CliError, toCliError } from "./errors";
 import { diagnosticMessages, FailureEnvelope, SuccessEnvelope, writeJson, writeText } from "./output";
+import { buildCliSyncReport, folderOfEndpoint, writeReportAndOpen } from "./report";
 
 const VERSION = (require("../package.json") as { version: string }).version;
 
@@ -71,8 +72,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
         });
         result = synced;
         warnings = analyzed.warnings;
+        // 真实同步落地后生成浏览器报告页(部分失败也要展示,便于排查);--no-report 可关闭
+        if (!options.dryRun && !options.noReport) {
+          const reportPath = await writeReportAndOpen(buildCliSyncReport({ synced, analyzed, resolved }));
+          if (reportPath) {
+            result = { ...synced, reportPath };
+          }
+        }
         if (hasImportFailures(synced)) {
-          throw new CliError("IMPORT_PARTIAL_FAILURE", "Apifox 导入完成，但存在失败项", 6, false, undefined, synced);
+          throw new CliError("IMPORT_PARTIAL_FAILURE", "Apifox 导入完成，但存在失败项", 6, false, undefined, result);
         }
         break;
       }
@@ -124,7 +132,7 @@ function scanResult(analyzed: ProjectAnalysisResult, resolved: ResolvedConfigRes
       method: endpoint.method,
       path: endpoint.path,
       summary: endpoint.summary,
-      folder: folderOf(endpoint, resolved),
+      folder: folderOfEndpoint(endpoint, resolved),
       controller: endpoint.controller,
       file: relativeFile(analyzed.projectRoot, endpoint.fsPath),
       line: endpoint.methodRange?.startLine,
@@ -293,17 +301,14 @@ function formatTextResult(command: CliOptions["command"], result: unknown, warni
     return `OpenAPI 已导出到 ${value.output}，共 ${value.endpointCount} 个接口${warningText}`;
   }
   if (command === "sync") {
-    const sync = result as unknown as SyncResult;
-    return sync.dryRun
-      ? `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox${warningText}`
-      : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口${warningText}`;
+    const sync = result as unknown as SyncResult & { reportPath?: string };
+    const base = sync.dryRun
+      ? `同步预检完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口，未写入 Apifox`
+      : `同步完成:项目 ${sync.target.projectId}，${sync.scope.endpointCount} 个接口`;
+    const reportText = sync.reportPath ? `\n同步报告:${sync.reportPath}` : "";
+    return `${base}${reportText}${warningText}`;
   }
   return `${JSON.stringify(result, null, 2)}${warningText}`;
-}
-
-function folderOf(endpoint: ProjectAnalysisResult["endpoints"][number], resolved: ResolvedConfigResult): string {
-  const key = resolved.config.folderNameSource === "controller" ? endpoint.controller : endpoint.tag;
-  return resolved.config.rootFolderName.trim() ? `${resolved.config.rootFolderName.trim()}/${key}` : key;
 }
 
 function relativeFile(root: string, file: string): string {
@@ -421,6 +426,7 @@ ${FILTER_NOTE}`;
 ${COMMON_HELP}
   --dry-run                 只预检，不写入 Apifox（无需 token）
   -y, --yes                 跳过交互确认；非交互环境必须显式传入
+  --no-report               不生成并打开同步结果报告页（默认真实同步后在浏览器弹出总结）
   --project-id <id>         目标 Apifox 项目 ID
   --token <token>           Apifox 访问令牌，推荐改用 API2APIFOX_TOKEN 环境变量
   --endpoint-conflict <模式> 接口冲突处理：OVERWRITE_EXISTING | AUTO_MERGE | KEEP_EXISTING | CREATE_NEW
@@ -448,3 +454,6 @@ if (require.main === module) {
     process.exitCode = code;
   });
 }
+
+// 供测试与脚本复用(不影响 CLI 执行语义:主入口仍由 require.main 保护)
+export { buildCliSyncReport, renderReportHtml, syncReportPath } from "./report";

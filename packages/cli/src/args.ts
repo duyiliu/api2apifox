@@ -22,6 +22,8 @@ export interface CliOptions {
   token?: string;
   dryRun: boolean;
   yes: boolean;
+  /** 不生成并打开同步结果报告页(sync 专用) */
+  noReport: boolean;
   endpointConflictBehavior?: ConflictBehavior;
   schemaConflictBehavior?: ConflictBehavior;
   includes: string[];
@@ -53,6 +55,7 @@ const argumentOptions = {
   token: { type: "string" },
   "dry-run": { type: "boolean", default: false },
   yes: { type: "boolean", short: "y", default: false },
+  "no-report": { type: "boolean", default: false },
   "endpoint-conflict": { type: "string" },
   "schema-conflict": { type: "string" },
   include: { type: "string", multiple: true, default: [] },
@@ -108,6 +111,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     token: parsed.values.token,
     dryRun: parsed.values["dry-run"] ?? false,
     yes: parsed.values.yes ?? false,
+    noReport: parsed.values["no-report"] ?? false,
     endpointConflictBehavior: parseConflict(parsed.values["endpoint-conflict"], "--endpoint-conflict"),
     schemaConflictBehavior: parseConflict(parsed.values["schema-conflict"], "--schema-conflict"),
     includes: parsed.values.include ?? [],
