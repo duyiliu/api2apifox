@@ -73,6 +73,24 @@ test("parseTypeText 泛型/数组/通配", () => {
   assert.equal(wild.args[0].wildcard, "extends");
 });
 
+test("parseTypeText 跳过类型注解(@NotNull/@Valid 等)与带括号实参", () => {
+  // Java 允许 List<@NotNull @Valid Foo> 的类型注解,不得吞掉内部类型
+  const t = parseTypeText('List<@NotNull(message = "x") @Valid Foo>');
+  assert.equal(t.name, "List");
+  assert.equal(t.args[0].name, "Foo");
+
+  // 注解实参内字符串含括号/逗号不得干扰括号配平与实参切分
+  const m = parseTypeText('Map<@Size(max = 2) String, @Pattern(regexp = "(a,b)") Integer>');
+  assert.equal(m.name, "Map");
+  assert.equal(m.args[0].name, "String");
+  assert.equal(m.args[1].name, "Integer");
+
+  // 顶层类型注解
+  const top = parseTypeText("@NonNull Foo[]");
+  assert.equal(top.name, "Foo");
+  assert.equal(top.dims, 1);
+});
+
 test("parseJavadoc 提取首行/正文/@param/@return", () => {
   const jd = parseJavadoc(
     ["/**", " * 分页查询用户列表", " *", " * @param keyword 搜索关键字", " * @param page 页码", " * @return 用户分页数据", " */"].join("\n")

@@ -47,6 +47,35 @@ class TypeParser {
 
   private parseBase(): TypeRef {
     this.skipSpaces();
+    // 类型注解(如 List<@NotNull @Valid Foo>)不参与类型身份,跳过
+    while (this.peek() === "@") {
+      this.pos++;
+      const ident = /^\w+(?:\.\w+)*/.exec(this.text.slice(this.pos));
+      if (ident) {
+        this.pos += ident[0].length;
+      }
+      this.skipSpaces();
+      if (this.peek() === "(") {
+        // 注解实参按括号配平整体跳过(字符串字面量内的括号不计)
+        let depth = 0;
+        let inStr = "";
+        while (this.pos < this.text.length) {
+          const c = this.text[this.pos++];
+          if (inStr) {
+            if (c === inStr && this.text[this.pos - 2] !== "\\") {
+              inStr = "";
+            }
+          } else if (c === '"' || c === "'") {
+            inStr = c;
+          } else if (c === "(") {
+            depth++;
+          } else if (c === ")" && --depth === 0) {
+            break;
+          }
+        }
+      }
+      this.skipSpaces();
+    }
     if (this.peek() === "?") {
       this.pos++;
       this.skipSpaces();

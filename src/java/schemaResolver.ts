@@ -473,6 +473,9 @@ const PRIMITIVES: Record<string, JsonSchema> = {
   String: { type: "string" },
   CharSequence: { type: "string" },
   Object: { type: "object" },
+  // java.lang.Void / void 不可实例化,恒为 null(常见于 ResponseDto<Void>)
+  Void: { type: "object" },
+  void: { type: "object" },
   Date: { type: "string", format: "date-time" },
   Timestamp: { type: "string", format: "date-time" },
   LocalDateTime: { type: "string", format: "date-time" },
