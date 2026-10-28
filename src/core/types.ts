@@ -27,8 +27,6 @@ export interface ResolvedConfig {
   schemaFolderId: number;
   helperPropertiesEnabled: boolean;
   enumFieldDoc: boolean;
-  /** ID 语义字段(id/*Id 且 Long/long/BigInteger)输出 string;默认开,显式 false 关闭 */
-  idAsString: boolean;
   dependencyRepos: string[];
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */

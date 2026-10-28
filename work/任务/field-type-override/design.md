@@ -1,10 +1,14 @@
-# `field.type` 字段级 schema 类型覆盖规则 + `idAsString` 内置默认
+# `field.type` 字段级 schema 类型覆盖规则
 
-> 状态:已实现(176 核心测试全绿),2026-10-28
+> 状态:已实现,2026-10-28
 > 背景:真实项目 child-adolescent-health-backend(Ext Plus 框架)的只读接口实测中,
 > `projectId`/`patientId` 等雪花 ID 在原始 JSON 里是**字符串**,分页数量是数字;
 > 而 api2apifox 按 Java `Long` 一律生成 `integer/int64`,文档与实际响应不一致,
 > 前端按 number 处理会丢精度(JS 安全整数上限 2^53−1)。
+>
+> 决策轨迹:曾把「`id`/`*Id`+Long → `string`」做成内置默认(`idAsString`,先硬编码
+> 判定后改为预置规则注入),随后按用户决定撤销——工具不内置任何命名约定的特例判定,
+> 该谓词作为项目知识由各项目在 `.apifox-helper.properties` 写显式 `field.type` 规则。
 
 ## 1. 运行时机制(实测+反编译确认)
 
@@ -29,8 +33,8 @@
 | --- | --- |
 | `src/java/ruleEval.ts` | `RuleContext` 增加 `fieldType`(声明类型去空白文本,如 `Long`/`java.util.List<Long>`/`Long[]`)与 `fieldTypeSimple`(根简单名);`evalSafeCondition` 新增访问器原子:`it.name()` / `it.type()?.name()` / `it.type()?.simpleName()` 的 `==`/`!=`(字符串字面量或 `null`)与 `equals/equalsIgnoreCase/startsWith/endsWith/contains/matches` 方法调用 |
 | `src/java/schemaResolver.ts` | `fieldRuleContext` 回填 `fieldType`/`fieldTypeSimple`;`fieldRuleEngine` 新增 `field.type`/`json.rule.field.type` 键(命中且值为合法 `type` 或 `type:format` 时覆盖,多条命中后者生效,非法值告警);`classSchema` 在 `resolveTypeText` 后整体替换 `{type,format}`(保留 `nullable`,描述/示例/约束照常叠加) |
-| `src/test/rules.test.ts` | 5 个 e2e 用例(*Id+Long→string、type:format、非法值告警、@注解条件、groovy 未命中不覆盖) |
-| `README.md` | 规则表新增 `field.type`;「差异/边界」补访问器原子说明与雪花 ID 示例 |
+| `src/test/rules.test.ts` | 6 个 e2e 用例(*Id+Long→string 项目规则、type:format、非法值告警、@注解条件、groovy 未命中不覆盖、总开关) |
+| `README.md` / `packages/cli/README.md` | 规则表新增 `field.type`;「差异/边界」补访问器原子说明与雪花 ID 示例 |
 
 ## 3. 关键决策
 
@@ -44,49 +48,45 @@
   `$ref`/数组/对象形态一并丢弃——规则作者意图就是改写该字段的 JSON 形态;
   `description`/`example`/Bean Validation 约束在新类型上照常叠加。
 - **D4 作用域限模型字段**:path/query/header 参数与 multipart 表单不经过 `fieldRuleEngine`,
-  传输层本来就是字符串绑定,不存在 JSON 精度问题,故不纳入 `field.type`。
-- **D5 `id`/`*Id`+Long 内置默认开,AND 语义关闭**:用户决定把 ID 文档化设为默认行为
-  ("改为默认的可选项")。误报代价不对称——无此类序列化器的项目被误标 `string` 只是
-  前端类型声明不精确(编译期即可发现);有此类序列化器的项目被误标 `integer` 则前端
-  静默丢精度(运行期数据损坏),故默认开。关闭语义用「任一渠道显式 `false` 即关」,
-  避免 `ResolvedConfig` 把默认值解析成确定布尔后 properties 永远失效的优先级陷阱。
-- **D6 内置默认=预置规则注入,非硬编码判定**:回应"`idAsString` 太特例"的质疑——
-  特例的是谓词内容(命名约定),不是机制;把默认实现为「向 `field.type` 流注入一条
-  预置 groovy entry」后,特例降级为默认配置内容,与用户规则走同一条求值管线、
-  被顺序语义天然覆盖,也顺带证明安全 groovy 子集足以表达该谓词。
+  传输层本来就是字符串绑定,故不纳入 `field.type`。(注:若前端按文档 `integer` 以 number
+  持有 query/path 中的雪花 ID 同样会丢精度,参数级规则覆盖是已知留白,需要时单独立项。)
+- **D5 不内置 `id`/`*Id` 特例默认(曾实现后撤销)**:「字段名 `id`/`*Id` + 类型 `Long` 家族」
+  是**命名约定+序列化契约的项目知识**,不是工具可判定的语义;做成默认行为会把一个团队的
+  约定放大到所有项目(无该序列化器的项目里 `Long` ID 本来就是数字)。故该谓词留作
+  项目显式 `field.type` 规则——表达式完全走通用求值管线,无任何工具侧特例代码。
+  过程留档:该默认曾以 `idAsString`(预置 `field.type` entry 注入,AND 语义 `false` 关闭)
+  实现并验证等价,后按「不要显式的内置」决定整体移除。
 
 ## 4. 用法
 
-### 内置默认:`idAsString`(推荐,零配置)
+### 雪花 ID 文档化为 string(项目显式规则)
 
-`id`/`*Id` 且声明类型为 `Long`/`long`/`BigInteger` 的字段**默认**输出 `string`——
-常规项目无需任何配置。关闭渠道(任一显式 `false` 即关,AND 语义不做反向覆盖):
+```properties
+# 字段名 id 或 *Id,且声明类型为 Long/long/BigInteger → 输出 string
+field.type=groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type()?.name()?.endsWith("Long") || it.type()?.name() == "long" || it.type()?.name()?.endsWith("BigInteger"))) ? "string" : null
+```
 
-- `.apifox-helper.properties`:`idAsString=false`
-- `.api2apifox.json`:`helperProperties.idAsString: false`
-- CLI:`--id-as-string=false`
-- API:`analyze(files, { idAsString: false })`
+- `List<Long>`/`Long[]` 的 `it.type()?.name()` 以 `>`/`]` 结尾,天然不命中;
+  `Long total`、`Integer scoreId` 不受影响。
+- 后端项目 child-adolescent-health-backend 的根级与模块级 `.apifox-helper.properties`
+  已配置此规则;扩展与 CLI 共用同一求值管线,无需额外配置。
 
-显式 `field.type` 规则命中的字段以规则为准(内置默认只在无显式覆盖时兜底)。
-
-### 手写规则(非常规命名/自定义条件时用 `field.type`)
+### 其他 `field.type` 用法
 
 ```properties
 # 例:非 *Id 命名的长整型字段(如 xxxPk)也按 string
 field.type=groovy: (it.name().endsWith("Pk") && it.type()?.name()?.endsWith("Long")) ? "string" : null
+
+# 类型级全量转换
+field.type=groovy: it.type()?.name()?.endsWith("Long") ? "string" : null
+
+# 字面量/带 format
+field.type=string
+field.type=integer:int64
+
+# 注解条件:只覆盖标注 @DataDic 的字段
+field.type[@ext.plus.common.core.annotation.DataDic]=string
 ```
-
-类型级全量转换也可表达:`field.type=groovy: it.type()?.name()?.endsWith("Long") ? "string" : null`。
-
-### 内置默认的实现口径
-
-- **实现为预置规则注入而非独立判定代码**:`BUILTIN_ID_AS_STRING_ENTRY` 是一条合成的
-  `field.type` groovy entry,排在项目规则之前进入同一条求值流——"多条命中后者生效"
-  的顺序语义使项目 `field.type` 规则天然覆盖它;`idAsString=false` 时跳过注入。
-  谓词即用法示例中的那条 groovy(`List<Long>`/`Long[]` 以 `>`/`]` 结尾天然不命中)。
-- 作用域仍是模型字段(`fieldRuleEngine`),path/query/header 参数不受影响。
-- `ResolvedConfig.idAsString` 默认 `true`,经 `analyze→buildOpenApi→ResolveOptions`
-  透传;`idAsStringEnabled` 检查 `options===false` 或 properties `idAsString=false`。
 
 ## 5. 已知边界
 

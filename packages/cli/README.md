@@ -79,8 +79,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "folderNameSource": "tag",
   "helperProperties": {
     "enabled": true,
-    "enumFieldDoc": false,
-    "idAsString": true
+    "enumFieldDoc": false
   }
 }
 ```
@@ -101,7 +100,11 @@ $env:API2APIFOX_TOKEN = "APS_xxx"
 $env:API2APIFOX_PROJECT_ID = "123456"
 ```
 
-`helperProperties.idAsString`（默认 `true`）控制内置的 ID 文档化规则：字段名为 `id` 或以 `Id` 结尾、且声明类型为 `Long`/`long`/`BigInteger` 的模型字段，一律按 `string` 生成——对齐"大整型序列化为字符串"的框架契约（如 Ext Plus `CustomizedLongSerializer`），避免前端按 `integer` 处理雪花 ID 丢精度。也可在 `.apifox-helper.properties` 写 `idAsString=false` 或命令行传 `--id-as-string=false` 关闭；任一渠道显式 `false` 即关闭，显式 `field.type` 规则命中的字段不受影响。
+如需把雪花 ID 字段按 `string` 文档化（对齐"大整型序列化为字符串"的框架契约，避免前端按 `integer` 处理丢精度），在 `.apifox-helper.properties` 写显式 `field.type` 规则，例如：
+
+```properties
+field.type=groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type()?.name()?.endsWith("Long") || it.type()?.name() == "long" || it.type()?.name()?.endsWith("BigInteger"))) ? "string" : null
+```
 
 配置优先级：CLI 参数 > 环境变量 > `.api2apifox.json` > 默认值。
 

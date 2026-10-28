@@ -559,8 +559,7 @@ test("e2e:field.type 支持 type:format 值形式", () => {
 
 test("e2e:field.type 非法类型值产生告警且不覆盖 schema", () => {
   const rules = loadPropertiesFiles([{ path: "/mem/.apifox-helper.properties", content: "field.type=text" }]);
-  // 关闭内置 idAsString,隔离 field.type 非法值的语义
-  const res = analyze(growthFiles, { title: "t", rules, idAsString: false });
+  const res = analyze(growthFiles, { title: "t", rules });
   const schema = res.spec.components!.schemas["GrowthDto"];
   assert.equal(schema.properties!.projectId.type, "integer");
   assert.ok(res.warnings.some((w) => w.includes("field.type") && w.includes("不是合法")), "应告警非法类型值: " + res.warnings.join("|"));
@@ -579,8 +578,7 @@ test("e2e:field.type 条件后缀(@注解)命中才覆盖", () => {
   ]);
   const res = analyze(
     growthFiles.map((f) => (f.fsPath.endsWith("growth.java") ? { ...f, content: dto2 } : f)),
-    // 关闭内置 idAsString:否则 patientId 也会被内置覆盖,无法区分注解条件是否生效
-    { title: "t", rules, idAsString: false }
+    { title: "t", rules }
   );
   const schema = res.spec.components!.schemas["GrowthDto"];
   assert.equal(schema.properties!.projectId.type, "string");
@@ -594,16 +592,21 @@ test("e2e:field.type groovy 条件未命中(null 分支)不覆盖", () => {
       content: 'field.type=groovy: it.name().startsWith("zzz") ? "string" : null',
     },
   ]);
-  const res = analyze(growthFiles, { title: "t", rules, idAsString: false });
+  const res = analyze(growthFiles, { title: "t", rules });
   assert.ok(!res.warnings.some((w) => w.includes("groovy")), "可安全求值的三元不应告警: " + res.warnings.join("|"));
   const schema = res.spec.components!.schemas["GrowthDto"];
   assert.equal(schema.properties!.projectId.type, "integer");
 });
 
-/* ---------- 内置默认:idAsString ---------- */
-
-test("e2e:无任何规则时 id/*Id 的 Long 字段默认输出 string(idAsString 内置默认)", () => {
-  const res = analyze(growthFiles, { title: "t" });
+test("e2e:field.type 项目规则:id/*Id 的 Long 字段输出 string(雪花 ID 文档化典型用法)", () => {
+  const rules = loadPropertiesFiles([
+    {
+      path: "/mem/.apifox-helper.properties",
+      content:
+        'field.type=groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type()?.name()?.endsWith("Long") || it.type()?.name() == "long" || it.type()?.name()?.endsWith("BigInteger"))) ? "string" : null',
+    },
+  ]);
+  const res = analyze(growthFiles, { title: "t", rules });
   const schema = res.spec.components!.schemas["GrowthDto"];
   assert.equal(schema.properties!.projectId.type, "string");
   assert.equal(schema.properties!.patientId.type, "string");
@@ -611,36 +614,11 @@ test("e2e:无任何规则时 id/*Id 的 Long 字段默认输出 string(idAsStrin
   assert.equal(schema.properties!.rawId.type, "string");
   assert.equal(schema.properties!.qualifiedId.type, "string");
   assert.equal(schema.properties!.bigId.type, "string");
-  // 非 Id 命名的 Long、非整型 *Id、List<Long> 不受内置默认影响
+  // 非 Id 命名的 Long、非整型 *Id、List<Long> 不受影响
   assert.equal(schema.properties!.total.type, "integer");
   assert.equal(schema.properties!.total.format, "int64");
   assert.equal(schema.properties!.scoreId.type, "integer");
   assert.equal(schema.properties!.scoreId.format, "int32");
   assert.equal(schema.properties!.refId.type, "array");
   assert.equal(schema.properties!.refId.items!.type, "integer");
-});
-
-test("e2e:idAsString=false 选项关闭内置默认", () => {
-  const res = analyze(growthFiles, { title: "t", idAsString: false });
-  const schema = res.spec.components!.schemas["GrowthDto"];
-  assert.equal(schema.properties!.projectId.type, "integer");
-  assert.equal(schema.properties!.projectId.format, "int64");
-  assert.equal(schema.properties!.id.type, "integer");
-});
-
-test("e2e:.apifox-helper.properties 中 idAsString=false 关闭内置默认", () => {
-  const rules = loadPropertiesFiles([{ path: "/mem/.apifox-helper.properties", content: "idAsString=false" }]);
-  const res = analyze(growthFiles, { title: "t", rules });
-  const schema = res.spec.components!.schemas["GrowthDto"];
-  assert.equal(schema.properties!.projectId.type, "integer");
-  assert.equal(schema.properties!.projectId.format, "int64");
-});
-
-test("e2e:显式 field.type 规则优先于内置默认", () => {
-  // field.type 命中后内置默认不再插手:即便值仍是 integer,显式规则说了算
-  const rules = loadPropertiesFiles([{ path: "/mem/.apifox-helper.properties", content: "field.type=integer:int64" }]);
-  const res = analyze(growthFiles, { title: "t", rules });
-  const schema = res.spec.components!.schemas["GrowthDto"];
-  assert.equal(schema.properties!.projectId.type, "integer");
-  assert.equal(schema.properties!.projectId.format, "int64");
 });

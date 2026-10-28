@@ -23,8 +23,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
-        "enumFieldDoc": { "type": "boolean" },
-        "idAsString": { "type": "boolean" }
+        "enumFieldDoc": { "type": "boolean" }
       }
     },
     "dependencyRepos": { "type": "array", "items": { "type": "string" } },
