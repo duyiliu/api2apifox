@@ -598,6 +598,76 @@ test("e2e:field.type groovy 条件未命中(null 分支)不覆盖", () => {
   assert.equal(schema.properties!.projectId.type, "integer");
 });
 
+/* ---------- param.* 参数级规则 ---------- */
+
+const PARAM_CTL = `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/p")
+public class ParamController {
+  @GetMapping("/{visitId}")
+  public GrowthDto get(@PathVariable Long visitId, @RequestParam Long patientId, @RequestParam Integer size, @RequestParam String name) { return null; }
+  @GetMapping("/opt")
+  public GrowthDto opt(@RequestParam(required = false) String keyword, @RequestParam String tag) { return null; }
+}
+`;
+const paramFiles: SourceFile[] = [
+  { fsPath: "/mem/growth.java", content: GROWTH_DTO },
+  { fsPath: "/mem/pctl.java", content: PARAM_CTL },
+];
+
+test("e2e:param.type 规则把 *Id 的 Long 参数覆盖为 string(含 path/query)", () => {
+  const rules = loadPropertiesFiles([
+    {
+      path: "/mem/.apifox-helper.properties",
+      content: ID_AS_STRING_RULE.replace("field.type=", "param.type="),
+    },
+  ]);
+  const res = analyze(paramFiles, { title: "t", rules });
+  assert.ok(!res.warnings.some((w) => w.includes("groovy")), "安全形态 groovy 不应告警: " + res.warnings.join("|"));
+  const params = (res.spec.paths["/api/p/{visitId}"].get as Record<string, any>).parameters as any[];
+  const visitId = params.find((p) => p.name === "visitId");
+  const patientId = params.find((p) => p.name === "patientId");
+  const size = params.find((p) => p.name === "size");
+  const name = params.find((p) => p.name === "name");
+  assert.equal(visitId.in, "path");
+  assert.equal(visitId.schema.type, "string");
+  assert.equal(patientId.schema.type, "string");
+  // 非 Id 命名/非整型参数不受影响
+  assert.equal(size.schema.type, "integer");
+  assert.equal(size.schema.format, "int32");
+  assert.equal(name.schema.type, "string");
+});
+
+test("e2e:param.required/param.ignore/param.doc 生效", () => {
+  const rules = loadPropertiesFiles([
+    {
+      path: "/mem/.apifox-helper.properties",
+      content: ["param.required=true", "param.ignore=keyword", "param.doc=（规则追加说明）"].join("\n"),
+    },
+  ]);
+  const res = analyze(paramFiles, { title: "t", rules });
+  const params = (res.spec.paths["/api/p/opt"].get as Record<string, any>).parameters as any[];
+  // param.ignore=keyword:字面量按参数名匹配删除
+  assert.ok(!params.some((p) => p.name === "keyword"), "keyword 应被忽略: " + JSON.stringify(params));
+  const tag = params.find((p) => p.name === "tag");
+  // param.required=true:命中规则把可选/必填一律置 required
+  assert.equal(tag.required, true);
+  assert.ok(String(tag.description).includes("（规则追加说明）"), "param.doc 应追加描述: " + tag.description);
+});
+
+test("e2e:param.required=false 可关闭参数的 required;path 参数恒 required", () => {
+  const rules = loadPropertiesFiles([{ path: "/mem/.apifox-helper.properties", content: "param.required=false" }]);
+  const res = analyze(paramFiles, { title: "t", rules });
+  const params = (res.spec.paths["/api/p/{visitId}"].get as Record<string, any>).parameters as any[];
+  // 命中规则后,@RequestParam 默认必填也被关闭
+  assert.equal(params.find((p) => p.name === "patientId").required, false);
+  assert.equal(params.find((p) => p.name === "size").required, false);
+  // path 参数按 OpenAPI 规范恒 required,不受规则影响
+  assert.equal(params.find((p) => p.name === "visitId").required, true);
+});
+
 test("e2e:field.type 项目规则:id/*Id 的 Long 字段输出 string(雪花 ID 文档化典型用法)", () => {
   const rules = loadPropertiesFiles([
     {

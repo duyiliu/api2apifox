@@ -1,5 +1,13 @@
 import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
-import { applyConstraints, JsonSchema, ResolveContext, resolveTypeText, SchemaRegistry, withRefSiblings } from "../java/schemaResolver";
+import {
+  applyConstraints,
+  JsonSchema,
+  paramRuleEngine,
+  ResolveContext,
+  resolveTypeText,
+  SchemaRegistry,
+  withRefSiblings,
+} from "../java/schemaResolver";
 import { typeScopeOf } from "../java/typeIndex";
 import { HelperProperties } from "../config/helperProperties";
 
@@ -109,27 +117,39 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
     }
   }
 
-  const parameters = ep.parameters.map((p) => {
-    const schema = resolveTypeText(p.typeText, opCtx);
-    applyParamConstraints(p, schema);
-    const param: Record<string, unknown> = {
-      name: p.name,
-      in: p.in,
-      required: p.in === "path" ? true : p.required,
-      schema,
-    };
-    if (p.description) {
-      param.description = p.description;
-    }
-    if (p.example !== undefined) {
-      param.example = p.example;
-    }
-    if (p.defaultValue !== undefined) {
-      // @RequestParam(defaultValue) 同样不能写成 $ref 的兄弟字段
-      param.schema = withRefSiblings(param.schema as JsonSchema, { default: p.defaultValue });
-    }
-    return param;
-  });
+  // param.* 参数级规则(与 field.* 同求值管线):param.ignore/required/type/doc
+  const paramSubject = `${ep.controller}.${ep.methodName ?? ep.operationId}`;
+  const parameters = ep.parameters
+    .map((p) => {
+      const rule = paramRuleEngine(p, paramSubject, opCtx);
+      if (rule.ignored) {
+        return undefined;
+      }
+      let schema = resolveTypeText(p.typeText, opCtx);
+      if (rule.typeOverride) {
+        schema = { type: rule.typeOverride.type, ...(rule.typeOverride.format ? { format: rule.typeOverride.format } : {}) };
+      }
+      applyParamConstraints(p, schema);
+      const param: Record<string, unknown> = {
+        name: p.name,
+        in: p.in,
+        required: p.in === "path" ? true : (rule.required ?? p.required),
+        schema,
+      };
+      const desc = rule.appendDoc.length ? [p.description, ...rule.appendDoc].filter(Boolean).join("\n") : p.description;
+      if (desc) {
+        param.description = desc;
+      }
+      if (p.example !== undefined) {
+        param.example = p.example;
+      }
+      if (p.defaultValue !== undefined) {
+        // @RequestParam(defaultValue) 同样不能写成 $ref 的兄弟字段
+        param.schema = withRefSiblings(param.schema as JsonSchema, { default: p.defaultValue });
+      }
+      return param;
+    })
+    .filter((x): x is Record<string, unknown> => x !== undefined);
   if (parameters.length) {
     op.parameters = parameters;
   }
@@ -141,15 +161,22 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
       const properties: Record<string, JsonSchema> = {};
       const required: string[] = [];
       for (const f of rb.formFields) {
+        const rule = paramRuleEngine(f, paramSubject, opCtx);
+        if (rule.ignored) {
+          continue;
+        }
+        const desc = rule.appendDoc.length ? [f.description, ...rule.appendDoc].filter(Boolean).join("\n") : f.description;
         const schema = f.typeText.includes("MultipartFile")
-          ? ({ type: "string", format: "binary", description: f.description } as JsonSchema)
+          ? ({ type: "string", format: "binary", description: desc } as JsonSchema)
           : (() => {
-              const s = resolveTypeText(f.typeText, opCtx);
+              const s = rule.typeOverride
+                ? ({ type: rule.typeOverride.type, ...(rule.typeOverride.format ? { format: rule.typeOverride.format } : {}) } as JsonSchema)
+                : resolveTypeText(f.typeText, opCtx);
               applyParamConstraints(f, s);
               return s;
             })();
         properties[f.name] = schema;
-        if (f.required) {
+        if (rule.required ?? f.required) {
           required.push(f.name);
         }
       }

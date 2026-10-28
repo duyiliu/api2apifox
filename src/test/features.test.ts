@@ -414,3 +414,136 @@ test("AnalyzeCache:同内容不同顺序的 files 数组触发重算(顺序敏�
     ["CacheBetaController", "CacheAlphaController"]
   );
 });
+
+test("AnalyzeCache.analyzeSubset:filterKey 让新闭包也能命中结果缓存", () => {
+  const cache = new AnalyzeCache();
+  const files = cacheFixture();
+  const opts = { title: "cache" };
+  // 谓词闭包每次新建(模拟各同步入口),但语义键相同 → 第二次调用应复用结果
+  const first = cache.analyzeSubset(files, opts, (ep) => ep.controller === "CacheAlphaController", "file:/alpha");
+  const replay = cache.analyzeSubset(files, opts, (ep) => ep.controller === "CacheAlphaController", "file:/alpha");
+  assert.equal(replay.spec, first.spec, "相同 filterKey 应命中上一轮结果缓存");
+  // 键不同则不复用(谓词语义不同,必须重算)
+  const other = cache.analyzeSubset(files, opts, (ep) => ep.controller === "CacheAlphaController", "file:/beta");
+  assert.notEqual(other.spec, first.spec, "不同 filterKey 不得复用");
+});
+
+/* ---------- @RequestPart / multipart 与 @RequestBody 并存 ---------- */
+
+const REQPART_FILES: SourceFile[] = [
+  {
+    fsPath: "/mem/upload.java",
+    content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+@RestController
+@RequestMapping("/api/up")
+public class UploadController {
+  @PostMapping("/doc")
+  public Meta doc(@RequestPart("meta") Meta meta, @RequestPart(value = "file", required = false) MultipartFile file) { return null; }
+  @PostMapping("/both")
+  public Meta both(@RequestBody Meta body, MultipartFile file) { return null; }
+}
+`,
+  },
+  {
+    fsPath: "/mem/meta.java",
+    content: `package com.example; public class Meta { private String note; }`,
+  },
+];
+
+test("@RequestPart 参数进入 multipart 表单,部件名与 required 生效", () => {
+  const res = analyze(REQPART_FILES, { title: "t" });
+  const op = res.spec.paths["/api/up/doc"].post as Record<string, any>;
+  const schema = op.requestBody.content["multipart/form-data"].schema;
+  assert.ok(schema.properties.meta, "@RequestPart 的 DTO 部件应入表单: " + JSON.stringify(schema));
+  assert.equal(schema.properties.file.format, "binary");
+  assert.deepEqual(schema.required, ["meta"], "required=false 的部件不应进 required: " + JSON.stringify(schema.required));
+  // 表单字段不会错误落成 query 参数
+  assert.equal(op.parameters, undefined);
+});
+
+test("@RequestBody 与 multipart 表单参数并存:保留表单并告警", () => {
+  const res = analyze(REQPART_FILES, { title: "t" });
+  const op = res.spec.paths["/api/up/both"].post as Record<string, any>;
+  assert.ok(op.requestBody.content["multipart/form-data"], "multipart 应保留: " + JSON.stringify(op.requestBody));
+  assert.equal(op.requestBody.content["application/json"], undefined);
+  assert.ok(
+    res.warnings.some((w) => w.includes("UploadController.both") && w.includes("multipart")),
+    "并存应产生告警: " + res.warnings.join("|")
+  );
+});
+
+/* ---------- 必填注解 / 数值字面量 / 未识别类型告警 ---------- */
+
+const REQ_FILES: SourceFile[] = [
+  {
+    fsPath: "/mem/req.java",
+    content: `
+package com.example;
+import io.swagger.annotations.ApiModelProperty;
+import jakarta.validation.constraints.*;
+public class ReqDto {
+  @ApiModelProperty(value = "名称", required = true) private String a;
+  @io.swagger.v3.oas.annotations.media.Schema(required = true) private String b;
+  @io.swagger.v3.oas.annotations.media.Schema(requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED) private String c;
+  @io.swagger.v3.oas.annotations.media.Schema(requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.NOT_REQUIRED) private String d;
+  @NotNull private String e;
+  private String f;
+  @Min(100L) private Long quota;
+  @Max(9.9f) private Double ratio;
+}
+`,
+  },
+  {
+    fsPath: "/mem/reqctl.java",
+    content: `
+package com.example;
+import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api/req")
+public class ReqController {
+  @PostMapping public ReqDto save(@RequestBody ReqDto body) { return null; }
+}
+`,
+  },
+];
+
+test("swagger required 注解参与字段必填判定", () => {
+  const res = analyze(REQ_FILES, { title: "t" });
+  const required = res.spec.components!.schemas["ReqDto"].required ?? [];
+  for (const name of ["a", "b", "c", "e"]) {
+    assert.ok(required.includes(name), `${name} 应必填: ` + JSON.stringify(required));
+  }
+  for (const name of ["d", "f"]) {
+    assert.ok(!required.includes(name), `${name} 不应必填: ` + JSON.stringify(required));
+  }
+});
+
+test("@Min(100L)/@Max(9.9f) 等 Java 字面量后缀不丢约束", () => {
+  const res = analyze(REQ_FILES, { title: "t" });
+  const props = res.spec.components!.schemas["ReqDto"].properties!;
+  assert.equal(props.quota.minimum, 100);
+  assert.equal(props.ratio.maximum, 9.9);
+});
+
+test("未识别类型输出 object 并产生告警(按类型名去重)", () => {
+  const files: SourceFile[] = [
+    {
+      fsPath: "/mem/x.java",
+      content: `package com.example; public class X { private UnknownType a; private UnknownType b; private AnotherMissing c; }`,
+    },
+    {
+      fsPath: "/mem/xctl.java",
+      content: `package com.example; import org.springframework.web.bind.annotation.*; @RestController public class XController { @GetMapping("/x") public X get() { return null; } }`,
+    },
+  ];
+  const res = analyze(files, { title: "t" });
+  const props = res.spec.components!.schemas["X"].properties!;
+  assert.equal(props.a.type, "object");
+  const warns = res.warnings.filter((w) => w.includes("未识别的类型"));
+  // UnknownType 被两个字段引用只告警一次;AnotherMissing 单独一条
+  assert.equal(warns.filter((w) => w.includes("UnknownType")).length, 1, warns.join("|"));
+  assert.equal(warns.filter((w) => w.includes("AnotherMissing")).length, 1, warns.join("|"));
+});

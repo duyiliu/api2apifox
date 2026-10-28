@@ -205,6 +205,8 @@ export interface ResolveContext {
   fieldRules?: HelperProperties | undefined;
   /** 字段规则产生的告警(收集后随 warnings 输出) */
   fieldWarnings?: string[];
+  /** 本轮构建已告警过的未识别类型名(按类型名去重,避免同一类型刷出多条) */
+  unresolvedWarned?: Set<string>;
 }
 
 export interface ResolveOptions {
@@ -247,6 +249,12 @@ export function resolveType(t: TypeRef, ctx: ResolveContext): JsonSchema {
   // 源码类型 → 依赖 jar 中的类型(按需解析 .class,结果回填缓存)
   const info = resolveScopedType(ctx.index, t.name, ctx.scope);
   if (!info) {
+    // 未解析类型此前静默输出 object,文档悄悄缺字段很难发现;按类型名去重告警一次
+    const warned = (ctx.unresolvedWarned ??= new Set<string>());
+    if (!warned.has(t.name)) {
+      warned.add(t.name);
+      ctx.fieldWarnings?.push(`未识别的类型 ${t.name},按 object 输出(检查扫描范围/依赖 jar 索引)`);
+    }
     return { type: "object", description: `未识别的类型: ${t.name}` };
   }
   if (info.kind === "enum") {
@@ -410,9 +418,18 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
     schema = applyConstraints(field.annotations, schema);
     properties[propName] = schema;
 
+    // 必填判定:@JsonProperty/@NotNull 家族 + swagger 注解
+    // @ApiModelProperty(required=true)、@Schema(required=true 或 requiredMode=REQUIRED);
+    // requiredMode 实参可能是 RequiredMode.REQUIRED 全限定写法,取最后一段比较
+    const schemaAnn = findAnn(field.annotations, "Schema");
+    const apiProp = findAnn(field.annotations, "ApiModelProperty");
+    const requiredMode = schemaAnn ? annStr(schemaAnn.args, "requiredMode")?.split(".").pop() : undefined;
     let isRequired =
       annBool(jsonProp?.args ?? {}, "required") === true ||
-      !!findAnn(field.annotations, "NotNull", "NotBlank", "NotEmpty");
+      !!findAnn(field.annotations, "NotNull", "NotBlank", "NotEmpty") ||
+      (apiProp ? annBool(apiProp.args, "required") === true : false) ||
+      (schemaAnn ? annBool(schemaAnn.args, "required") === true : false) ||
+      requiredMode === "REQUIRED";
     if (rule.required !== undefined) {
       isRequired = rule.required;
     }
@@ -685,8 +702,9 @@ export function applyConstraints(annotations: AnnotationInfo[], schema: JsonSche
       return;
     }
     const v = annStr(ann.args, "value");
-    const num = v !== undefined ? Number(v) : undefined;
-    if (num === undefined || Number.isNaN(num)) {
+    // Java 字面量可能带后缀(@Min(100L)/@Max(9.9f)):剥离 [lLdDfF] 再求值,而不是静默丢约束
+    const num = v !== undefined ? javaNumberLiteral(v) : undefined;
+    if (num === undefined) {
       return;
     }
     schema[key] = num;
@@ -738,14 +756,25 @@ export function applyConstraints(annotations: AnnotationInfo[], schema: JsonSche
   return schema;
 }
 
+/** 注解数值实参求值:容忍 Java 字面量后缀(100L、5.5f、1e3d);非数值返回 undefined */
+function javaNumberLiteral(raw: string): number | undefined {
+  const s = raw.trim();
+  // 仅当后缀前是合法数字形态时才剥离后缀;"abc"/"1Lx" 之类不剥
+  const m = /^([+-]?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?))[lLdDfF]?$/.exec(s);
+  if (!m) {
+    return undefined;
+  }
+  const n = Number(m[1]);
+  return Number.isNaN(n) ? undefined : n;
+}
+
 function annNum(args: Record<string, unknown>, key: string): number | undefined {
   const v = args[key];
   if (typeof v === "number") {
     return v;
   }
   if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    return Number.isNaN(n) ? undefined : n;
+    return javaNumberLiteral(v);
   }
   return undefined;
 }
@@ -800,8 +829,8 @@ interface FieldRuleEngineResult {
   appendDesc: (currentDesc: string | undefined, field: FieldInfo, ctx: ResolveContext) => string | undefined;
 }
 
-/** field.type 允许的 schema 类型覆盖值 */
-interface FieldTypeOverride {
+/** field.type/param.type 允许的 schema 类型覆盖值 */
+export interface FieldTypeOverride {
   type: string;
   format?: string;
 }
@@ -994,6 +1023,154 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
       }
       return d;
     };
+  }
+  return result;
+}
+
+/** param.* 参数级规则结果(path/query/header 参数与 multipart 表单字段共用) */
+export interface ParamRuleResult {
+  ignored: boolean;
+  required?: boolean;
+  typeOverride?: FieldTypeOverride;
+  /** param.doc/param.description 追加的描述(按命中顺序) */
+  appendDoc: string[];
+}
+
+/** 可参与参数级规则求值的最小参数形态(ParameterInfo 与 multipart 表单字段均满足) */
+export interface ParamRuleSubject {
+  name: string;
+  typeText: string;
+  description?: string | undefined;
+  annotations?: AnnotationInfo[];
+}
+
+/**
+ * 参数级规则:param.ignore / param.required / param.type / param.doc(同 json.rule.param.*)。
+ * 谓词语义与 field.* 相同(#tag/@注解/groovy 安全形态可用 it.name()/it.type()),
+ * 只是键名与作用域不同——参数不是类字段,雪花 ID 之类的按名/按型谓词可复用同一写法。
+ * subject 用 `Controller.method` 前缀书写,保证告警能被子集同步的过滤按接口归属。
+ */
+export function paramRuleEngine(p: ParamRuleSubject, subject: string, ctx: ResolveContext): ParamRuleResult {
+  const result: ParamRuleResult = { ignored: false, appendDoc: [] };
+  const rules = ctx.fieldRules;
+  if (!rules) {
+    return result;
+  }
+  const entries = rules.entries;
+  const t = parseTypeText(p.typeText);
+  const info = resolveScopedType(ctx.index, t.name, ctx.scope);
+  const rctx: RuleContext = {
+    annotations: p.annotations ?? [],
+    javadocRaw: p.description,
+    subject: `${subject} 的参数 ${p.name}`,
+    fieldName: p.name,
+    isEnum: info?.kind === "enum",
+    enumSimpleName: info?.kind === "enum" ? info.simpleName : undefined,
+    fieldType: p.typeText.replace(/\s+/g, ""),
+    fieldTypeSimple: simpleName(t.name),
+  };
+  const warn = (msg: string) => {
+    ctx.fieldWarnings?.push(`${subject}: 参数 ${p.name}: ${msg}`);
+  };
+
+  // param.ignore:任一命中 → 忽略;字面量值视为"参数名等于该值"(与 field.ignore 同口径)
+  for (const e of entries) {
+    if (e.key !== "param.ignore") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`param.ignore 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const syn = detectValueSyntax(e.value);
+    let ignoreNow = false;
+    if (syn.type === "literal") {
+      ignoreNow = syn.body === p.name;
+    } else {
+      const v = evalRuleValue(e.value, rctx, e.key, warn);
+      if (v.skipped && v.reason) {
+        warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+        continue;
+      }
+      ignoreNow = v.matched && v.value !== undefined && v.value !== "" && v.value !== "false";
+    }
+    if (ignoreNow) {
+      result.ignored = true;
+    }
+  }
+  if (result.ignored) {
+    return result;
+  }
+
+  // param.required:命中 true → required;false → 非 required
+  for (const e of entries) {
+    if (e.key !== "param.required") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported || !cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.matched) {
+      result.required = v.value === "true" || v.value === "TRUE";
+    }
+  }
+
+  // param.type:与 field.type 同语义(type 或 type:format,多条命中后者生效)
+  for (const e of entries) {
+    if (e.key !== "param.type" && e.key !== "json.rule.param.type") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`param.type 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.skipped && v.reason) {
+      warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!v.matched || v.value === undefined || !v.value.trim()) {
+      continue;
+    }
+    const override = parseFieldTypeOverride(v.value);
+    if (!override) {
+      warn(`param.type 的值不是合法的类型声明(type 或 type:format):${truncate(v.value, 40)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    result.typeOverride = override;
+  }
+
+  // param.doc / param.description:收集全部命中规则(追加)
+  for (const e of entries) {
+    if (e.key !== "param.doc" && e.key !== "param.description") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`param.doc 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.skipped && v.reason) {
+      warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (v.matched && v.value !== undefined && v.value.trim()) {
+      result.appendDoc.push(v.value);
+    }
   }
   return result;
 }

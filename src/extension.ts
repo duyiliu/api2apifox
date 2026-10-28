@@ -257,6 +257,22 @@ export function activate(context: vscode.ExtensionContext): void {
     pomWatcher.onDidDelete(invalidatePomFilesCache)
   );
 
+  // .apifox-helper.properties 的新增/修改/删除都会改变字段规则与目录规则;
+  // 指纹缓存要等下一次分析才感知,这里主动失效并触发树刷新,避免改完规则界面不更新。
+  // (properties.additional 引用的其他文件名不在本 glob 内,其内容变化仍由指纹比对兜底)
+  const propsWatcher = vscode.workspace.createFileSystemWatcher("**/.apifox-helper.properties");
+  const invalidateHelperProps = () => {
+    helperPropertiesCache = undefined;
+    clearTimeout(saveRefreshTimer);
+    saveRefreshTimer = setTimeout(() => refreshApiTreeIfVisible(), 800);
+  };
+  context.subscriptions.push(
+    propsWatcher,
+    propsWatcher.onDidCreate(invalidateHelperProps),
+    propsWatcher.onDidChange(invalidateHelperProps),
+    propsWatcher.onDidDelete(invalidateHelperProps)
+  );
+
   const makeClient = async (): Promise<ApifoxClient | undefined> => {
     const settings = getSettings();
     const token = await ensureToken(secrets);
@@ -752,7 +768,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`), `folder:${node.key}`);
       }, { scopeLabel: `目录「${node.key}」`, confirm: true });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncCheckedApis", async () => {
@@ -800,7 +816,12 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => wanted.has(`${ep.method} ${ep.path}`));
+        return cache.analyzeSubset(
+          allFiles,
+          await analyzeOptions(),
+          (ep) => wanted.has(`${ep.method} ${ep.path}`),
+          `checked:${[...wanted].sort().join("")}`
+        );
       }, { scopeLabel, confirm: true, selection });
     }),
     vscode.commands.registerCommand("apifoxHelper.syncEndpoint", async (node?: ApiTreeNode) => {
@@ -816,7 +837,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return cache.analyzeSubset(
           allFiles,
           await analyzeOptions(),
-          (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path
+          (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path,
+          `ep:${ep.fsPath}:${ep.method} ${ep.path}`
         );
       }, { scopeLabel: `${ep.method} ${ep.path}` });
     }),
@@ -976,7 +998,12 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!allFiles) {
           return undefined;
         }
-        return cache.analyzeSubset(allFiles, await analyzeOptions(), (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath);
+        return cache.analyzeSubset(
+          allFiles,
+          await analyzeOptions(),
+          (ep) => ep.fsPath === target.fsPath || ep.ownerFsPath === target.fsPath,
+          `file:${target.fsPath}`
+        );
       }, { scopeLabel: `当前文件 ${path.basename(target.fsPath)}` });
     })
   );
@@ -1012,7 +1039,12 @@ export function activate(context: vscode.ExtensionContext): void {
       await doSync("未发现可同步的接口", async (token) => {
         const allFiles = await collectFiles(undefined, token, target);
         const source = allFiles ?? files;
-        return cache.analyzeSubset(source, await analyzeOptions(), (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path);
+        return cache.analyzeSubset(
+          source,
+          await analyzeOptions(),
+          (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path,
+          `ep:${endpoint.fsPath}:${endpoint.method} ${endpoint.path}`
+        );
       }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
     })
   );

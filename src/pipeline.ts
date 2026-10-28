@@ -178,23 +178,28 @@ export class AnalyzeCache {
     });
   }
 
-  private resultKey(opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): string {
-    let filterId = 0;
+  private resultKey(opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean, filterKey?: string): string {
+    let filterId: string | number = 0;
     if (endpointFilter) {
-      const known = this.filterIds.get(endpointFilter);
-      if (known === undefined) {
-        filterId = ++this.nextFilterId;
-        this.filterIds.set(endpointFilter, filterId);
+      if (filterKey !== undefined) {
+        // 调用方给出稳定的语义键(如 file:/x/y.java):闭包身份每次新建,按函数身份计键必然 miss
+        filterId = `k:${filterKey}`;
       } else {
-        filterId = known;
+        const known = this.filterIds.get(endpointFilter);
+        if (known === undefined) {
+          filterId = ++this.nextFilterId;
+          this.filterIds.set(endpointFilter, filterId);
+        } else {
+          filterId = known;
+        }
       }
     }
     return `${this.epoch}\u0000${optionsCacheKey(opts)}\u0000${filterId}`;
   }
 
-  private runCached(files: SourceFile[], opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): AnalyzeOutput {
+  private runCached(files: SourceFile[], opts: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean, filterKey?: string): AnalyzeOutput {
     const parsed = this.parsedOf(files);
-    const key = this.resultKey(opts, endpointFilter);
+    const key = this.resultKey(opts, endpointFilter, filterKey);
     if (this.lastResult && this.lastResult.key === key) {
       // warnings 返回副本:syncToApifox 会原地 push 提示语,不能污染缓存结果
       return { ...this.lastResult.output, warnings: [...this.lastResult.output.warnings] };
@@ -224,10 +229,14 @@ export class AnalyzeCache {
     return this.runCached(files, opts);
   }
 
-  /** 只构建满足条件的接口子集;与 analyze 共用 CST 缓存,勾选/单文件同步不再全量重解析 */
-  analyzeSubset(files: SourceFile[], options: AnalyzeOptions | string, endpointFilter: (ep: EndpointInfo) => boolean): AnalyzeOutput {
+  /**
+   * 只构建满足条件的接口子集;与 analyze 共用 CST 缓存,勾选/单文件同步不再全量重解析。
+   * endpointFilter 是每次调用新建的闭包时,传 filterKey(谓词内容对应的稳定语义键)
+   * 才能让结果缓存命中;否则按函数身份计键必然 miss 退化为全量重算。
+   */
+  analyzeSubset(files: SourceFile[], options: AnalyzeOptions | string, endpointFilter: (ep: EndpointInfo) => boolean, filterKey?: string): AnalyzeOutput {
     const opts = typeof options === "string" ? { title: options } : options;
-    return this.runCached(files, opts, endpointFilter);
+    return this.runCached(files, opts, endpointFilter, filterKey);
   }
 
   /** 单文件轻量解析(CodeLens 用,不做类型解析与去重);解析结果回写缓存并推进代际,防止结果缓存漏失效 */

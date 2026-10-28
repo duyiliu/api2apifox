@@ -903,6 +903,7 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     const reqParam = findAnn(annotations, "RequestParam", "QueryParam");
     const reqHeader = findAnn(annotations, "RequestHeader", "HeaderParam");
     const reqBody = findAnn(annotations, "RequestBody");
+    const reqPart = findAnn(annotations, "RequestPart");
     const defaultValueAnn = findAnn(annotations, "DefaultValue");
 
     if (pathVar || selector) {
@@ -931,8 +932,18 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
       });
     } else if (reqBody) {
       requestBody = { typeText, required: annBool(reqBody.args, "required") ?? true, description };
-    } else if (typeText.includes("MultipartFile")) {
-      formFields.push({ name: paramName, in: "query", typeText, required: true, description, example, annotations });
+    } else if (reqPart || typeText.includes("MultipartFile")) {
+      // @RequestPart 与裸 MultipartFile 都是 multipart 表单字段;
+      // @RequestPart 可指定部件名/optional(默认 required=true),DTO 部件按 JSON 部件处理
+      formFields.push({
+        name: reqPart ? (annStr(reqPart.args, "value", "name") ?? paramName) : paramName,
+        in: "query",
+        typeText,
+        required: reqPart ? (annBool(reqPart.args, "required") ?? true) : true,
+        description,
+        example,
+        annotations,
+      });
     } else if (reqParam) {
       const dv = annStr(reqParam.args, "defaultValue") ?? (defaultValueAnn ? annStr(defaultValueAnn.args, "value") : undefined);
       parameters.push({
@@ -1021,6 +1032,10 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
   }
 
   if (formFields.length) {
+    if (requestBody) {
+      // @RequestBody 与 multipart 表单参数无法在同一请求共存;保留表单(上传才是真实绑定),明示丢弃的 JSON body
+      warnings.push(`${a.controller}.${a.methodName}: @RequestBody(${requestBody.typeText}) 与 multipart 表单参数并存,JSON 请求体被 multipart 覆盖`);
+    }
     requestBody = { typeText: "__multipart__", required: true, formFields };
   }
 

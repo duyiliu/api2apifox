@@ -56,6 +56,14 @@
   项目显式 `field.type` 规则——表达式完全走通用求值管线,无任何工具侧特例代码。
   过程留档:该默认曾以 `idAsString`(预置 `field.type` entry 注入,AND 语义 `false` 关闭)
   实现并验证等价,后按「不要显式的内置」决定整体移除。
+- **D6 `param.*` 与 `field.*` 键名分族、谓词同语义(后补)**:参数不是类字段,
+  沿用 easyyapi 的 `param.*` 命名(`param.ignore/required/type/doc`);求值管线与
+  `field.*` 同构,雪花 ID 谓词可原样写成 `param.type=groovy: <同一表达式>`。
+  path 参数按 OpenAPI 规范恒 `required`,规则不能反向关闭;`param.ignore` 对 path
+  参数生效时会破坏路径占位,仍按规则删除由规则作者负责。
+  同批解析修正:`@RequestPart` 归入 multipart 表单字段、`@RequestBody` 与表单并存时
+  告警保表单、`@ApiModelProperty/@Schema(required)` 参与必填、Java 字面量后缀
+  (`100L`/`9.9f`)不再丢数值约束、未识别类型按名去重告警(不再静默 `object`)。
 
 ## 4. 用法
 

@@ -214,6 +214,10 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `field.name` | 字段 | `#fieldName` 等 | 覆盖输出字段名 |
 | `field.required` | 字段 | `#fieldRequire` 等 | 覆盖必填 |
 | `field.type` | 字段 | `string`、`integer:int64` 等字面量、`#tag`、`@注解#attr`、`groovy:` 安全形态 | 覆盖输出 schema 类型(`type` 或 `type:format`;`type` ∈ `string|integer|number|boolean|object|array`) |
+| `param.ignore` | 参数 | 字面量(参数名)、`#tag`、`groovy:` 安全形态 | 忽略 path/query/header 参数与 multipart 表单字段 |
+| `param.required` | 参数 | `true`/`false` | 覆盖参数必填(path 参数按规范恒 required,不受影响) |
+| `param.type` | 参数 | 同 `field.type` | 覆盖参数 schema 类型;按名/按型谓词(如 `*Id` 的 Long 参数 → `string`)与 `field.type` 写法相同 |
+| `param.doc` / `param.description` | 参数 | 字面量、`#tag`、`@注解#attr`、`groovy:` 安全形态 | 追加到参数描述 |
 
 条件后缀:`key[#tag]=...`、`key[@全限定注解]=...`、`key[!@注解]=...`(取反)。
 
