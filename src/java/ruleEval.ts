@@ -29,6 +29,13 @@ export interface RuleContext {
   isEnum?: boolean;
   /** 字段级上下文:枚举类型的简单类名 */
   enumSimpleName?: string;
+  /**
+   * 字段级上下文:声明类型文本(去空白,如 `Long`、`java.lang.Long`、`List<Long>`、`Long[]`),
+   * 供 it.type()?.name() 比较
+   */
+  fieldType?: string;
+  /** 字段级上下文:声明类型的根简单名(如 `List<Long>` → `List`),供 it.type()?.simpleName() 比较 */
+  fieldTypeSimple?: string;
 }
 
 export type RuleValueSyntax = "tag" | "ann-attr" | "literal" | "groovy" | "js";
@@ -270,7 +277,81 @@ function evalSafeCondition(cond: string, ctx: RuleContext): boolean | undefined 
       return !!findAnnotationByName(ctx.annotations, q);
     }
   }
+
+  // it.name()/it.type() 访问器:与字符串字面量比较或调用字符串方法
+  // 如 it.name().endsWith("Id")、it.type()?.name() == "java.lang.Long"
+  const accCond = evalAccessorCondition(c, ctx);
+  if (accCond !== undefined) {
+    return accCond;
+  }
   return undefined;
+}
+
+/**
+ * 字段访问器(`it.name()`、`it.type()?.name()`、`it.type()?.simpleName()`)的
+ * 字符串方法调用与 ==/!= 比较求值。访问器取不到值(无字段上下文)时:
+ * 方法调用判 false,!= 判 true,== 判 false——与"字段无类型信息则不匹配"的直觉一致。
+ * 非访问器形态返回 undefined(不支持,由上层告警跳过)。
+ */
+function evalAccessorCondition(expr: string, ctx: RuleContext): boolean | undefined {
+  // X.method("lit"):方法在 equals/startsWith/endsWith/contains/matches/equalsIgnoreCase 内
+  const methodCall = /^(.+?)\??\.(equals|equalsIgnoreCase|startsWith|endsWith|contains|matches)\((.*)\)$/s.exec(expr);
+  if (methodCall) {
+    const acc = accessorValue(methodCall[1].trim(), ctx);
+    if (!acc.handled) {
+      return undefined;
+    }
+    const arg = stripQuotes(methodCall[3].trim());
+    if (arg === undefined || acc.value === undefined) {
+      return false;
+    }
+    switch (methodCall[2]) {
+      case "equals":
+        return acc.value === arg;
+      case "equalsIgnoreCase":
+        return acc.value.toLowerCase() === arg.toLowerCase();
+      case "startsWith":
+        return acc.value.startsWith(arg);
+      case "endsWith":
+        return acc.value.endsWith(arg);
+      case "contains":
+        return acc.value.includes(arg);
+      case "matches":
+        try {
+          return new RegExp(arg).test(acc.value);
+        } catch {
+          return false;
+        }
+    }
+    return false;
+  }
+  // X == "lit" / X != "lit" / X == null / X != null
+  const cmp = /^(.+?)\s*(==|!=)\s*(.+?)\s*$/s.exec(expr);
+  if (cmp) {
+    const acc = accessorValue(cmp[1].trim(), ctx);
+    if (!acc.handled) {
+      return undefined;
+    }
+    const raw = cmp[3].trim();
+    const rhs = raw === "null" ? undefined : stripQuotes(raw);
+    const same = acc.value === rhs;
+    return cmp[2] === "==" ? same : !same;
+  }
+  return undefined;
+}
+
+/** 求 it.name()/it.type()?.name()/it.type()?.simpleName() 的当前值;非访问器 handled=false */
+function accessorValue(expr: string, ctx: RuleContext): { handled: boolean; value?: string } {
+  if (/^it\.name\(\)$/.test(expr)) {
+    return { handled: true, value: ctx.fieldName };
+  }
+  if (/^it\.type\(\)\?*\.simpleName\(\)$/.test(expr)) {
+    return { handled: true, value: ctx.fieldTypeSimple };
+  }
+  if (/^it\.type\(\)\?*\.name\(\)$/.test(expr)) {
+    return { handled: true, value: ctx.fieldType };
+  }
+  return { handled: false };
 }
 
 /**

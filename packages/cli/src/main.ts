@@ -229,6 +229,7 @@ function configOverrides(options: CliOptions): ConfigOverrides {
     dependencyRepos: options.dependencyRepos.length ? options.dependencyRepos : undefined,
     dependencyJars: options.dependencyJars.length ? options.dependencyJars : undefined,
     maxDependencyJars: options.dependencyMaxJars,
+    idAsString: options.idAsString,
     exportPath: options.output,
     timeoutMs: options.timeoutMs,
   };
@@ -367,6 +368,8 @@ ${FILTER_HELP}
   --dependency-repo <dir>   额外的本地 Maven 仓库目录，可重复（传入即替换配置值）
   --dependency-jar <path>   显式依赖 jar 的绝对路径，可重复（传入即替换配置值）
   --dependency-max-jars <n> 依赖 jar 解析总数上限，默认 120；0 表示不做依赖解析
+  --id-as-string <bool>     ID 语义字段（id/*Id 且 Long/long/BigInteger）按 string 生成，
+                            默认 true；显式 false 关闭（配置/规则文件任一写 false 即关）
   --timeout-ms <ms>         Apifox 请求等待上限，默认 300000
 ${HELP_FLAG}
   -v, --version             显示版本

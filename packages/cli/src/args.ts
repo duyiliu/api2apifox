@@ -29,6 +29,8 @@ export interface CliOptions {
   dependencyRepos: string[];
   dependencyJars: string[];
   dependencyMaxJars?: number;
+  /** ID 语义字段(id/*Id 且 Long/long/BigInteger)输出 string;--id-as-string=false 关闭 */
+  idAsString?: boolean;
   /** Apifox 请求等待上限（毫秒）；导入首次建目录/接口/模型可能较慢 */
   timeoutMs?: number;
 }
@@ -59,6 +61,7 @@ const argumentOptions = {
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
   "timeout-ms": { type: "string" },
+  "id-as-string": { type: "string" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
 type ParsedArguments = ReturnType<typeof parseArgs<{ options: typeof argumentOptions }>>;
@@ -116,6 +119,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
         ? undefined
         : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
     timeoutMs: parsed.values["timeout-ms"] === undefined ? undefined : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
+    idAsString: parseBooleanOption(parsed.values["id-as-string"], "--id-as-string"),
   };
 }
 
@@ -141,6 +145,17 @@ function parseNonNegativeInteger(raw: string, option: string): number {
     throw new CliError("INVALID_ARGUMENT", `${option} 必须是大于等于 0 的整数`, 2);
   }
   return value;
+}
+
+function parseBooleanOption(raw: string | undefined, option: string): boolean | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true" || normalized === "false") {
+    return normalized === "true";
+  }
+  throw new CliError("INVALID_ARGUMENT", `${option} 只支持 true 或 false:${raw}`, 2);
 }
 
 function parseConflict(raw: string | undefined, option: string): ConflictBehavior | undefined {

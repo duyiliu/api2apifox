@@ -211,12 +211,15 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `field.ignore` | 字段 | 字面量(字段名)、`#tag` | 忽略字段 |
 | `field.name` | 字段 | `#fieldName` 等 | 覆盖输出字段名 |
 | `field.required` | 字段 | `#fieldRequire` 等 | 覆盖必填 |
+| `field.type` | 字段 | `string`、`integer:int64` 等字面量、`#tag`、`@注解#attr`、`groovy:` 安全形态 | 覆盖输出 schema 类型(`type` 或 `type:format`;`type` ∈ `string|integer|number|boolean|object|array`) |
+| `idAsString` | 全局开关 | `true` / `false` | 内置默认:字段名 `id` 或以 `Id` 结尾、且声明类型为 `Long`/`long`/`BigInteger` 的字段按 `string` 生成(对齐「大整型序列化为字符串」的框架契约,避免前端按 `integer` 处理雪花 ID 丢精度)。默认 `true`;任一渠道写 `false` 即关闭,显式 `field.type` 规则命中的字段不受影响 |
 
 条件后缀:`key[#tag]=...`、`key[@全限定注解]=...`、`key[!@注解]=...`(取反)。
 
 **与 IDEA 版的差异/边界**:
 
 - 不嵌入 Groovy/JS 运行时。`groovy:`/`js:` 值仅支持「纯字符串拼接 + `it.ann("注解","属性")`」的安全形态(典型如 `field.doc[@ext.plus.common.core.annotation.DataDic]=groovy: "（框架字典：" + it.ann("ext.plus.common.core.annotation.DataDic", "value") + "）"` 可直接使用);其余脚本不执行,并以告警提示跳过(不会静默)
+- 三元条件的条件侧额外支持字段访问器:`it.name()`(字段名)、`it.type()?.name()`(声明类型原文)、`it.type()?.simpleName()`(根简单名),可接 `==`/`!=`/`null` 比较或 `equals/equalsIgnoreCase/startsWith/endsWith/contains/matches` 字符串方法。典型用法——把非常规命名字段的 ID 文档化为 string:`field.type=groovy: (it.name().endsWith("Pk") && it.type()?.name()?.endsWith("Long")) ? "string" : null`(常规 `id`/`*Id` 已由内置 `idAsString` 默认覆盖,无需手写规则)
 - 类/方法/字段规则的 `#tag`、注解、字面量写法与官方一致
 - 不读取 `application.{yml|properties}` 做 spring 配置属性解析,不支持 `module`/`export.*`/`api.class.parse.*` 等回调类规则
 - 无法安全执行的规则会出现在同步/导出的告警里,格式:`<key> 的 groovy/js 规则无法在无脚本运行时下安全执行,已跳过:...`

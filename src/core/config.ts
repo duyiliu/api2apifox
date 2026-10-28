@@ -44,6 +44,7 @@ export interface ConfigOverrides {
   schemaFolderId?: number;
   helperPropertiesEnabled?: boolean;
   enumFieldDoc?: boolean;
+  idAsString?: boolean;
   dependencyRepos?: string[];
   dependencyJars?: string[];
   maxDependencyJars?: number;
@@ -98,6 +99,8 @@ export function resolveConfig(
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
+    // ID 语义字段默认输出 string(雪花 ID 场景);任一渠道显式 false 才关
+    idAsString: true,
     dependencyRepos: [],
     dependencyJars: [],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
@@ -129,6 +132,7 @@ export function resolveConfig(
   applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
+  applyFile(config, sources, "idAsString", booleanValue(helper.idAsString, "helperProperties.idAsString", diagnostics), fileSource);
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
@@ -206,7 +210,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
       invalid("helperProperties 必须是对象", diagnostics, configPath);
     } else {
       for (const key of Object.keys(config.helperProperties)) {
-        if (key !== "enabled" && key !== "enumFieldDoc") {
+        if (key !== "enabled" && key !== "enumFieldDoc" && key !== "idAsString") {
           invalid(`未知配置字段:helperProperties.${key}`, diagnostics, configPath);
         }
       }

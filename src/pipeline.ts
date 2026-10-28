@@ -34,6 +34,8 @@ export interface AnalyzeOptions {
   rules?: HelperProperties;
   /** 枚举字段自动追加「(枚举类:X)」(默认关) */
   enumFieldDoc?: boolean;
+  /** ID 语义字段(id/*Id 且 Long/long/BigInteger)默认输出 string;false 关闭 */
+  idAsString?: boolean;
   /** 接口目录:x-apifox-folder(优先于 tags 用于 Apifox 建目录) */
   folderOf?: (ep: EndpointInfo) => string;
   /** 源码未覆盖的类型,从依赖 jar 的 .class 按需解析(框架类识别) */
@@ -91,6 +93,7 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
     pageStyle: options.pageStyle,
     rules: options.rules,
     enumFieldDoc: options.enumFieldDoc,
+    idAsString: options.idAsString,
     folderOf: options.folderOf,
   });
   const rawWarnings = [...new Set(parseResult.warnings)];
@@ -115,6 +118,7 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
     opts.title,
     opts.pageStyle ?? "",
     opts.enumFieldDoc ?? false,
+    opts.idAsString ?? "",
     opts.cacheKey ?? "",
     opts.rules
       ? {

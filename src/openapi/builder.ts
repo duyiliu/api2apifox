@@ -13,6 +13,8 @@ export interface BuildOptions {
   rules?: HelperProperties;
   /** 枚举字段自动追加「(枚举类:X)」 */
   enumFieldDoc?: boolean;
+  /** ID 语义字段(id/*Id 且 Long/long/BigInteger)默认输出 string;false 关闭 */
+  idAsString?: boolean;
   /** 为每个 operation 计算 x-apifox-folder 目录(与 folderNameSource/rootFolderName 对应) */
   folderOf?: (ep: EndpointInfo) => string;
 }
@@ -37,7 +39,7 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
   const ctx: ResolveContext = {
     index,
     registry,
-    options: { pageStyle: options.pageStyle, enumFieldDoc: options.enumFieldDoc },
+    options: { pageStyle: options.pageStyle, enumFieldDoc: options.enumFieldDoc, idAsString: options.idAsString },
     fieldRules: options.rules,
     fieldWarnings,
   };

@@ -1,7 +1,7 @@
 import { annBool, annStr, ClassInfo, FieldInfo, findAnn, TypeIndex } from "./model";
 import { parseTypeText, simpleName, TypeRef, typeToKeyText } from "./typeText";
 import { AnnotationInfo } from "./annotation";
-import { HelperProperties } from "../config/helperProperties";
+import { HelperProperties, HelperPropEntry } from "../config/helperProperties";
 import { detectValueSyntax, evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
 import { resolveScopedType, typeScopeOf } from "./typeIndex";
 
@@ -212,6 +212,8 @@ export interface ResolveOptions {
   pageStyle?: "spring-data" | "mybatis-plus";
   /** 枚举字段自动在描述后追加「(枚举类:X)」(对应团队 groovy 规则意图,默认关) */
   enumFieldDoc?: boolean;
+  /** ID 语义字段(id/*Id 且 Long/long/BigInteger)默认输出 string;false 关闭 */
+  idAsString?: boolean;
 }
 
 /** 类型文本 -> OpenAPI schema。返回内联标量或 components $ref */
@@ -387,6 +389,17 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
         (fastName ? annStr(fastName.args, "name") : undefined) ??
         field.name);
     let schema = resolveTypeText(field.typeText, classCtx);
+    // field.type 规则:整个替换输出 schema 类型(覆盖 $ref/数组/对象形态),保留 nullable
+    if (rule.typeOverride) {
+      const overridden: JsonSchema = { type: rule.typeOverride.type };
+      if (rule.typeOverride.format) {
+        overridden.format = rule.typeOverride.format;
+      }
+      if (schema.nullable) {
+        overridden.nullable = true;
+      }
+      schema = overridden;
+    }
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
     const finalDesc = rule.appendDesc(desc, field, ctx);
     if (finalDesc) {
@@ -783,8 +796,45 @@ interface FieldRuleEngineResult {
   fieldName?: string;
   /** field.required 覆盖 required */
   required?: boolean;
+  /** field.type 覆盖输出 schema 类型 */
+  typeOverride?: FieldTypeOverride;
   /** 追加/设置 description 的规则结果 */
   appendDesc: (currentDesc: string | undefined, field: FieldInfo, ctx: ResolveContext) => string | undefined;
+}
+
+/** field.type 允许的 schema 类型覆盖值 */
+interface FieldTypeOverride {
+  type: string;
+  format?: string;
+}
+
+const FIELD_TYPE_OVERRIDABLE = new Set(["string", "integer", "number", "boolean", "object", "array"]);
+
+/**
+ * idAsString 内置默认:以预置 field.type 规则形式注入求值流(排在项目规则之前,
+ * "多条命中后者生效"的顺序语义使项目规则天然覆盖它),不是独立判定代码。
+ * 对齐「大整型序列化为字符串」的框架契约(如 Ext Plus CustomizedLongSerializer:
+ * 值超出 JS 安全整数写字符串),避免前端按 integer 处理雪花 ID 丢精度。
+ */
+const BUILTIN_ID_AS_STRING_ENTRY: HelperPropEntry = {
+  key: "field.type",
+  value:
+    'groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type()?.name()?.endsWith("Long") || it.type()?.name() == "long" || it.type()?.name()?.endsWith("BigInteger"))) ? "string" : null',
+  file: "<builtin:idAsString>",
+  line: 0,
+};
+
+/** 解析 field.type 规则值:`type` 或 `type:format`(如 string、integer:int64);非法返回 undefined */
+function parseFieldTypeOverride(raw: string): FieldTypeOverride | undefined {
+  const m = /^([a-zA-Z]+)(?::([a-zA-Z0-9._-]+))?$/.exec(raw.trim());
+  if (!m) {
+    return undefined;
+  }
+  const type = m[1].toLowerCase();
+  if (!FIELD_TYPE_OVERRIDABLE.has(type)) {
+    return undefined;
+  }
+  return { type, format: m[2] };
 }
 
 /** 把 RuleContext 所需的字段元数据补齐到 ctx.fieldRules 对象 */
@@ -797,6 +847,8 @@ function fieldRuleContext(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCo
     fieldName: field.name,
     isEnum: enumName !== undefined,
     enumSimpleName: enumName,
+    fieldType: field.typeText.replace(/\s+/g, ""),
+    fieldTypeSimple: simpleName(parseTypeText(field.typeText).name),
   };
 }
 
@@ -818,9 +870,12 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
       _currentDesc ? `${_currentDesc}\n(枚举类:${enumName})` : `(枚举类:${enumName})`;
   }
   const rules = ctx.fieldRules;
-  if (!rules) {
+  // 内置 idAsString 默认不受有无项目规则影响
+  const builtinId = idAsStringEnabled(ctx);
+  if (!rules && !builtinId) {
     return result;
   }
+  const entries = rules?.entries ?? [];
   const rctx = fieldRuleContext(field, classInfo, ctx);
   const warn = (msg: string) => {
     ctx.fieldWarnings?.push(msg);
@@ -829,7 +884,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   // field.ignore:任一命中 → 忽略
   // 语义:#tag/@ann 命中即忽略;groovy 安全形态返回非空/true 才忽略;
   // 字面量值视为“字段名等于该值”才忽略(对齐 demo 的 field.ignore=ignoreLog 用法)。
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.ignore" && e.key !== "json.rule.field.ignore") {
       continue;
     }
@@ -862,7 +917,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   }
 
   // field.name:覆盖输出名(仅字面量/简单值;规则命中且值可用才生效)
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.name") {
       continue;
     }
@@ -877,7 +932,7 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
   }
 
   // field.required:命中 true → required;false → 非 required
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.required") {
       continue;
     }
@@ -891,9 +946,40 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
     }
   }
 
+  // field.type:命中且值为合法类型声明(type 或 type:format)→ 覆盖输出 schema 类型;
+  // 多条命中后者生效。内置 idAsString 预置规则排最前,项目规则按序覆盖它
+  const typeEntries = builtinId ? [BUILTIN_ID_AS_STRING_ENTRY, ...entries] : entries;
+  for (const e of typeEntries) {
+    if (e.key !== "field.type" && e.key !== "json.rule.field.type") {
+      continue;
+    }
+    const cond = evalCondition(e.cond, rctx, e.key, warn);
+    if (!cond.supported) {
+      warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!cond.hit) {
+      continue;
+    }
+    const v = evalRuleValue(e.value, rctx, e.key, warn);
+    if (v.skipped && v.reason) {
+      warn(`${v.reason}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    if (!v.matched || v.value === undefined || !v.value.trim()) {
+      continue;
+    }
+    const override = parseFieldTypeOverride(v.value);
+    if (!override) {
+      warn(`field.type 的值不是合法的类型声明(type 或 type:format):${truncate(v.value, 40)}(文件 ${e.file}:${e.line})`);
+      continue;
+    }
+    result.typeOverride = override;
+  }
+
   // field.doc / field.description:收集全部命中规则(追加)
   const docRules: { text: string }[] = [];
-  for (const e of rules.entries) {
+  for (const e of entries) {
     if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
       continue;
     }
@@ -929,6 +1015,23 @@ function fieldRuleEngine(field: FieldInfo, classInfo: ClassInfo, ctx: ResolveCon
     };
   }
   return result;
+}
+
+/**
+ * idAsString 开关:默认开启(注入 BUILTIN_ID_AS_STRING_ENTRY);任一渠道显式配置
+ * false 即关闭(options 传入 false,或 .apifox-helper.properties 中 idAsString=false)。
+ * 只做减法不提供反向覆盖:properties 与配置任一写 false,结果即为关。
+ */
+function idAsStringEnabled(ctx: ResolveContext): boolean {
+  if (ctx.options?.idAsString === false) {
+    return false;
+  }
+  for (const e of ctx.fieldRules?.entries ?? []) {
+    if (e.key === "idAsString" && e.value.trim().toLowerCase() === "false") {
+      return false;
+    }
+  }
+  return true;
 }
 
 function truncate(s: string, n: number): string {

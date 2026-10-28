@@ -44,6 +44,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
     pageStyle: config.pageTypeStyle,
     rules: helperProperties,
     enumFieldDoc: config.enumFieldDoc,
+    idAsString: config.idAsString,
     folderOf,
     jarLookup: dependency.index ? (name: string) => dependency.index!.lookup(name) : undefined,
   };
