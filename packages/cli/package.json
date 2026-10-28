@@ -1,6 +1,6 @@
 {
   "name": "@duyiliu/api2apifox",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Scan Java REST APIs, generate OpenAPI, and sync to Apifox from the command line",
   "license": "MIT",
   "repository": {
