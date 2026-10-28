@@ -104,7 +104,7 @@ CLI 的正式命名已经确定：
 推荐结构为 npm workspaces：
 
 ```text
-apifox-helper-vscode/
+api2apifox/
 ├── package.json                    # 仓库根与 VS Code 扩展清单，private: true
 ├── packages/
 │   ├── core/

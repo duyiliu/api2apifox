@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/duyiliu/apifox-helper-vscode"
+    "url": "https://github.com/duyiliu/api2apifox"
   },
   "type": "commonjs",
   "bin": {

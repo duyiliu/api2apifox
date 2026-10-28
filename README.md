@@ -73,7 +73,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 ## 📦 安装扩展（VS Code / Cursor）
 
 - **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/apifox-helper-vscode/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
+- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手（扩展）
 
