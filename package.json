@@ -1,14 +1,14 @@
 {
   "name": "api2apifox",
-  "displayName": "ApiGen for Apifox",
-  "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox,全功能替代 IntelliJ Apifox Helper 插件",
+  "displayName": "api2apifox",
+  "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox 的 Java 接口解析与 Apifox 同步工具,全功能替代 IntelliJ Apifox Helper 插件",
   "version": "0.3.0",
   "private": true,
   "workspaces": [
     "packages/cli"
   ],
   "publisher": "duyiliu",
-  "icon": "media/apifox-helper-icon-v1.png",
+  "icon": "media/api2apifox-icon-v1.png",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,131 +38,131 @@
     "commands": [
       {
         "command": "apifoxHelper.openSettingsPanel",
-        "title": "ApiGen for Apifox: 项目与账号设置中心 (Settings)",
+        "title": "api2apifox: 项目与账号设置中心 (Settings)",
         "icon": "$(gear)"
       },
       {
         "command": "apifoxHelper.setToken",
-        "title": "ApiGen for Apifox: 设置访问令牌 (Access Token)",
+        "title": "api2apifox: 设置访问令牌 (Access Token)",
         "icon": "$(key)"
       },
       {
         "command": "apifoxHelper.clearToken",
-        "title": "ApiGen for Apifox: 清除访问令牌 (Clear Token)",
+        "title": "api2apifox: 清除访问令牌 (Clear Token)",
         "icon": "$(trash)"
       },
       {
         "command": "apifoxHelper.selectProject",
-        "title": "ApiGen for Apifox: 选择 Apifox 项目 (Select Project)",
+        "title": "api2apifox: 选择 Apifox 项目 (Select Project)",
         "icon": "$(project)"
       },
       {
         "command": "apifoxHelper.syncWorkspace",
-        "title": "ApiGen for Apifox: 同步整个项目到 Apifox (Sync Workspace)",
+        "title": "api2apifox: 同步整个项目到 Apifox (Sync Workspace)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.syncFile",
-        "title": "ApiGen for Apifox: 同步当前文件到 Apifox (Sync This File)",
+        "title": "api2apifox: 同步当前文件到 Apifox (Sync This File)",
         "icon": "$(cloud-upload)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.syncMethod",
-        "title": "ApiGen for Apifox: 同步光标处接口到 Apifox (Sync This Endpoint)",
+        "title": "api2apifox: 同步光标处接口到 Apifox (Sync This Endpoint)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.exportOpenapi",
-        "title": "ApiGen for Apifox: 导出 OpenAPI 预览文件 (Export openapi.gen.json)"
+        "title": "api2apifox: 导出 OpenAPI 预览文件 (Export openapi.gen.json)"
       },
       {
         "command": "apifoxHelper.showLastSyncResult",
-        "title": "ApiGen for Apifox: 查看上次同步结果 (Sync Result)",
+        "title": "api2apifox: 查看上次同步结果 (Sync Result)",
         "icon": "$(table)"
       },
       {
         "command": "apifoxHelper.refreshApiTree",
-        "title": "ApiGen for Apifox: 刷新接口列表 (Refresh API List)",
+        "title": "api2apifox: 刷新接口列表 (Refresh API List)",
         "icon": "$(refresh)"
       },
       {
         "command": "apifoxHelper.filterApi",
-        "title": "ApiGen for Apifox: 过滤接口列表 (Filter API List)",
+        "title": "api2apifox: 过滤接口列表 (Filter API List)",
         "icon": "$(filter)"
       },
       {
         "command": "apifoxHelper.clearFilter",
-        "title": "ApiGen for Apifox: 清除接口过滤 (Clear API Filter)",
+        "title": "api2apifox: 清除接口过滤 (Clear API Filter)",
         "icon": "$(filter-remove)"
       },
       {
         "command": "apifoxHelper.searchApi",
-        "title": "ApiGen for Apifox: 搜索接口 (Search API)",
+        "title": "api2apifox: 搜索接口 (Search API)",
         "icon": "$(search)"
       },
       {
         "command": "apifoxHelper.checkAllApis",
-        "title": "ApiGen for Apifox: 全选所有接口 (Check All)",
+        "title": "api2apifox: 全选所有接口 (Check All)",
         "icon": "$(check-all)"
       },
       {
         "command": "apifoxHelper.uncheckAllApis",
-        "title": "ApiGen for Apifox: 清空所有勾选 (Clear Checks)",
+        "title": "api2apifox: 清空所有勾选 (Clear Checks)",
         "icon": "$(clear-all)"
       },
       {
         "command": "apifoxHelper.syncFolderApis",
-        "title": "ApiGen for Apifox: 同步此目录全部接口到 Apifox",
+        "title": "api2apifox: 同步此目录全部接口到 Apifox",
         "icon": "$(cloud-upload)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.checkFolderApis",
-        "title": "ApiGen for Apifox: 勾选本目录全部接口",
+        "title": "api2apifox: 勾选本目录全部接口",
         "icon": "$(check)"
       },
       {
         "command": "apifoxHelper.uncheckFolderApis",
-        "title": "ApiGen for Apifox: 取消勾选本目录接口",
+        "title": "api2apifox: 取消勾选本目录接口",
         "icon": "$(close)"
       },
       {
         "command": "apifoxHelper.syncCheckedApis",
-        "title": "ApiGen for Apifox: 同步勾选的接口到 Apifox (Sync Checked APIs)",
+        "title": "api2apifox: 同步勾选的接口到 Apifox (Sync Checked APIs)",
         "icon": "$(cloud-upload)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.gotoEndpoint",
-        "title": "ApiGen for Apifox: 跳转到接口定义 (Goto Definition)"
+        "title": "api2apifox: 跳转到接口定义 (Goto Definition)"
       },
       {
         "command": "apifoxHelper.syncEndpoint",
-        "title": "ApiGen for Apifox: 同步此接口到 Apifox",
+        "title": "api2apifox: 同步此接口到 Apifox",
         "icon": "$(cloud-upload)",
         "enablement": "!apifoxHelper.syncing"
       },
       {
         "command": "apifoxHelper.copyEndpointPath",
-        "title": "ApiGen for Apifox: 复制接口路径 (Copy Path)",
+        "title": "api2apifox: 复制接口路径 (Copy Path)",
         "icon": "$(copy)"
       },
       {
         "command": "apifoxHelper.copyEndpointFull",
-        "title": "ApiGen for Apifox: 复制完整接口 (Copy Method & Path)",
+        "title": "api2apifox: 复制完整接口 (Copy Method & Path)",
         "icon": "$(clippy)"
       },
       {
         "command": "apifoxHelper.showStatusBarMenu",
-        "title": "ApiGen for Apifox: 快捷操作菜单 (Status Bar Menu)"
+        "title": "api2apifox: 快捷操作菜单 (Status Bar Menu)"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "apifoxHelper",
-          "title": "ApiGen for Apifox",
+          "title": "api2apifox",
           "icon": "media/activity-icon.svg"
         }
       ]
@@ -309,7 +309,7 @@
       ]
     },
     "configuration": {
-      "title": "ApiGen for Apifox",
+      "title": "api2apifox",
       "properties": {
         "apifoxHelper.enableCodeLens": {
           "type": "boolean",

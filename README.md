@@ -1,4 +1,4 @@
-# ApiGen for Apifox
+# api2apifox
 
 [![Version](https://img.shields.io/visual-studio-marketplace/v/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
@@ -7,14 +7,17 @@
 [![npm: @duyiliu/api2apifox](https://img.shields.io/npm/v/%40duyiliu%2Fapi2apifox?label=CLI%20npm)](https://www.npmjs.com/package/@duyiliu/api2apifox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** 对标 IDEA 版 Apifox Helper，提供两种形态：
+**解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** Java 接口解析与 Apifox 同步工具，对标 IDEA 版 Apifox Helper，提供两种形态：
 
 | 形态 | 适用场景 | 安装 |
 | --- | --- | --- |
 | **独立 CLI `api2apifox`** | AI Agent、CI、脚本化调用，不依赖 VS Code | `npm install -g @duyiliu/api2apifox` |
 | **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
 
-> **命名说明**：项目曾用名 Apifox Helper（故仓库名与部分配置项仍为 `apifox-helper` / `apifoxHelper.*`），现产品名为 **ApiGen for Apifox**，Marketplace 扩展 ID 为 `duyiliu.api2apifox`，CLI 包名为 `@duyiliu/api2apifox`。
+> **命名说明**：项目名称、Marketplace 扩展 ID（`duyiliu.api2apifox`）与 CLI 包名（`@duyiliu/api2apifox`）已统一为 **api2apifox**；早期曾用名 Apifox Helper / ApiGen for Apifox 只保留在下列兼容标识里，均不可更改，改了会破坏既有团队规则、用户配置、快捷键与既有命令调用：
+> - 工作区规则文件名 `.apifox-helper.properties`（与 IDEA 版 Apifox Helper / easyyapi 共用）；
+> - 扩展设置前缀 `apifoxHelper.*`（含 `apifoxHelper.helperProperties.*` 等全部配置键）；
+> - 扩展命令 ID 前缀 `apifoxHelper.*`（`package.json` 中 `contributes.commands` 的 `command` 字段）、视图容器 ID `apifoxHelper` 与视图 ID `apifoxHelper.apiTree`（含 `viewsWelcome`、`menus` 的 `when`/`command` 引用）。
 
 ## ✨ 特性亮点
 
@@ -72,13 +75,13 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 ## 📦 安装扩展（VS Code / Cursor）
 
-- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **ApiGen for Apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
+- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **api2apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
 - **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手（扩展）
 
 1. 用 VS Code / Cursor 打开一个 Spring Boot 工程
-2. 点击活动栏的 **ApiGen for Apifox** 图标,打开顶部**设置中心**,填入并验证 Apifox 访问令牌,再选择目标项目(也可执行命令 `ApiGen for Apifox: 选择 Apifox 项目`)
+2. 点击活动栏的 **api2apifox** 图标,打开顶部**设置中心**,填入并验证 Apifox 访问令牌,再选择目标项目(也可执行命令 `api2apifox: 选择 Apifox 项目`)
 3. 刷新**接口列表**,浏览解析出的全部接口(按模块/控制器分组)
 4. 选择一种方式同步:整个项目 / 勾选的接口 / 当前文件 / 光标处单个接口;批量同步前会确认目标项目、接口数量与冲突策略
 5. 可选:执行 `导出 OpenAPI 预览文件`,生成 `openapi.gen.json` 本地验证

@@ -26,7 +26,7 @@ export class SyncResultPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       "apifoxHelperSyncResult",
-      "ApiGen for Apifox 同步结果",
+      "api2apifox 同步结果",
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, retainContextWhenHidden: true }
     );
@@ -133,7 +133,7 @@ export class SyncResultPanel {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <title>ApiGen for Apifox 同步结果</title>
+  <title>api2apifox 同步结果</title>
   <style>
     :root {
       --border-color: var(--vscode-widget-border, var(--vscode-sideBar-border, rgba(255, 255, 255, 0.1)));

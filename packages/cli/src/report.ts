@@ -70,7 +70,7 @@ export function renderReportHtml(report: SyncReport): string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<title>ApiGen for Apifox 同步结果</title>
+<title>api2apifox 同步结果</title>
 <style>
   :root {
     --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #59636e;
@@ -154,7 +154,7 @@ export function renderReportHtml(report: SyncReport): string {
 <body>
 <div class="page">
   <div class="header">
-    <div class="header-title">同步结果<span class="brand">ApiGen for Apifox</span></div>
+    <div class="header-title">同步结果<span class="brand">api2apifox</span></div>
     <div class="meta">
       <span class="label">目标</span><span id="metaTarget">—</span>
       <span class="label">范围</span><span id="metaScope">—</span>

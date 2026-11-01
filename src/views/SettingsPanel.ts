@@ -28,7 +28,7 @@ export class SettingsPanel {
 
     const panel = vscode.window.createWebviewPanel(
       "apifoxHelperSettings",
-      "ApiGen for Apifox 设置中心",
+      "api2apifox 设置中心",
       column || vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -224,7 +224,7 @@ export class SettingsPanel {
         message: "设置已成功保存并生效！",
       });
 
-      vscode.window.showInformationMessage("ApiGen for Apifox 配置已成功保存！");
+      vscode.window.showInformationMessage("api2apifox 配置已成功保存！");
       this._onSettingsChanged?.();
     } catch (err) {
       this._panel.webview.postMessage({
@@ -255,7 +255,7 @@ export class SettingsPanel {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
-  <title>ApiGen for Apifox 设置中心</title>
+  <title>api2apifox 设置中心</title>
   <style>
     :root {
       --card-bg: var(--vscode-editor-background);
@@ -553,7 +553,7 @@ export class SettingsPanel {
 <body>
   <div class="header">
     <div class="header-title">
-      <span>🚀 ApiGen for Apifox 配置中心</span>
+      <span>🚀 api2apifox 配置中心</span>
       <span class="header-tag">Spring Boot ⇄ Apifox</span>
     </div>
     <button type="button" class="btn btn-secondary" id="btnHelp">查看 Token 帮助</button>

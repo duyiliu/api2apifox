@@ -202,7 +202,7 @@ function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
 
 function humanizeError(status: number, payload?: { message?: string; code?: number | string }): string {
   if (status === 401) {
-    return "访问令牌无效或已过期(401),请用「ApiGen for Apifox: 设置访问令牌」重新配置";
+    return "访问令牌无效或已过期(401),请用「api2apifox: 设置访问令牌」重新配置";
   }
   if (status === 403) {
     return "令牌权限不足或他人正在导入(403),请稍后重试";

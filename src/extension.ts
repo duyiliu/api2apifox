@@ -119,7 +119,7 @@ async function buildJarClassIndex(): Promise<JarClassIndex | undefined> {
         maxJars: settings.maxDependencyJars,
       });
       if (depWarnings.length) {
-        vscode.window.showWarningMessage(`ApiGen for Apifox:${depWarnings.join(";")}`);
+        vscode.window.showWarningMessage(`api2apifox:${depWarnings.join(";")}`);
       }
       jars.push(...resolved);
     }
@@ -379,7 +379,7 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         const analyzed = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: "ApiGen for Apifox: 解析 Java 源码与依赖索引...", cancellable: true },
+          { location: vscode.ProgressLocation.Notification, title: "api2apifox: 解析 Java 源码与依赖索引...", cancellable: true },
           (progress, token) => {
             progress.report({ message: "扫描 Java 文件..." });
             return prepare(token);
@@ -486,10 +486,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const s = getSettings();
     const checked = treeProvider.checkedCount;
     if (s.projectId > 0) {
-      statusBarItem.text = `$(project) ApiGen: ${s.projectName || s.projectId}${checked > 0 ? ` · $(check) ${checked}` : ""}`;
-      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 ApiGen 快捷操作盘`;
+      statusBarItem.text = `$(project) api2apifox: ${s.projectName || s.projectId}${checked > 0 ? ` · $(check) ${checked}` : ""}`;
+      statusBarItem.tooltip = `当前绑定项目: ${s.projectName || `ID: ${s.projectId}`}\n所属团队: ${s.teamName || "未记录"}\n点击打开 api2apifox 快捷操作盘`;
     } else {
-      statusBarItem.text = `$(warning) ApiGen: 未绑定`;
+      statusBarItem.text = `$(warning) api2apifox: 未绑定`;
       statusBarItem.tooltip = "尚未绑定 Apifox 项目，点击进行设置";
     }
     statusBarItem.command = "apifoxHelper.showStatusBarMenu";
@@ -910,8 +910,8 @@ export function activate(context: vscode.ExtensionContext): void {
       const visibleItems = syncing ? items.filter((item) => !item.sync) : items;
       const picked = await vscode.window.showQuickPick(visibleItems, {
         placeHolder: syncing
-          ? "ApiGen for Apifox: 正在同步中,同步选项暂不可用"
-          : `ApiGen for Apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
+          ? "api2apifox: 正在同步中,同步选项暂不可用"
+          : `api2apifox: 当前项目 [${settings.projectName || settings.projectId || "未绑定"}]`,
       });
       if (picked) {
         picked.action();
@@ -1150,7 +1150,7 @@ let helperOutputChannel: vscode.OutputChannel | undefined;
 
 function getHelperOutputChannel(): vscode.OutputChannel {
   if (!helperOutputChannel) {
-    helperOutputChannel = vscode.window.createOutputChannel("ApiGen for Apifox");
+    helperOutputChannel = vscode.window.createOutputChannel("api2apifox");
   }
   return helperOutputChannel;
 }

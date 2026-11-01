@@ -108,7 +108,7 @@ field.type=groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type(
 
 配置优先级：CLI 参数 > 环境变量 > `.api2apifox.json` > 默认值。
 
-本配置只作用于 CLI：它与 VS Code 扩展「ApiGen for Apifox」的 `apifoxHelper.*` 设置（以及扩展 SecretStorage 中的令牌）**相互独立**，两边需分别配置，改一边不会影响另一边。反过来，扩展也不会读取本文件。
+本配置只作用于 CLI：它与 VS Code 扩展「api2apifox」的 `apifoxHelper.*` 设置（以及扩展 SecretStorage 中的令牌）**相互独立**，两边需分别配置，改一边不会影响另一边。反过来，扩展也不会读取本文件。
 
 `timeoutMs` 可在配置文件中设置，用于慢速网络或大型项目：
 
