@@ -1,27 +1,27 @@
-# @duyiliu/api2apifox
+# api2apifox CLI（内部构建源）
 
-不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0，并同步到 Apifox。适合 AI Agent、CI 和本地脚本。
+本目录是 `api2apifox` Agent Skill 的 CLI 运行时构建源，**不单独发布到 npm**。不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0，并同步到 Apifox。适合 AI Agent、CI 和本地脚本。
 
 要求 Node.js `>=20`。
 
 ## 安装
 
-```bash
-npm install -g @duyiliu/api2apifox
-```
-
-也可以直接运行：
+用户侧通过 Skill 安装（Skill 自带 CLI 运行时）：
 
 ```bash
-npx @duyiliu/api2apifox scan --project . --format json
+npx skills add duyiliu/api2apifox --skill api2apifox -g
 ```
+
+之后用 `node "<skill-dir>/scripts/api2apifox.mjs" <command>` 调用。本 README 保留为 CLI 参数与行为参考；开发、测试与发版见仓库根 README。
 
 ## 常用命令
+
+下文的 `api2apifox` 指 Skill 入口：
 
 ```bash
 api2apifox scan --project . --format json
 api2apifox export --project . --output openapi.gen.json --force
-api2apifox sync --project . --dry-run --format json
+api2apifox sync --project . --project-id 123456 --dry-run --format json
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json
 ```
@@ -68,7 +68,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
 
 ```json
 {
-  "$schema": "./node_modules/@duyiliu/api2apifox/schema/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/duyiliu/api2apifox/main/packages/cli/schema/config.schema.json",
   "projectId": 123456,
   "apiBaseUrl": "https://api.apifox.com",
   "include": ["**/src/main/java/**/*.java"],
@@ -84,7 +84,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
 }
 ```
 
-> `$schema` 只用于编辑器补全与校验，按实际安装位置填写。项目内安装（`npm i -D @duyiliu/api2apifox`）时上面的路径有效；全局安装（`npm i -g`）或 `npx` 调用时项目里没有该文件，可删掉这一行，不影响 CLI 运行。
+> `$schema` 只用于编辑器补全与校验，可删掉这一行，不影响 CLI 运行。
 
 Token 不允许写入配置文件。推荐使用环境变量：
 

@@ -4,17 +4,16 @@
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
-[![npm: @duyiliu/api2apifox](https://img.shields.io/npm/v/%40duyiliu%2Fapi2apifox?label=CLI%20npm)](https://www.npmjs.com/package/@duyiliu/api2apifox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** Java 接口解析与 Apifox 同步工具，对标 IDEA 版 Apifox Helper，提供两种形态：
 
 | 形态 | 适用场景 | 安装 |
 | --- | --- | --- |
-| **独立 CLI `api2apifox`** | AI Agent、CI、脚本化调用，不依赖 VS Code | `npm install -g @duyiliu/api2apifox` |
+| **Agent Skill `api2apifox`**（内置 CLI） | AI Agent、CI、脚本化调用，不依赖 VS Code | `npx skills add duyiliu/api2apifox --skill api2apifox -g` |
 | **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
 
-> **命名说明**：项目名称、Marketplace 扩展 ID（`duyiliu.api2apifox`）与 CLI 包名（`@duyiliu/api2apifox`）已统一为 **api2apifox**；早期曾用名 Apifox Helper / ApiGen for Apifox 只保留在下列兼容标识里，均不可更改，改了会破坏既有团队规则、用户配置、快捷键与既有命令调用：
+> **命名说明**：项目名称、Marketplace 扩展 ID（`duyiliu.api2apifox`）与内部 CLI 包名（`@duyiliu/api2apifox`）已统一为 **api2apifox**；早期曾用名 Apifox Helper / ApiGen for Apifox 只保留在下列兼容标识里，均不可更改，改了会破坏既有团队规则、用户配置、快捷键与既有命令调用：
 > - 工作区规则文件名 `.apifox-helper.properties`（与 IDEA 版 Apifox Helper / easyyapi 共用）；
 > - 扩展设置前缀 `apifoxHelper.*`（含 `apifoxHelper.helperProperties.*` 等全部配置键）；
 > - 扩展命令 ID 前缀 `apifoxHelper.*`（`package.json` 中 `contributes.commands` 的 `command` 字段）、视图容器 ID `apifoxHelper` 与视图 ID `apifoxHelper.apiTree`（含 `viewsWelcome`、`menus` 的 `when`/`command` 引用）。
@@ -26,23 +25,36 @@
 - **依赖 jar 类型还原**:自动发现本地 Maven 仓库,按需解析 `.class` 字节码,把源码之外的类型(如自定义 `ResponseDto<T>`、MyBatis-Plus 的 `Page`)还原为完整模型——字段、泛型、`@ApiModelProperty` 描述均可带出,与 IDEA 插件的 classpath 能力等效
 - **规则引擎兼容**:识别 `.apifox-helper.properties` 声明式规则(与 IDEA 版 Apifox Helper / easyyapi 兼容的子集),团队既有规则可直接复用
 - **细粒度同步**:整个项目 / 单个文件 / 单个接口,随取随传
-- **CLI 一等公民**:与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
+- **Agent Skill 一等公民**:自带 CLI 运行时,装 Skill 即用,无需 npm 全局安装;与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
 
-## 📟 独立 CLI（AI Agent / CI / 脚本）
+## 📟 Agent Skill（AI Agent / CI / 脚本）
 
-不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0 并同步到 Apifox。与扩展共用同一套解析与同步管线，能力完全等价。要求 Node.js ≥ 20。
+不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0 并同步到 Apifox。Skill **自带完整 CLI 运行时**，安装 Skill 即完成安装，不再需要 `npm install -g`；与扩展共用同一套解析与同步管线，能力完全等价。要求 Node.js ≥ 20。
+
+### 安装
 
 ```bash
-npm install -g @duyiliu/api2apifox        # 或免安装:npx @duyiliu/api2apifox ...
+npx skills add duyiliu/api2apifox --skill api2apifox -g
 ```
 
+- `-g` 安装到用户级 Skill 目录（通常 `~/.agents/skills/api2apifox`），其他 Agent 客户端按各自规则同步/链接。
+- 固定版本：`npx skills add duyiliu/api2apifox#vX.Y.Z --skill api2apifox -g`（发版后把 `vX.Y.Z` 换成最新 release tag）。
+- 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
+- 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用 npm 包顶替。
+
 ### 常用命令
+
+Skill 的 CLI 入口是 `<skill-dir>/scripts/api2apifox.mjs`；下文的 `api2apifox` 均指该入口。手工调用时展开为真实路径，例如：
+
+```bash
+node "$HOME/.agents/skills/api2apifox/scripts/api2apifox.mjs" scan --project . --format json
+```
 
 ```bash
 api2apifox scan --project . --format json                    # 扫描并输出接口清单
 api2apifox export --project . --output openapi.gen.json      # 导出 OpenAPI 3.0 文件
 api2apifox export --project . --stdout                       # OpenAPI 直接输出到 stdout
-api2apifox sync --project . --dry-run --format json          # 同步预演(不写入)
+api2apifox sync --project . --project-id 123456 --dry-run --format json  # 同步预演(不写入)
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json                  # 查看生效配置
 ```
@@ -69,9 +81,9 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 - 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误。
 - 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
 
-> CLI 与 VS Code 扩展的配置**相互独立**：CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
+> Skill/CLI 与 VS Code 扩展的配置**相互独立**：Skill/CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
 
-完整参数表见 [`packages/cli/README.md`](packages/cli/README.md)。
+完整参数表见 [`skills/api2apifox/references/cli.md`](skills/api2apifox/references/cli.md)；`packages/cli/README.md` 保留为 CLI 内部构建源的参数参考。
 
 ## 📦 安装扩展（VS Code / Cursor）
 
@@ -255,7 +267,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 ## 🛠 开发与发布
 
-> 仓库根目录的 `work/` 存放内部设计文档与任务笔记（如 `.apifox-helper.properties` 支持的设计稿），不参与扩展/CLI 发布。
+> 仓库根目录的 `work/` 存放内部设计文档与任务笔记（如 `.apifox-helper.properties` 支持的设计稿）；`skills/` 是 Agent Skill 分发目录。二者都不参与 VSIX 发布。
 
 ```bash
 npm install
@@ -263,15 +275,17 @@ npm run compile     # esbuild 打包到 dist/
 npm test            # 解析器单测 + sample 项目端到端断言
 npm run test:host   # VS Code 1.85 Extension Host smoke(激活/命令/single-flight/成功与失败恢复)
 npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
+npm run build:skill # 重建 Skill 自带 CLI 运行时(skills/api2apifox/runtime)
+npm run check:skill # 校验 Skill 运行时哈希与版本(发版/CI 使用)
 ```
 
 在 VS Code 中调试:打开本目录后 F5(Extension Development Host),用 `sample/` 目录作为测试工作区。
 
-CLI 的 `npm pack` 会通过 `prepack` 自动构建并校验运行版本。维护者应使用
-`node packages/cli/verify-package.js <tarball.tgz>` 校验最终包,再发布同一份 tarball。
-CLI 工作流只认 `cli-v*` 标签,需要仓库 secret `NPM_TOKEN`;缺失时会在构建前明确报错。
+Skill 运行时由 `packages/cli` 的同一份 bundle 生成；改动 CLI 源码或升级 `packages/cli/package.json` 版本后，必须运行
+`npm run build:skill` 并提交 `skills/api2apifox/runtime/`，否则 CI 与发版工作流会因运行时过期而失败。
+`packages/cli` 是内部构建源（`private: true`），不再单独发布 npm；VS Code 扩展的 Marketplace 发布保持不变。
 
-**发版流程(维护者)**:仓库配置了 GitHub Actions 工作流 `.github/workflows/release.yml`,推送 `v*` tag 后自动完成:类型检查 → 单测 → 打包 vsix → 发布到 VS Code Marketplace → 创建 GitHub Release(附带 vsix)。首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`(Azure DevOps PAT,scope 勾选 Marketplace → Manage)。日常发版:
+**发版流程(维护者)**:仓库配置了 GitHub Actions 工作流 `.github/workflows/release.yml`,推送 `v*` tag 后自动完成:类型检查 → 单测 → 校验 Skill 运行时 → 打包 vsix → 发布到 VS Code Marketplace → 创建 GitHub Release(附带 vsix)。首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`(Azure DevOps PAT,scope 勾选 Marketplace → Manage)。日常发版:
 
 ```powershell
 git add .

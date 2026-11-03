@@ -493,6 +493,8 @@ CLI 创建顶层 `AbortController`：
 
 ### D10：版本与发布
 
+> 2026-11-03 更新：npm 单独发版已移除，CLI 改为随 Agent Skill 分发；以下为当时的历史设计，见 D12。
+
 VS Code 扩展与 CLI 使用独立版本：
 
 - Marketplace 扩展继续使用根包版本，如 `0.2.x`。
@@ -539,6 +541,17 @@ package.json
 - OpenAPI 文档结构不变。
 
 为了防止两端行为漂移，VS Code 与 CLI 应通过同一组 contract tests，给定相同 fixture 和配置，输出 OpenAPI JSON 深度相等。
+
+### D12：Skill 安装（2026-11-03）
+
+CLI 的面向 Agent 分发方式切换为 Agent Skill，npm 全局安装降级为历史兼容：
+
+- Skill 位于 `skills/api2apifox/`，自带 `runtime/api2apifox.cjs`（由 `packages/cli` 同一份 esbuild bundle 复制）与 `scripts/api2apifox.mjs` 入口，安装 Skill 即完成安装。
+- 安装命令：`npx skills add duyiliu/api2apifox --skill api2apifox -g`；固定版本使用 `#vX.Y.Z`。
+- `runtime/release.json` 记录 CLI 版本与 bundle SHA256，`scripts/check-runtime.mjs` 在安装后自检。
+- `npm run build:skill` 重建运行时，`npm run check:skill` 校验版本/哈希；CI 与 `v*` 发版工作流会构建并 `git diff` 检查提交的运行时是否最新。
+- Skill 目录的文本文件强制 LF，运行时 bundle 按二进制保存，避免 Windows 检出后哈希漂移。
+- npm 单独发版已移除：删除 `.github/workflows/release-cli.yml`，`packages/cli` 设为 `private: true`，仅作为 Skill runtime 的构建源；VS Code 扩展的 Marketplace 发布保留。
 
 ## 实现位置
 
