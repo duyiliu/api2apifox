@@ -547,7 +547,7 @@ package.json
 CLI 的面向 Agent 分发方式切换为 Agent Skill，npm 全局安装降级为历史兼容：
 
 - Skill 位于 `skills/api2apifox/`，自带 `runtime/api2apifox.cjs`（由 `packages/cli` 同一份 esbuild bundle 复制）与 `scripts/api2apifox.mjs` 入口，安装 Skill 即完成安装。
-- 安装命令：`npx skills add duyiliu/api2apifox --skill api2apifox -g`；固定版本使用 `#vX.Y.Z`。
+- 安装命令：`npx skills add duyiliu/api2apifox --skill api2apifox -g`；固定版本使用 `#skill-vX.Y.Z`，与扩展的 `v*` 版本线分离，不触发 Marketplace 发布。
 - `runtime/release.json` 记录 CLI 版本与 bundle SHA256，`scripts/check-runtime.mjs` 在安装后自检。
 - `npm run build:skill` 重建运行时，`npm run check:skill` 校验版本/哈希；CI 与 `v*` 发版工作流会构建并 `git diff` 检查提交的运行时是否最新。
 - Skill 目录的文本文件强制 LF，运行时 bundle 按二进制保存，避免 Windows 检出后哈希漂移。

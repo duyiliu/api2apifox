@@ -38,7 +38,7 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 ```
 
 - `-g` 安装到用户级 Skill 目录（通常 `~/.agents/skills/api2apifox`），其他 Agent 客户端按各自规则同步/链接。
-- 固定版本：`npx skills add duyiliu/api2apifox#vX.Y.Z --skill api2apifox -g`（发版后把 `vX.Y.Z` 换成最新 release tag）。
+- 固定版本：`npx skills add duyiliu/api2apifox#skill-v0.1.5 --skill api2apifox -g`（后续发版把 `skill-v0.1.5` 换成最新 `skill-v*` tag；该 tag 独立于扩展的 `v*` 版本线，不会触发 Marketplace 发布）。
 - 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
 - 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用 npm 包顶替。
 
