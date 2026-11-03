@@ -1,0 +1,4 @@
+# Skill 文本文件统一 LF，避免 Windows 检出后运行时哈希校验失败
+skills/api2apifox/** text eol=lf
+# 自带 CLI bundle 按二进制保存，禁止换行转换（release.json 记录的是原始字节哈希）
+skills/api2apifox/runtime/* -text
