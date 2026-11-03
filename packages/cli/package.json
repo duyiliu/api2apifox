@@ -1,29 +1,19 @@
 {
   "name": "@duyiliu/api2apifox",
   "version": "0.1.5",
-  "description": "Scan Java REST APIs, generate OpenAPI, and sync to Apifox from the command line",
+  "private": true,
+  "description": "Internal CLI runtime source for the api2apifox Skill (not published to npm)",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/duyiliu/api2apifox"
   },
   "type": "commonjs",
-  "bin": {
-    "api2apifox": "dist/cli.js"
-  },
-  "main": "dist/cli.js",
   "engines": {
     "node": ">=20"
   },
-  "files": [
-    "dist/cli.js",
-    "README.md",
-    "LICENSE",
-    "schema/config.schema.json"
-  ],
   "scripts": {
     "build": "node build.js",
-    "prepack": "npm run build && node verify-package.js --bundle",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.js"
   },

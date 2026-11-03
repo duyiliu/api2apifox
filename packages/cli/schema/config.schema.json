@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://unpkg.com/@duyiliu/api2apifox/schema/config.schema.json",
+  "$id": "https://raw.githubusercontent.com/duyiliu/api2apifox/main/packages/cli/schema/config.schema.json",
   "title": "api2apifox CLI configuration",
   "type": "object",
   "additionalProperties": false,
