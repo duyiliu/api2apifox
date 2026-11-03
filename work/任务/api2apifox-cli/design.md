@@ -544,14 +544,22 @@ package.json
 
 ### D12：Skill 安装（2026-11-03）
 
-CLI 的面向 Agent 分发方式切换为 Agent Skill，npm 全局安装降级为历史兼容：
+CLI 的面向 Agent 分发方式切换为 Agent Skill，npm 单独发版已移除：
 
 - Skill 位于 `skills/api2apifox/`，自带 `runtime/api2apifox.cjs`（由 `packages/cli` 同一份 esbuild bundle 复制）与 `scripts/api2apifox.mjs` 入口，安装 Skill 即完成安装。
-- 安装命令：`npx skills add duyiliu/api2apifox --skill api2apifox -g`；固定版本使用 `#skill-vX.Y.Z`，与扩展的 `v*` 版本线分离，不触发 Marketplace 发布。
+- 安装命令：`npx skills add duyiliu/api2apifox --skill api2apifox -g`；固定版本使用 `#vX.Y.Z`，与扩展共用同一个 tag。
 - `runtime/release.json` 记录 CLI 版本与 bundle SHA256，`scripts/check-runtime.mjs` 在安装后自检。
-- `npm run build:skill` 重建运行时，`npm run check:skill` 校验版本/哈希；CI 与 `v*` 发版工作流会构建并 `git diff` 检查提交的运行时是否最新。
+- `npm run build:skill` 重建运行时，`npm run check:skill` 校验版本/哈希；CI 与 `release.yml` 会构建并 `git diff` 检查提交的运行时是否最新。
 - Skill 目录的文本文件强制 LF，运行时 bundle 按二进制保存，避免 Windows 检出后哈希漂移。
 - npm 单独发版已移除：删除 `.github/workflows/release-cli.yml`，`packages/cli` 设为 `private: true`，仅作为 Skill runtime 的构建源；VS Code 扩展的 Marketplace 发布保留。
+
+### D13：统一版本与发布（2026-11-03）
+
+- **版本源**：根 `package.json` 与 `packages/cli/package.json` 使用同一个版本号，`check:skill` 会校验两者一致；当前统一版本为 `0.4.0`。
+- **标签**：`vX.Y.Z`；只触发 `.github/workflows/release.yml`，一次发布同时产出 VSIX 与 Skill zip。
+- **准备命令**：`npm run release -- X.Y.Z`（或 `release:patch` / `release:minor` / `release:major`）；脚本更新两个 `package.json` 与 `package-lock.json`，重建 `skills/api2apifox/runtime`，同步 README/SKILL.md/references 的版本示例并执行 `check:skill`。
+- **发版校验**：`release.yml` 校验 tag 与根/CLI 版本一致，运行扩展与 CLI 测试，重建 runtime 并用 `git diff --exit-code` 确认提交的 runtime 是最新构建，然后打包 VSIX 与 Skill zip、发布 Marketplace、创建 GitHub Release（附带两个产物）。
+- **边界**：不发布 npm；扩展与 Skill 同版本、同一次发布，回滚边界一致。
 
 ## 实现位置
 

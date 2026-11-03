@@ -38,9 +38,9 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 ```
 
 - `-g` 安装到用户级 Skill 目录（通常 `~/.agents/skills/api2apifox`），其他 Agent 客户端按各自规则同步/链接。
-- 固定版本：`npx skills add duyiliu/api2apifox#skill-v0.1.5 --skill api2apifox -g`（后续发版把 `skill-v0.1.5` 换成最新 `skill-v*` tag；该 tag 独立于扩展的 `v*` 版本线，不会触发 Marketplace 发布）。
+- 固定版本：`npx skills add duyiliu/api2apifox#v0.4.0 --skill api2apifox -g`（扩展与 Skill 共用同一个 `vX.Y.Z` tag）。
 - 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
-- 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用 npm 包顶替。
+- 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用其它工具顶替。
 
 ### 常用命令
 
@@ -277,23 +277,42 @@ npm run test:host   # VS Code 1.85 Extension Host smoke(激活/命令/single-fli
 npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
 npm run build:skill # 重建 Skill 自带 CLI 运行时(skills/api2apifox/runtime)
 npm run check:skill # 校验 Skill 运行时哈希与版本(发版/CI 使用)
+npm run release -- X.Y.Z  # 统一版本:更新两个 package.json、重建 runtime、校验
 ```
 
 在 VS Code 中调试:打开本目录后 F5(Extension Development Host),用 `sample/` 目录作为测试工作区。
 
-Skill 运行时由 `packages/cli` 的同一份 bundle 生成；改动 CLI 源码或升级 `packages/cli/package.json` 版本后，必须运行
-`npm run build:skill` 并提交 `skills/api2apifox/runtime/`，否则 CI 与发版工作流会因运行时过期而失败。
+Skill 运行时由 `packages/cli` 的同一份 bundle 生成；改动 CLI 源码或运行 `npm run release` 后，必须提交
+`skills/api2apifox/runtime/`，否则 CI 与发版工作流会因运行时过期而失败。
 `packages/cli` 是内部构建源（`private: true`），不再单独发布 npm；VS Code 扩展的 Marketplace 发布保持不变。
 
-**发版流程(维护者)**:仓库配置了 GitHub Actions 工作流 `.github/workflows/release.yml`,推送 `v*` tag 后自动完成:类型检查 → 单测 → 校验 Skill 运行时 → 打包 vsix → 发布到 VS Code Marketplace → 创建 GitHub Release(附带 vsix)。首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`(Azure DevOps PAT,scope 勾选 Marketplace → Manage)。日常发版:
+### 统一发版（`v*`）
+
+扩展与 Skill 使用同一个版本号：根 `package.json` 与 `packages/cli/package.json` 必须一致，tag 为 `vX.Y.Z`。推送 tag 后 `.github/workflows/release.yml` 自动完成：类型检查 → 扩展/CLI 测试 → 校验 Skill runtime → 打包 vsix 与 Skill zip → 发布 VS Code Marketplace → 创建 GitHub Release（附带 vsix + Skill zip）。
+
+首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`（Azure DevOps PAT，scope 勾选 Marketplace → Manage）。
+
+日常发版：
 
 ```powershell
-git add .
-git commit -m "chore: xxx"
-npm run release:patch   # 自动 bump 版本号并生成 vX.Y.Z 的 commit + tag,release:minor/release:major 同理
-git push origin main
-git push origin --tags  # 触发自动发版
+npm run release -- X.Y.Z   # 或 npm run release:patch / release:minor / release:major
+git add package.json packages/cli/package.json package-lock.json skills/api2apifox README.md
+git commit -m "chore(release): vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags  # 触发 release.yml
 ```
+
+`npm run release -- X.Y.Z` 会：
+
+- 校验根包与 CLI 版本一致
+- 更新两个 `package.json` 与 `package-lock.json`
+- 重建 `skills/api2apifox/runtime`
+- 同步 README/SKILL.md/references 的版本示例
+- 执行 `check:skill`
+
+`release:patch` / `release:minor` / `release:major` 等价于传对应的版本增量。脚本只准备文件和校验，不自动 commit/tag/push。
+
+> 当前统一版本为 `0.4.0`；首次发版提交后直接 `git tag v0.4.0 && git push origin v0.4.0`。之后用 `npm run release -- <新版本>` 递增。
 
 ## 📄 License
 

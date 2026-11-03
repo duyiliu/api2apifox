@@ -8,9 +8,13 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const runtimeDir = path.join(root, "skills", "api2apifox", "runtime");
+const rootManifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const cliManifest = JSON.parse(fs.readFileSync(path.join(root, "packages", "cli", "package.json"), "utf8"));
 
 try {
+  if (rootManifest.version !== cliManifest.version) {
+    throw new Error(`统一版本要求根 package.json (${rootManifest.version}) 与 packages/cli/package.json (${cliManifest.version}) 一致，请运行 npm run release`);
+  }
   const release = JSON.parse(fs.readFileSync(path.join(runtimeDir, "release.json"), "utf8"));
   if (release.version !== cliManifest.version) {
     throw new Error(`Skill 运行时版本 ${release.version} 与 CLI ${cliManifest.version} 不一致，请运行 npm run build:skill`);

@@ -1,7 +1,7 @@
 {
-  "version": "0.1.5",
+  "version": "0.4.0",
   "package": "@duyiliu/api2apifox",
   "sha256": {
-    "api2apifox.cjs": "e5d8d1a8f3196a52cd354629ed714b891112f29ae2bfde65132dd17d3bfa5c2c"
+    "api2apifox.cjs": "cfeed9f952fa35281975dadf1324b3cf9e878c750374939b97d71910de154af0"
   }
 }
