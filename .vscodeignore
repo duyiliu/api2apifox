@@ -4,6 +4,7 @@ src/**
 packages/**
 scripts/**
 .gitignore
+.gitattributes
 node_modules/**
 out/**
 dist/**/*.map
@@ -11,6 +12,7 @@ esbuild.js
 tsconfig*.json
 **/*.map
 sample/**
+skills/**
 work/**
 probe/**
 *.log

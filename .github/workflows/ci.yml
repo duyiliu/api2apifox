@@ -88,3 +88,28 @@ jobs:
 
       - name: Run CLI integration tests
         run: npm test --workspace @duyiliu/api2apifox
+
+  skill:
+    name: Skill runtime (build, verify, hash)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild skill runtime
+        run: npm run build:skill
+
+      - name: Fail if committed runtime is stale
+        run: git diff --exit-code -- skills/api2apifox/runtime
+
+      - name: Verify skill runtime
+        run: npm run check:skill

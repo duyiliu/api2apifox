@@ -49,6 +49,12 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Verify Skill runtime is current
+        run: |
+          npm run build:skill
+          git diff --exit-code -- skills/api2apifox/runtime
+          npm run check:skill
+
       - name: Package VSIX
         run: |
           VSIX_NAME="$(node -p "require('./package.json').name + '-' + require('./package.json').version + '.vsix'")"
