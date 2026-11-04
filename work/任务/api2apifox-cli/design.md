@@ -1,9 +1,9 @@
 # api2apifox 独立 CLI 设计
 
-> 状态：进行中（CLI MVP 已实现并通过本地验证，待 VS Code 适配迁移与发布）
+> 状态：已完成（CLI 以 Agent Skill 形式分发，`packages/cli` 转为内部构建源，npm 单独发布已停止）
 > 创建日期：2026-09-20
-> 关联：VS Code 扩展 `duyiliu.api2apifox`，npm 包 `@duyiliu/api2apifox`
-> 补充资料：[HTML 阅读版](./api2apifox-cli-design.html)
+> 关联：VS Code 扩展 `duyiliu.api2apifox`；CLI 现随 Agent Skill `api2apifox` 分发（`npx skills add duyiliu/api2apifox --skill api2apifox -g`）
+> 补充资料：[HTML 阅读版](./api2apifox-cli-design.html)（历史快照，发布方式以本文件为准）
 
 > 说明：本文件是独立 CLI 任务的主档案和后续跨会话入口。CLI 的实现、验收和发布进展应持续回填本文件，避免另起一套失步方案。
 

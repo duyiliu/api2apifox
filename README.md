@@ -300,9 +300,12 @@ Skill 运行时由 `packages/cli` 的同一份 bundle 生成；改动 CLI 源码
 
 ### 统一发版（`v*`）
 
-扩展与 Skill 使用同一个版本号：根 `package.json` 与 `packages/cli/package.json` 必须一致，tag 为 `vX.Y.Z`。推送 tag 后 `.github/workflows/release.yml` 自动完成：类型检查 → 扩展/CLI 测试 → 校验 Skill runtime → 打包 vsix 与 Skill zip → 发布 VS Code Marketplace → 创建 GitHub Release（附带 vsix + Skill zip）。
+扩展与 Skill 使用同一个版本号：根 `package.json` 与 `packages/cli/package.json` 必须一致，tag 为 `vX.Y.Z`。推送 tag 后 `.github/workflows/release.yml` 自动完成：类型检查 → 扩展/CLI 测试 → 校验 Skill runtime → 打包 vsix 与 Skill zip → 发布 VS Code Marketplace（配置了 `OVSX_PAT` 时同时发布 Open VSX）→ 创建 GitHub Release（附带 vsix + Skill zip）。
 
-首次需在仓库 Settings → Secrets and variables → Actions 添加 `VSCE_PAT`（Azure DevOps PAT，scope 勾选 Marketplace → Manage）。
+首次需在仓库 Settings → Secrets and variables → Actions 添加：
+
+- `VSCE_PAT`（Azure DevOps PAT，scope 勾选 Marketplace → Manage）——发布 VS Code Marketplace 必需。
+- `OVSX_PAT`（可选）——发布 Open VSX，供 Cursor / Windsurf / VSCodium 用户从各自市场安装。获取方式：用 GitHub 账号登录 [open-vsx.org](https://open-vsx.org) → 在 Settings → Access Tokens 生成；首次还需在 open-vsx.org 创建与 `publisher` 同名的 namespace（`duyiliu`）。未配置时该步骤自动跳过。
 
 日常发版：
 

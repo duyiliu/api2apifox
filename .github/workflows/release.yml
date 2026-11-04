@@ -17,12 +17,15 @@ jobs:
   publish:
     name: Build, Test & Publish
     runs-on: ubuntu-latest
+    env:
+      # 未配置该 secret 时跳过 Open VSX 发布（Cursor / Windsurf / VSCodium 市场）
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -86,6 +89,10 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx @vscode/vsce publish --packagePath "$VSIX_NAME" --skip-duplicate -p "$VSCE_PAT"
+
+      - name: Publish to Open VSX (Cursor / Windsurf / VSCodium)
+        if: env.OVSX_PAT != ''
+        run: npx --yes ovsx@latest publish --packagePath "$VSIX_NAME" -p "$OVSX_PAT" --skip-duplicate
 
       - name: Create GitHub Release with VSIX and Skill assets
         run: gh release create "$RELEASE_TAG" "$VSIX_NAME" "api2apifox-skill-${VERSION}.zip" --generate-notes
