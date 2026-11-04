@@ -4,6 +4,7 @@
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/duyiliu.api2apifox)](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)
+[![CI](https://github.com/duyiliu/api2apifox/actions/workflows/ci.yml/badge.svg)](https://github.com/duyiliu/api2apifox/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **解析本地 Spring Boot 源码 → 生成 OpenAPI 3.0 → 一键同步到 Apifox 项目。** Java 接口解析与 Apifox 同步工具，对标 IDEA 版 Apifox Helper，提供两种形态：
@@ -11,7 +12,7 @@
 | 形态 | 适用场景 | 安装 |
 | --- | --- | --- |
 | **Agent Skill `api2apifox`**（内置 CLI） | AI Agent、CI、脚本化调用，不依赖 VS Code | `npx skills add duyiliu/api2apifox --skill api2apifox -g` |
-| **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | Marketplace 搜 `duyiliu.api2apifox` |
+| **VS Code / Cursor 扩展** | 编辑器内浏览接口、勾选/单接口/单文件/整项目同步 | VS Code Marketplace 搜 `duyiliu.api2apifox`；Cursor 用 vsix 安装 |
 
 > **命名说明**：项目名称、Marketplace 扩展 ID（`duyiliu.api2apifox`）与内部 CLI 包名（`@duyiliu/api2apifox`）已统一为 **api2apifox**；早期曾用名 Apifox Helper / ApiGen for Apifox 只保留在下列兼容标识里，均不可更改，改了会破坏既有团队规则、用户配置、快捷键与既有命令调用：
 > - 工作区规则文件名 `.apifox-helper.properties`（与 IDEA 版 Apifox Helper / easyyapi 共用）；
@@ -41,13 +42,21 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 - 固定版本：`npx skills add duyiliu/api2apifox#v0.4.0 --skill api2apifox -g`（扩展与 Skill 共用同一个 `vX.Y.Z` tag）。
 - 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
 - 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用其它工具顶替。
+- 升级：`npx skills update api2apifox -g`（装指定版本重新执行带 `#vX.Y.Z` 的 add 命令）；卸载：`npx skills remove api2apifox -g`。
+- 离线/内网：从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载 `api2apifox-skill-<版本>.zip`，解压为 `~/.agents/skills/api2apifox/`（目录内含 `SKILL.md`、`scripts/`、`runtime/`），再执行自检命令。
 
 ### 常用命令
 
 Skill 的 CLI 入口是 `<skill-dir>/scripts/api2apifox.mjs`；下文的 `api2apifox` 均指该入口。手工调用时展开为真实路径，例如：
 
 ```bash
+# macOS / Linux
 node "$HOME/.agents/skills/api2apifox/scripts/api2apifox.mjs" scan --project . --format json
+```
+
+```powershell
+# Windows PowerShell
+node "$env:USERPROFILE\.agents\skills\api2apifox\scripts\api2apifox.mjs" scan --project . --format json
 ```
 
 ```bash
@@ -58,6 +67,8 @@ api2apifox sync --project . --project-id 123456 --dry-run --format json  # 同�
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json                  # 查看生效配置
 ```
+
+> `VAR=xxx cmd` 是 bash 写法；PowerShell 需先 `$env:API2APIFOX_TOKEN = "APS_xxx"` 再执行命令，cmd 用 `set API2APIFOX_TOKEN=APS_xxx`。
 
 `sync` 真正写入后会在浏览器自动弹出同步结果报告页（汇总计数、错误警告、接口清单，同 VS Code 结果面板）；`--no-report` 可关闭。
 
@@ -78,7 +89,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - Token **不允许**写入配置文件，请用 `API2APIFOX_TOKEN`（及 `API2APIFOX_PROJECT_ID`）环境变量。
 - `--format json` 时 stdout 只输出一个 JSON 信封，按 `ok` / `error.code` 分支；`--quiet` 隐藏非致命告警。
-- 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误。
+- 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误 / `6` 导入部分失败 / `7` 本地错误；完整表见 SKILL.md。
 - 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
 
 > Skill/CLI 与 VS Code 扩展的配置**相互独立**：Skill/CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。
@@ -87,8 +98,8 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 ## 📦 安装扩展（VS Code / Cursor）
 
-- **扩展市场**:在 VS Code / Cursor 扩展面板搜索 **api2apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
-- **离线安装**:从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
+- **扩展市场（VS Code）**:在扩展面板搜索 **api2apifox**,或直接访问 [Marketplace 页面](https://marketplace.visualstudio.com/items?itemName=duyiliu.api2apifox)安装(要求 VS Code ≥ 1.85)
+- **Cursor / 离线安装**:扩展未上架 Open VSX(Cursor 默认市场),请从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载最新 `api2apifox-<版本>.vsix`,执行命令 `Extensions: Install from VSIX...` 安装
 
 ## 🚀 快速上手（扩展）
 
@@ -270,6 +281,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 > 仓库根目录的 `work/` 存放内部设计文档与任务笔记（如 `.apifox-helper.properties` 支持的设计稿）；`skills/` 是 Agent Skill 分发目录。二者都不参与 VSIX 发布。
 
 ```bash
+# 要求 Node.js >= 20
 npm install
 npm run compile     # esbuild 打包到 dist/
 npm test            # 解析器单测 + sample 项目端到端断言
@@ -311,8 +323,6 @@ git push origin main --tags  # 触发 release.yml
 - 执行 `check:skill`
 
 `release:patch` / `release:minor` / `release:major` 等价于传对应的版本增量。脚本只准备文件和校验，不自动 commit/tag/push。
-
-> 当前统一版本为 `0.4.0`；首次发版提交后直接 `git tag v0.4.0 && git push origin v0.4.0`。之后用 `npm run release -- <新版本>` 递增。
 
 ## 📄 License
 
