@@ -96,7 +96,7 @@ node "<skill-dir>/scripts/api2apifox.mjs" scan --project . --include "**/src/mai
   "schemaVersion": 1,
   "ok": true,
   "command": "scan",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "durationMs": 1234,
   "result": { "...": "命令特定的字段" },
   "warnings": ["FILE_READ_FAILED: Java 文件读取失败:..."]
