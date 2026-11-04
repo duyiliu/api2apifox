@@ -1,6 +1,6 @@
 {
   "name": "@duyiliu/api2apifox",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Internal CLI runtime source for the api2apifox Skill (not published to npm)",
   "license": "MIT",
