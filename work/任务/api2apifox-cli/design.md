@@ -558,7 +558,8 @@ CLI 的面向 Agent 分发方式切换为 Agent Skill，npm 单独发版已移�
 - **版本源**：根 `package.json` 与 `packages/cli/package.json` 使用同一个版本号，`check:skill` 会校验两者一致；当前统一版本为 `0.4.0`。
 - **标签**：`vX.Y.Z`；只触发 `.github/workflows/release.yml`，一次发布同时产出 VSIX 与 Skill zip。
 - **准备命令**：`npm run release -- X.Y.Z`（或 `release:patch` / `release:minor` / `release:major`）；脚本更新两个 `package.json` 与 `package-lock.json`，重建 `skills/api2apifox/runtime`，同步 README/SKILL.md/references 的版本示例并执行 `check:skill`。
-- **发版校验**：`release.yml` 校验 tag 与根/CLI 版本一致，运行扩展与 CLI 测试，重建 runtime 并用 `git diff --exit-code` 确认提交的 runtime 是最新构建，然后打包 VSIX 与 Skill zip、发布 Marketplace、创建 GitHub Release（附带两个产物）。
+- **发版校验**：`release.yml` 校验 tag 与根/CLI 版本一致，运行扩展与 CLI 测试，重建 runtime 并用 `git diff --exit-code` 确认提交的 runtime 是最新构建；打包 VSIX 后先经 `npm run test:vsix`（`scripts/test-vsix-install.mjs`）做隔离 profile 安装+激活门禁，再发布 Marketplace、创建 GitHub Release（附带两个产物）。
+- **VSIX 安装测试**：`scripts/test-vsix-install.mjs` + `scripts/vsix-activation-test.cjs`；CLI 安装 vsix 到隔离 `--extensions-dir`/`--user-data-dir`，校验 `id@version`，再以该安装目录为 `extensionDevelopmentPath` 启动 Extension Host 断言激活与全部命令注册。`runTests`/`runHostTest.ts` 均需删除 `ELECTRON_RUN_AS_NODE`（Electron IDE 终端注入会让 Code.exe 以 Node 模式启动报 `bad option`）。
 - **边界**：不发布 npm；扩展与 Skill 同版本、同一次发布，回滚边界一致。
 
 ## 实现位置

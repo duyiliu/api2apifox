@@ -490,7 +490,8 @@
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
     "watch": "node esbuild.js --watch",
-    "test:host": "npm run compile && npm run build:test && node out/test/host/runHostTest.js"
+    "test:host": "npm run compile && npm run build:test && node out/test/host/runHostTest.js",
+    "test:vsix": "node scripts/test-vsix-install.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

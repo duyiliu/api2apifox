@@ -286,6 +286,7 @@ npm install
 npm run compile     # esbuild 打包到 dist/
 npm test            # 解析器单测 + sample 项目端到端断言
 npm run test:host   # VS Code 1.85 Extension Host smoke(激活/命令/single-flight/成功与失败恢复)
+npm run test:vsix   # 已打包 vsix 的隔离 profile 安装+激活验证(默认用本机 VS Code,无则下载 1.85)
 npm run package     # 打包 vsix(产物名 api2apifox-<版本>.vsix)
 npm run build:skill # 重建 Skill 自带 CLI 运行时(skills/api2apifox/runtime)
 npm run check:skill # 校验 Skill 运行时哈希与版本(发版/CI 使用)
