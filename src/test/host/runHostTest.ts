@@ -8,6 +8,11 @@ import { runTests } from "@vscode/test-electron";
  * 工作区复制到 .vscode-test 下,配置写入不会污染源码 fixture。
  */
 async function main(): Promise<void> {
+  // Electron IDE 终端注入的 ELECTRON_RUN_AS_NODE 会让 Code.exe 以 Node 模式
+  // 启动并把所有参数当 node flag 报 bad option;spawn 前必须清除。
+  delete process.env.ELECTRON_RUN_AS_NODE;
+  delete process.env.ELECTRON_NO_ATTACH_CONSOLE;
+
   const extensionDevelopmentPath = path.resolve(__dirname, "..", "..", "..");
   const extensionTestsPath = path.resolve(__dirname, "suite", "index");
   const fixturePath = path.resolve(extensionDevelopmentPath, "src", "test", "host", "fixture");
