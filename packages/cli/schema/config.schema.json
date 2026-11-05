@@ -17,6 +17,7 @@
     "pageTypeStyle": { "enum": ["mybatis-plus", "spring-data"] },
     "folderNameSource": { "enum": ["tag", "controller"] },
     "rootFolderName": { "type": "string" },
+    "updateFolderOfChangedEndpoint": { "type": "boolean", "default": true },
     "schemaFolderId": { "type": "integer", "minimum": 0 },
     "helperProperties": {
       "type": "object",

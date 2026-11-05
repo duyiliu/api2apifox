@@ -119,6 +119,26 @@ test("--timeout-ms 覆盖同步等待上限；非法值被拒绝", () => {
   assert.equal(JSON.parse(bad.stdout).error.code, "INVALID_ARGUMENT");
 });
 
+test("--no-update-folder 关闭接口目录迁移，默认开启", () => {
+  const defaults = run(["config", "--project", SAMPLE, "--format", "json"]);
+  assert.equal(defaults.status, 0, defaults.stderr);
+  const defaultField = JSON.parse(defaults.stdout).result.fields.updateFolderOfChangedEndpoint;
+  assert.equal(defaultField.value, true);
+  assert.equal(defaultField.source, "default");
+
+  const disabled = run(["config", "--project", SAMPLE, "--no-update-folder", "--format", "json"]);
+  assert.equal(disabled.status, 0, disabled.stderr);
+  const disabledField = JSON.parse(disabled.stdout).result.fields.updateFolderOfChangedEndpoint;
+  assert.equal(disabledField.value, false);
+  assert.equal(disabledField.source, "cli");
+
+  const enabled = run(["config", "--project", SAMPLE, "--update-folder", "--format", "json"]);
+  assert.equal(enabled.status, 0, enabled.stderr);
+  const enabledField = JSON.parse(enabled.stdout).result.fields.updateFolderOfChangedEndpoint;
+  assert.equal(enabledField.value, true);
+  assert.equal(enabledField.source, "cli");
+});
+
 test("默认等待上限允许首次导入较慢的建目录与建模型", () => {
   const result = run(["config", "--project", SAMPLE, "--format", "json"]);
   assert.equal(result.status, 0, result.stderr);

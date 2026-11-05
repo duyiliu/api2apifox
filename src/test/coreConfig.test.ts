@@ -67,6 +67,26 @@ test("maxDependencyJars:配置文件生效、默认值与非法值校验", () =>
   assert.throws(() => resolveConfig(bad), /maxDependencyJars 必须是大于等于 0 的整数/);
 });
 
+test("updateFolderOfChangedEndpoint:默认开启,配置文件与 CLI 可覆盖", () => {
+  const defaults = resolveConfig(temporaryProject());
+  assert.equal(defaults.config.updateFolderOfChangedEndpoint, true);
+  assert.equal(defaults.sources.updateFolderOfChangedEndpoint, "default");
+
+  const root = temporaryProject();
+  fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ updateFolderOfChangedEndpoint: false }));
+  const fromFile = resolveConfig(root);
+  assert.equal(fromFile.config.updateFolderOfChangedEndpoint, false);
+  assert.match(fromFile.sources.updateFolderOfChangedEndpoint, /^file:/);
+
+  const fromCli = resolveConfig(root, { updateFolderOfChangedEndpoint: true });
+  assert.equal(fromCli.config.updateFolderOfChangedEndpoint, true);
+  assert.equal(fromCli.sources.updateFolderOfChangedEndpoint, "cli");
+
+  const bad = temporaryProject();
+  fs.writeFileSync(path.join(bad, ".api2apifox.json"), JSON.stringify({ updateFolderOfChangedEndpoint: "yes" }));
+  assert.throws(() => resolveConfig(bad), /updateFolderOfChangedEndpoint 必须是布尔值/);
+});
+
 test("严格拒绝未知配置字段", () => {
   const root = temporaryProject();
   fs.writeFileSync(path.join(root, ".api2apifox.json"), JSON.stringify({ projectID: 42 }));

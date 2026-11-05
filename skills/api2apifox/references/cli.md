@@ -75,6 +75,8 @@ api2apifox export --project . --stdout > openapi.json
 | `--no-report` | 不生成/打开同步结果报告页 |
 | `--endpoint-conflict <策略>` | 接口冲突策略：`OVERWRITE_EXISTING` / `AUTO_MERGE` / `KEEP_EXISTING` / `CREATE_NEW` |
 | `--schema-conflict <策略>` | 数据模型冲突策略，取值同上 |
+| `--update-folder` | 覆盖已存在接口时同步更新其目录（默认开启） |
+| `--no-update-folder` | 保持已存在接口的原目录，不随 tag/rootFolderName 迁移 |
 
 ```bash
 api2apifox sync --project . --project-id 123456 --dry-run --format json
@@ -103,6 +105,8 @@ api2apifox config --project . --format json
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
+  "rootFolderName": "",
+  "updateFolderOfChangedEndpoint": true,
   "helperProperties": {
     "enabled": true,
     "enumFieldDoc": false

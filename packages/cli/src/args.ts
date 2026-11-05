@@ -33,6 +33,8 @@ export interface CliOptions {
   dependencyMaxJars?: number;
   /** Apifox 请求等待上限（毫秒）；导入首次建目录/接口/模型可能较慢 */
   timeoutMs?: number;
+  /** 覆盖已存在接口时是否同步更新其目录；undefined 表示沿用配置文件/默认值 */
+  updateFolderOfChangedEndpoint?: boolean;
 }
 
 const conflictBehaviors: ConflictBehavior[] = ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"];
@@ -62,6 +64,8 @@ const argumentOptions = {
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
   "timeout-ms": { type: "string" },
+  "update-folder": { type: "boolean" },
+  "no-update-folder": { type: "boolean" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
 type ParsedArguments = ReturnType<typeof parseArgs<{ options: typeof argumentOptions }>>;
@@ -120,6 +124,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
         ? undefined
         : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
     timeoutMs: parsed.values["timeout-ms"] === undefined ? undefined : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
+    updateFolderOfChangedEndpoint: parsed.values["no-update-folder"] ? false : parsed.values["update-folder"] ? true : undefined,
   };
 }
 

@@ -16,6 +16,8 @@ export interface ApifoxSettings {
   folderNameSource: "tag" | "controller";
   /** 可选:所有目录放到该父目录下(不存在则创建) */
   rootFolderName: string;
+  /** 覆盖已存在接口时,是否按 x-apifox-folder 同步更新其目录(默认 true) */
+  updateFolderOfChangedEndpoint: boolean;
   /** 可选:数据模型导入到该目录(数字 ID,Apifox 已不支持按名查找) */
   schemaFolderId: number;
   /** @deprecated 已废弃:Apifox 下线了目录查询接口,请改用 schemaFolderId */
@@ -49,6 +51,7 @@ export function getSettings(): ApifoxSettings {
     pageTypeStyle: cfg.get<"mybatis-plus" | "spring-data">("pageTypeStyle", "mybatis-plus"),
     folderNameSource: cfg.get<"tag" | "controller">("folderNameSource", "tag"),
     rootFolderName: cfg.get<string>("rootFolderName", ""),
+    updateFolderOfChangedEndpoint: cfg.get<boolean>("updateFolderOfChangedEndpoint", true),
     schemaFolderId: cfg.get<number>("schemaFolderId", 0),
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
     helperProperties: cfg.get<boolean>("helperProperties.enabled", true),

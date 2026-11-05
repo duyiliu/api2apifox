@@ -53,6 +53,23 @@ sync 发给 Apifox 的是**当前筛选范围的 OpenAPI 导入包**（Apifox �
 
 数量对账：写入量就是 dry-run 信封里的 `result.scope.endpointCount`，与 `scan` 看到的预期接口数一致才动手；导入完成后 `result.counters` 里是 Apifox 侧实际 created/updated/failed 计数，退出码 6 表示存在失败项（失败清单在失败信封 `error.details`）。
 
+## 接口目录（多级）
+
+目录由 OpenAPI 的 `x-apifox-folder` 决定，来源是 `@Tag/@Api(tags)` 或 Controller 类名。`/` 是 Apifox 的默认层级分隔符，**不需要任何开关**：
+
+| 写法 | 结果 |
+|---|---|
+| `@Api(tags = "专案工作站/营养性疾病专案")` | 两级目录（推荐） |
+| `rootFolderName: "专案工作站"` + tag `营养性疾病专案` | 两级 |
+| 不加注解 | 一级，目录名 = Controller 类名 |
+
+- 推荐把层级直接写进 tag：代码自解释，不依赖配置文件，克隆即生效。
+- `folderNameSource` 可选 `tag`（默认，缺省回退类名）或 `controller`。
+- 目录值里要用**字面** `/` 时写成 `\/`，字面 `\` 写成 `\\`。
+- `updateFolderOfChangedEndpoint` 默认 `true`：覆盖已存在接口时同步更新其目录（对应 `--update-folder` / `--no-update-folder`）。设为 `false` 后，改 tag 只更新接口内容，不迁移目录。
+- Apifox 不会删除目录：接口迁走后留下的空目录需要手工清理。
+- 想先确认每个接口的实际落点：`export` 后检查 OpenAPI 里的 `x-apifox-folder`，再执行 `sync`。
+
 ## 范围与筛选
 
 ```bash
@@ -79,7 +96,9 @@ node "<skill-dir>/scripts/api2apifox.mjs" scan --project . --include "**/src/mai
   "include": ["**/src/main/java/**/*.java"],
   "exclude": ["**/target/**", "**/build/**", "**/src/test/**", "**/.*/**"],
   "endpointConflictBehavior": "OVERWRITE_EXISTING",
-  "schemaConflictBehavior": "OVERWRITE_EXISTING"
+  "schemaConflictBehavior": "OVERWRITE_EXISTING",
+  "rootFolderName": "",
+  "updateFolderOfChangedEndpoint": true
 }
 ```
 

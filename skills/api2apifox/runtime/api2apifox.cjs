@@ -28789,6 +28789,9 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
     pageTypeStyle: "mybatis-plus",
     folderNameSource: "tag",
     rootFolderName: "",
+    // 默认同步目录:改 tag/rootFolderName 后,已存在接口的目录也跟着迁移
+    // (对应 Apifox 导入选项 updateFolderOfChangedEndpoint)
+    updateFolderOfChangedEndpoint: true,
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
@@ -28815,6 +28818,7 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   applyFile(config, sources, "pageTypeStyle", enumValue(fileConfig.pageTypeStyle, "pageTypeStyle", ["mybatis-plus", "spring-data"], diagnostics), fileSource);
   applyFile(config, sources, "folderNameSource", enumValue(fileConfig.folderNameSource, "folderNameSource", ["tag", "controller"], diagnostics), fileSource);
   applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+  applyFile(config, sources, "updateFolderOfChangedEndpoint", booleanValue(fileConfig.updateFolderOfChangedEndpoint, "updateFolderOfChangedEndpoint", diagnostics), fileSource);
   applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
@@ -28872,6 +28876,7 @@ function validateKnownKeys(config, configPath, diagnostics) {
     "pageTypeStyle",
     "folderNameSource",
     "rootFolderName",
+    "updateFolderOfChangedEndpoint",
     "schemaFolderId",
     "helperProperties",
     "dependencyRepos",
@@ -29295,7 +29300,8 @@ async function syncProject(request) {
     targetSchemaFolderId: config.schemaFolderId > 0 ? config.schemaFolderId : void 0,
     endpointOverwriteBehavior: config.endpointConflictBehavior,
     schemaOverwriteBehavior: config.schemaConflictBehavior,
-    deleteUnmatchedResources: false
+    deleteUnmatchedResources: false,
+    updateFolderOfChangedEndpoint: config.updateFolderOfChangedEndpoint
   });
   return { ...base, counters: imported.counters, errors: imported.errors };
 }
@@ -29379,7 +29385,9 @@ var argumentOptions = {
   "dependency-repo": { type: "string", multiple: true, default: [] },
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
-  "timeout-ms": { type: "string" }
+  "timeout-ms": { type: "string" },
+  "update-folder": { type: "boolean" },
+  "no-update-folder": { type: "boolean" }
 };
 function parseCliArgs(argv) {
   const first2 = argv[0];
@@ -29430,7 +29438,8 @@ function parseCliArgs(argv) {
     dependencyRepos: parsed.values["dependency-repo"] ?? [],
     dependencyJars: parsed.values["dependency-jar"] ?? [],
     dependencyMaxJars: parsed.values["dependency-max-jars"] === void 0 ? void 0 : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
-    timeoutMs: parsed.values["timeout-ms"] === void 0 ? void 0 : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms")
+    timeoutMs: parsed.values["timeout-ms"] === void 0 ? void 0 : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
+    updateFolderOfChangedEndpoint: parsed.values["no-update-folder"] ? false : parsed.values["update-folder"] ? true : void 0
   };
 }
 function hasOption(args, name) {
@@ -30280,7 +30289,8 @@ function configOverrides(options) {
     dependencyJars: options.dependencyJars.length ? options.dependencyJars : void 0,
     maxDependencyJars: options.dependencyMaxJars,
     exportPath: options.output,
-    timeoutMs: options.timeoutMs
+    timeoutMs: options.timeoutMs,
+    updateFolderOfChangedEndpoint: options.updateFolderOfChangedEndpoint
   };
 }
 function outputSuccess(options, result, warnings, durationMs) {
@@ -30452,6 +30462,8 @@ ${COMMON_HELP}
   --token <token>           Apifox \u8BBF\u95EE\u4EE4\u724C\uFF0C\u63A8\u8350\u6539\u7528 API2APIFOX_TOKEN \u73AF\u5883\u53D8\u91CF
   --endpoint-conflict <\u6A21\u5F0F> \u63A5\u53E3\u51B2\u7A81\u5904\u7406\uFF1AOVERWRITE_EXISTING | AUTO_MERGE | KEEP_EXISTING | CREATE_NEW
   --schema-conflict <\u6A21\u5F0F>   \u6570\u636E\u6A21\u578B\u51B2\u7A81\u5904\u7406\uFF1A\u53D6\u503C\u540C\u4E0A
+  --update-folder           \u8986\u76D6\u5DF2\u5B58\u5728\u63A5\u53E3\u65F6\u540C\u6B65\u66F4\u65B0\u5176\u76EE\u5F55\uFF08\u9ED8\u8BA4\u5F00\u542F\uFF09
+  --no-update-folder        \u4FDD\u6301\u5DF2\u5B58\u5728\u63A5\u53E3\u7684\u539F\u76EE\u5F55\uFF0C\u4E0D\u968F tag/rootFolderName \u8FC1\u79FB
   --timeout-ms <ms>         \u7B49\u5F85\u4E0A\u9650\uFF0C\u9ED8\u8BA4 300000\uFF1B\u9996\u6B21\u5168\u91CF\u5BFC\u5165\u504F\u6162\uFF0C\u53EF\u8C03\u5927
 ${FILTER_HELP}
 ${HELP_FLAG}

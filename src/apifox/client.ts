@@ -17,6 +17,8 @@ export interface ImportOptions {
   endpointOverwriteBehavior?: "OVERWRITE_EXISTING" | "AUTO_MERGE" | "KEEP_EXISTING" | "CREATE_NEW";
   schemaOverwriteBehavior?: "OVERWRITE_EXISTING" | "AUTO_MERGE" | "KEEP_EXISTING" | "CREATE_NEW";
   deleteUnmatchedResources?: boolean;
+  /** 覆盖已存在的接口时,是否同步更新其所在目录(对应 Apifox 导入的「更新接口所在目录」) */
+  updateFolderOfChangedEndpoint?: boolean;
 }
 
 export interface ImportResult {

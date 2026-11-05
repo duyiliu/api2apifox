@@ -173,7 +173,8 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 ### 同步到 Apifox
 
-- 目录命名来源可配(`@Tag` 注解值或 Controller 类名),可选根目录与数据模型目录(自动创建)
+- 目录命名来源可配(`@Tag` 注解值或 Controller 类名),可选根目录与数据模型目录(自动创建);目录值含 `/` 时按多级目录导入(`x-apifox-folder` 官方语义)
+- 默认会把已存在接口的目录同步成最新 `x-apifox-folder`(对应 Apifox 导入选项 `updateFolderOfChangedEndpoint`);关掉该开关则只更新接口内容,不迁移目录
 - 冲突策略可配:覆盖 / 自动合并 / 保留现有 / 新建
 - 同步完成后打开「同步结果」面板:导入计数按「接口 / 数据模型 / 目录 × 新增 / 更新 / 忽略 / 失败」成表,并列出本次同步的接口清单(名称 / 方法 / 路径 / 目录 / 源文件),支持排序、过滤与一键复制(TSV / Markdown);通知栏保留一行摘要,可点「查看结果表」重新打开面板(命令 `查看上次同步结果`)
 
@@ -220,7 +221,8 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |
 | `apifoxHelper.maxDependencyJars` | `120` | 依赖 jar 解析总数上限(直接 + 传递依赖);超出按依赖距离丢弃并提示,`0` 表示不做依赖解析 |
-| `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建) |
+| `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建);目录名可含 `/` 表示多级 |
+| `apifoxHelper.updateFolderOfChangedEndpoint` | `true` | 覆盖已存在接口时同步更新其目录(对应 Apifox 导入的「更新接口所在目录」);关闭后改 `@Tag`/`rootFolderName` 不会迁移已同步接口 |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 
 > 设置中心保存的项目绑定(`projectId`/`projectName`/`teamName`/`apiBaseUrl` 等)写入**工作区** `.vscode/settings.json`,会随仓库提交共享给团队(便于成员共用同一目标项目);访问令牌始终存在系统 SecretStorage,不落任何文件。

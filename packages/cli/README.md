@@ -77,12 +77,17 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
+  "rootFolderName": "",
+  "updateFolderOfChangedEndpoint": true,
   "helperProperties": {
     "enabled": true,
     "enumFieldDoc": false
   }
 }
 ```
+
+> `rootFolderName` 与 tag 值都可以含 `/`，导入后按多级目录创建（如 `专案工作站/营养性疾病专案`）。
+> `updateFolderOfChangedEndpoint` 默认 `true`：覆盖已存在接口时同步更新其目录；设为 `false` 则只更新接口内容、不迁移目录。
 
 > `$schema` 只用于编辑器补全与校验，可删掉这一行，不影响 CLI 运行。
 

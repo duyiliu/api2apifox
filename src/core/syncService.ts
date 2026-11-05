@@ -28,6 +28,7 @@ export async function syncProject(request: SyncProjectRequest): Promise<SyncResu
     endpointOverwriteBehavior: config.endpointConflictBehavior,
     schemaOverwriteBehavior: config.schemaConflictBehavior,
     deleteUnmatchedResources: false,
+    updateFolderOfChangedEndpoint: config.updateFolderOfChangedEndpoint,
   });
   return { ...base, counters: imported.counters, errors: imported.errors };
 }

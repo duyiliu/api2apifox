@@ -24,6 +24,8 @@ export interface ResolvedConfig {
   pageTypeStyle: "mybatis-plus" | "spring-data";
   folderNameSource: "tag" | "controller";
   rootFolderName: string;
+  /** 覆盖已存在接口时,是否按 x-apifox-folder 同步更新其目录 */
+  updateFolderOfChangedEndpoint: boolean;
   schemaFolderId: number;
   helperPropertiesEnabled: boolean;
   enumFieldDoc: boolean;

@@ -286,6 +286,7 @@ export async function syncToApifox(
         targetSchemaFolderId: schemaFolderId,
         endpointOverwriteBehavior: settings.endpointConflictBehavior as never,
         schemaOverwriteBehavior: settings.schemaConflictBehavior as never,
+        updateFolderOfChangedEndpoint: settings.updateFolderOfChangedEndpoint,
       });
     }
   );

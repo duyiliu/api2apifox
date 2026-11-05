@@ -239,6 +239,7 @@ function configOverrides(options: CliOptions): ConfigOverrides {
     maxDependencyJars: options.dependencyMaxJars,
     exportPath: options.output,
     timeoutMs: options.timeoutMs,
+    updateFolderOfChangedEndpoint: options.updateFolderOfChangedEndpoint,
   };
 }
 
@@ -428,6 +429,8 @@ ${COMMON_HELP}
   --token <token>           Apifox 访问令牌，推荐改用 API2APIFOX_TOKEN 环境变量
   --endpoint-conflict <模式> 接口冲突处理：OVERWRITE_EXISTING | AUTO_MERGE | KEEP_EXISTING | CREATE_NEW
   --schema-conflict <模式>   数据模型冲突处理：取值同上
+  --update-folder           覆盖已存在接口时同步更新其目录（默认开启）
+  --no-update-folder        保持已存在接口的原目录，不随 tag/rootFolderName 迁移
   --timeout-ms <ms>         等待上限，默认 300000；首次全量导入偏慢，可调大
 ${FILTER_HELP}
 ${HELP_FLAG}

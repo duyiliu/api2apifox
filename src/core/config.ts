@@ -18,6 +18,7 @@ interface FileConfig {
   pageTypeStyle?: unknown;
   folderNameSource?: unknown;
   rootFolderName?: unknown;
+  updateFolderOfChangedEndpoint?: unknown;
   schemaFolderId?: unknown;
   helperProperties?: unknown;
   dependencyRepos?: unknown;
@@ -41,6 +42,7 @@ export interface ConfigOverrides {
   pageTypeStyle?: "mybatis-plus" | "spring-data";
   folderNameSource?: "tag" | "controller";
   rootFolderName?: string;
+  updateFolderOfChangedEndpoint?: boolean;
   schemaFolderId?: number;
   helperPropertiesEnabled?: boolean;
   enumFieldDoc?: boolean;
@@ -95,6 +97,9 @@ export function resolveConfig(
     pageTypeStyle: "mybatis-plus",
     folderNameSource: "tag",
     rootFolderName: "",
+    // 默认同步目录:改 tag/rootFolderName 后,已存在接口的目录也跟着迁移
+    // (对应 Apifox 导入选项 updateFolderOfChangedEndpoint)
+    updateFolderOfChangedEndpoint: true,
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
@@ -126,6 +131,7 @@ export function resolveConfig(
   applyFile(config, sources, "pageTypeStyle", enumValue(fileConfig.pageTypeStyle, "pageTypeStyle", ["mybatis-plus", "spring-data"], diagnostics), fileSource);
   applyFile(config, sources, "folderNameSource", enumValue(fileConfig.folderNameSource, "folderNameSource", ["tag", "controller"], diagnostics), fileSource);
   applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+  applyFile(config, sources, "updateFolderOfChangedEndpoint", booleanValue(fileConfig.updateFolderOfChangedEndpoint, "updateFolderOfChangedEndpoint", diagnostics), fileSource);
   applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
@@ -188,6 +194,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
     "pageTypeStyle",
     "folderNameSource",
     "rootFolderName",
+    "updateFolderOfChangedEndpoint",
     "schemaFolderId",
     "helperProperties",
     "dependencyRepos",

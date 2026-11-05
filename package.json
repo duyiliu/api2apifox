@@ -430,6 +430,11 @@
           "default": "",
           "description": "可选。所有接口目录放到该父目录下(不存在则自动创建),留空则直接放在项目根。"
         },
+        "apifoxHelper.updateFolderOfChangedEndpoint": {
+          "type": "boolean",
+          "default": true,
+          "description": "覆盖已存在的接口时,同步更新其所在目录(对应 Apifox 导入的「更新接口所在目录」)。关闭后,改 @Tag/rootFolderName 不会迁移已同步接口的目录。"
+        },
         "apifoxHelper.schemaFolderId": {
           "type": "number",
           "default": 0,
