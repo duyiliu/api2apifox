@@ -169,7 +169,7 @@ api2apifox scan --project . --include "**/src/main/java/**/*.java" --exclude "**
   "schemaVersion": 1,
   "ok": true,
   "command": "scan",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "durationMs": 1234,
   "result": { "...": "命令特定的字段" },
   "warnings": []

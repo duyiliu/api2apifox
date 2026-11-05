@@ -8447,7 +8447,7 @@ var require_package = __commonJS({
   "package.json"(exports2, module2) {
     module2.exports = {
       name: "@duyiliu/api2apifox",
-      version: "0.4.2",
+      version: "0.5.0",
       private: true,
       description: "Internal CLI runtime source for the api2apifox Skill (not published to npm)",
       license: "MIT",

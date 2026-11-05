@@ -2,7 +2,7 @@
   "name": "api2apifox",
   "displayName": "api2apifox",
   "description": "零配置、全自动将 Java 项目 Controller/OpenAPI 接口同步至 Apifox 的 Java 接口解析与 Apifox 同步工具,全功能替代 IntelliJ Apifox Helper 插件",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "workspaces": [
     "packages/cli"
