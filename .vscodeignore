@@ -18,3 +18,12 @@ work/**
 *.vsix
 openapi.gen.json
 npm-debug.log
+
+# 测试与变异测试产物:不得进入发布包
+reports/**
+coverage/**
+logs/**
+.stryker-tmp/**
+stryker*
+# test-electron 下载的 VS Code 与测试 profile(体量大,仅本地测试用)
+.vscode-test/**
