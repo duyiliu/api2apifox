@@ -31,7 +31,6 @@ test("classDescription:无任何来源返回 undefined", () => {
   assert.equal(classDescription([], undefined), undefined);
 });
 
-
 test("splitTopLevel 忽略括号/字符串内逗号", () => {
   assert.deepEqual(splitTopLevel('a, {b, c}, "x,y"'), ["a", " {b, c}", ' "x,y"']);
 });

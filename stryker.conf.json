@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "tap",
+  "tap": {
+    "testFiles": [
+      "out/test/*.test.js"
+    ],
+    "forceBail": false
+  },
+  "mutate": [
+    "out/pipeline.js",
+    "out/core/syncService.js",
+    "out/core/config.js",
+    "out/openapi/builder.js",
+    "out/apifox/client.js",
+    "out/java/jarIndex.js",
+    "out/java/controllerParser.js",
+    "out/java/schemaResolver.js"
+  ],
+  "inPlace": true,
+  "ignorePatterns": [
+    ".probe",
+    "reports",
+    ".stryker-tmp"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json",
+    "html"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "timeoutMS": 30000,
+  "timeoutFactor": 2,
+  "concurrency": 4,
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  },
+  "disableTypeChecks": false
+}

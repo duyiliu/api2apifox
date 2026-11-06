@@ -1,0 +1,637 @@
+groups 318 rows 486
+[11] Regex || ^([+-]?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?))[lLdDfF]?$/.
+      L672: const m = /^([+-]?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?))[lLdDfF]?$/.exec(s);
+[9] StringLiteral || string",
+      L400: Date: { type: "string", format: "date-time" },
+[8] StringLiteral || integer",
+      L377: short: { type: "integer", format: "int32" },
+[6] StringLiteral || int32" 
+      L375: int: { type: "integer", format: "int32" },
+[6] StringLiteral || number",
+      L384: float: { type: "number", format: "float" },
+[6] ConditionalExpression || cond.supported)
+      L782: if (!cond.supported) {
+[6] BlockStatement ||  continue; }
+      L815: if (!cond.supported || !cond.hit) {
+[5] ObjectLiteral ||  type: "string" },
+      L392: char: { type: "string" },
+[5] StringLiteral || string" 
+      L392: char: { type: "string" },
+[5] ObjectLiteral ||  type: "string", format: "date-time" },
+      L400: Date: { type: "string", format: "date-time" },
+[5] StringLiteral || date-time" 
+      L400: Date: { type: "string", format: "date-time" },
+[5] StringLiteral || object",
+      L426: type: "object",
+[5] ConditionalExpression || cond.hit)
+      L786: if (!cond.hit) {
+[5] MethodExpression || .value.trim())
+      L819: if (v.matched && v.value !== undefined && v.value.trim()) {
+[4] StringLiteral || array",
+      L172: return { type: "array", items: resolveType({ ...t, dims: t.dims - 1 }, ctx) };
+[4] ObjectLiteral ||  type: "integer", format: "int32" },
+      L377: short: { type: "integer", format: "int32" },
+[4] ConditionalExpression || cond.supported || !cond.hit)
+      L815: if (!cond.supported || !cond.hit) {
+[4] LogicalOperator || .skipped && v.reason)
+      L852: if (v.skipped && v.reason) {
+[3] StringLiteral || ,")
+      L23: return "[" + value.map(stableStringify).join(",") + "]";
+[3] StringLiteral || value")
+      L247: const d1 = schema ? (0, model_1.annStr)(schema.args, "description", "value") : undefined;
+[3] StringLiteral || int64" 
+      L381: long: { type: "integer", format: "int64" },
+[3] ObjectLiteral ||  type: "object" },
+      L396: Object: { type: "object" },
+[3] StringLiteral || object" 
+      L396: Object: { type: "object" },
+[3] ObjectLiteral ||  ...int64, description: "总记录数" },
+      L430: total: { ...int64, description: "总记录数" },
+[3] StringLiteral || 总记录数" 
+      L430: total: { ...int64, description: "总记录数" },
+[3] StringLiteral || 当前页数据" 
+      L431: list: { type: "array", items: itemType(), description: "当前页数据" },
+[3] StringLiteral || 每页条数" 
+      L433: pageSize: { ...int32, description: "每页条数" },
+[3] StringLiteral || 总页数" 
+      L434: pages: { ...int32, description: "总页数" },
+[3] ConditionalExpression || sString)
+      L601: else if (isString) {
+[3] ConditionalExpression || sArray)
+      L593: if (isArray) {
+[3] LogicalOperator || cond.supported || !cond.hit)
+      L815: if (!cond.supported || !cond.hit) {
+[3] ConditionalExpression || .matched && v.value !== undefined && v.value.trim())
+      L819: if (v.matched && v.value !== undefined && v.value.trim()) {
+[3] LogicalOperator || .matched && v.value !== undefined 
+      L819: if (v.matched && v.value !== undefined && v.value.trim()) {
+[3] ConditionalExpression || .value !== undefined 
+      L819: if (v.matched && v.value !== undefined && v.value.trim()) {
+[3] ConditionalExpression || .matched)
+      L833: if (v.matched) {
+[3] ConditionalExpression || .skipped && v.reason)
+      L852: if (v.skipped && v.reason) {
+[2] BooleanLiteral || rue 
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[2] ConditionalExpression ||  < b 
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[2] EqualityOperator ||  < b 
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[2] ConditionalExpression ||  > b 
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[2] EqualityOperator ||  > b 
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[2] BooleanLiteral || rue;
+      L77: pending.referenced = true;
+[2] ConditionalExpression || clone.type)
+      L130: if (!clone.type) {
+[2] ConditionalExpression || .dims > 0)
+      L171: if (t.dims > 0) {
+[2] OptionalChaining || tx.fieldWarnings?.push(
+      L197: ctx.fieldWarnings?.push(`未识别的类型 ${t.name},按 object 输出(检查扫描范围/依赖 jar 索引)`);
+[2] ConditionalExpression || esc)
+      L266: if (desc) {
+[2] ConditionalExpression || chema.nullable)
+      L329: if (schema.nullable) {
+[2] StringLiteral || NotEmpty")
+      L352: !!(0, model_1.findAnn)(field.annotations, "NotNull", "NotBlank", "NotEmpty") ||
+[2] ObjectLiteral ||  type: "integer", format: "int64" },
+      L381: long: { type: "integer", format: "int64" },
+[2] ObjectLiteral ||  type: "number", format: "float" },
+      L384: float: { type: "number", format: "float" },
+[2] StringLiteral || float" 
+      L384: float: { type: "number", format: "float" },
+[2] ObjectLiteral ||  type: "number", format: "double" },
+      L386: double: { type: "number", format: "double" },
+[2] StringLiteral || double" 
+      L386: double: { type: "number", format: "double" },
+[2] StringLiteral || boolean" 
+      L390: boolean: { type: "boolean" },
+[2] StringLiteral || 当前页码" 
+      L432: pageNum: { ...int32, description: "当前页码" },
+[2] ObjectLiteral ||  ...int32, description: "每页条数" },
+      L433: pageSize: { ...int32, description: "每页条数" },
+[2] ObjectLiteral ||  ...int32, description: "总页数" },
+      L434: pages: { ...int32, description: "总页数" },
+[2] ObjectLiteral ||  ...bool, description: "是否首页" },
+      L437: isFirstPage: { ...bool, description: "是否首页" },
+[2] StringLiteral || 是否首页" 
+      L437: isFirstPage: { ...bool, description: "是否首页" },
+[2] StringLiteral || 是否末页" 
+      L438: isLastPage: { ...bool, description: "是否末页" },
+[2] ObjectLiteral ||  ...bool, description: "是否末页" },
+      L438: isLastPage: { ...bool, description: "是否末页" },
+[2] StringLiteral || Page«${t.args[0] ? (0, typeText_1.typeToKeyText)(t.args[0]) : "Object"}»`,
+      L469: title: `Page«${t.args[0] ? (0, typeText_1.typeToKeyText)(t.args[0]) : "Object"}»`,
+[2] ObjectLiteral ||  type: "array", items: itemType(), description: "当前页数据" },
+      L472: content: { type: "array", items: itemType(), description: "当前页数据" },
+[2] StringLiteral || hidden")
+      L560: if (schema && (0, model_1.annBool)(schema.args, "hidden") === true) {
+[2] StringLiteral || ApiModelProperty")
+      L563: const modelProp = (0, model_1.findAnn)(annotations, "ApiModelProperty");
+[2] StringLiteral || Positive",
+      L573: "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+[2] StringLiteral || Negative",
+      L574: "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+[2] StringLiteral || NotBlank",
+      L574: "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+[2] ConditionalExpression || 0, model_1.findAnn)(annotations, "NotBlank", "NotEmpty"))
+      L658: if ((0, model_1.findAnn)(annotations, "NotBlank", "NotEmpty")) {
+[2] ConditionalExpression || m)
+      L673: if (!m) {
+[2] Regex || ^([a-zA-Z]+)(?::([a-zA-Z0-9._-]+))?$/.
+      L726: const m = /^([a-zA-Z]+)(?::([a-zA-Z0-9._-]+))?$/.exec(raw.trim());
+[2] Regex || \s+/g,
+      L746: fieldType: field.typeText.replace(/\s+/g, ""),
+[2] StringLiteral || ")
+      L746: fieldType: field.typeText.replace(/\s+/g, ""),
+[2] ConditionalExpression || yn.type === "literal")
+      L791: if (syn.type === "literal") {
+[2] BooleanLiteral || alse;
+      L790: let ignoreNow = false;
+[2] BlockStatement ||  return result; }
+      L806: if (result.ignored) {
+[2] ConditionalExpression || esult.ignored)
+      L806: if (result.ignored) {
+[2] ConditionalExpression || .key !== "field.required")
+      L825: if (e.key !== "field.required") {
+[2] LogicalOperator || v.matched || v.value === undefined 
+      L856: if (!v.matched || v.value === undefined || !v.value.trim()) {
+[2] ConditionalExpression || .value === undefined 
+      L856: if (!v.matched || v.value === undefined || !v.value.trim()) {
+[2] ConditionalExpression || nfo?.kind === "enum",
+      L926: isEnum: info?.kind === "enum",
+[2] ConditionalExpression || .length > n 
+      L1034: return s.length > n ? s.slice(0, n) + "…" : s;
+[2] EqualityOperator || .length > n 
+      L1034: return s.length > n ? s.slice(0, n) + "…" : s;
+[1] StringLiteral || __esModule",
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[1] ObjectLiteral ||  value: true })
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[1] ConditionalExpression || alue === null || typeof value !== "object")
+      L19: if (value === null || typeof value !== "object") {
+[1] ConditionalExpression || alue === null 
+      L19: if (value === null || typeof value !== "object") {
+[1] EqualityOperator || alue === null 
+      L19: if (value === null || typeof value !== "object") {
+[1] EqualityOperator || ypeof value !== "object")
+      L19: if (value === null || typeof value !== "object") {
+[1] StringLiteral || object")
+      L19: if (value === null || typeof value !== "object") {
+[1] BlockStatement ||  return "[" + value.map(stableStringify).join(",") + "]"; }
+      L22: if (Array.isArray(value)) {
+[1] StringLiteral || [" 
+      L23: return "[" + value.map(stableStringify).join(",") + "]";
+[1] ConditionalExpression || rray.isArray(value))
+      L22: if (Array.isArray(value)) {
+[1] StringLiteral || ]";
+      L23: return "[" + value.map(stableStringify).join(",") + "]";
+[1] MethodExpression || bject.entries(value) .filter(([, v]) => v !== undefined)
+      L25: const entries = Object.entries(value)
+[1] MethodExpression || bject.entries(value) .filter(([, v]) => v !== undefined) .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      L25: const entries = Object.entries(value)
+[1] ConditionalExpression ||  !== undefined)
+      L26: .filter(([, v]) => v !== undefined)
+[1] ArrowFunction || [a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[1] UnaryOperator || 1 
+      L27: .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+[1] StringLiteral || {" 
+      L28: return "{" + entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",") + "}";
+[1] StringLiteral || }";
+      L28: return "{" + entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",") + "}";
+[1] ConditionalExpression || schema.$ref)
+      L39: if (!schema.$ref) {
+[1] BlockStatement ||  return { ...schema, ...additions }; }
+      L39: if (!schema.$ref) {
+[1] ConditionalExpression || hape !== undefined
+      L87: const equivalent = shape !== undefined
+[1] ConditionalExpression || equivalent)
+      L91: if (!equivalent) {
+[1] BlockStatement ||  this.pending.delete(identity); }
+      L101: finally {
+[1] CallExpression || his.pending.delete(identity);
+      L102: this.pending.delete(identity);
+[1] BooleanLiteral || clone.type)
+      L130: if (!clone.type) {
+[1] CallExpression || his.nullablePending.delete(baseName);
+      L140: this.nullablePending.delete(baseName);
+[1] ConditionalExpression || name)
+      L137: if (!name) {
+[1] ConditionalExpression || arget)
+      L142: if (target) {
+[1] BlockStatement ||  return; }
+      L137: if (!name) {
+[1] UpdateOperator || ++)
+      L153: for (let n = 1;; n++) {
+[1] ArrayDeclaration || ];
+      L152: const candidates = [];
+[1] BlockStatement ||  return { type: "array", items: resolveType({ ...t, dims: t.dims - 1 }, ctx) }; }
+      L171: if (t.dims > 0) {
+[1] ObjectLiteral ||  type: "array", items: resolveType({ ...t, dims: t.dims - 1 }, ctx) };
+      L172: return { type: "array", items: resolveType({ ...t, dims: t.dims - 1 }, ctx) };
+[1] CallExpression || indings.delete(name);
+      L179: bindings.delete(name);
+[1] ConditionalExpression || warned.has(t.name))
+      L195: if (!warned.has(t.name)) {
+[1] CallExpression || arned.add(t.name);
+      L196: warned.add(t.name);
+[1] StringLiteral || 未识别的类型: ${t.name}` 
+      L199: return { type: "object", description: `未识别的类型: ${t.name}` };
+[1] ConditionalExpression || nstance.args[i])
+      L208: if (instance.args[i]) {
+[1] ArithmeticOperator || esolved.dims + t.dims,
+      L220: return { ...resolved, dims: resolved.dims + t.dims, wildcard: t.wildcard ?? resolved.wildcard };
+[1] LogicalOperator || .wildcard ?? resolved.wildcard 
+      L220: return { ...resolved, dims: resolved.dims + t.dims, wildcard: t.wildcard ?? resolved.wildcard };
+[1] ConditionalExpression || RIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) 
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] LogicalOperator || RIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) || ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "Pa
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] ConditionalExpression || RIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) || ["ResponseEntity", "Mono", "Flux", "Optional", "Page"
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] LogicalOperator || RIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) 
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] ArrayDeclaration || "ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] ConditionalExpression || RIMITIVES[name] || COLLECTIONS.has(name) 
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] LogicalOperator || RIMITIVES[name] || COLLECTIONS.has(name) 
+      L223: const builtin = PRIMITIVES[name] || COLLECTIONS.has(name) || MAPS.has(name) ||
+[1] StringLiteral || ResponseEntity",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || Optional",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || Flux",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || Mono",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || Page",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || Slice",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || IPage",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || PageImpl",
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || PageInfo"]
+      L224: ["ResponseEntity", "Mono", "Flux", "Optional", "Page", "PageImpl", "Slice", "IPage", "PageInfo"].includes(name);
+[1] StringLiteral || description")
+      L253: const d2 = apiModel ? (0, model_1.annStr)(apiModel.args, "value", "description") : undefined;
+[1] MethodExpression || ext.trim() 
+      L258: return text && text.trim() ? text : undefined;
+[1] LogicalOperator || avadoc?.description || javadoc?.firstLine;
+      L257: const text = javadoc?.description || javadoc?.firstLine;
+[1] ConditionalExpression || ext && text.trim() 
+      L258: return text && text.trim() ? text : undefined;
+[1] ConditionalExpression || nfo.enumConstants.length)
+      L262: if (info.enumConstants.length) {
+[1] BlockStatement ||  schema.description = desc; }
+      L266: if (desc) {
+[1] ConditionalExpression || upInfo && supInfo.kind !== "enum")
+      L282: if (supInfo && supInfo.kind !== "enum") {
+[1] LogicalOperator || upInfo && supInfo.kind !== "enum")
+      L282: if (supInfo && supInfo.kind !== "enum") {
+[1] ConditionalExpression || upInfo.kind !== "enum")
+      L282: if (supInfo && supInfo.kind !== "enum") {
+[1] StringLiteral || enum")
+      L282: if (supInfo && supInfo.kind !== "enum") {
+[1] ConditionalExpression || upRef.args[i])
+      L285: if (supRef.args[i]) {
+[1] ArrayDeclaration || ])
+      L291: required.push(...(supSchema.required ?? []));
+[1] ConditionalExpression || 0, model_1.findAnn)(field.annotations, "JsonIgnore"))
+      L300: if ((0, model_1.findAnn)(field.annotations, "JsonIgnore")) {
+[1] StringLiteral || JsonIgnore")
+      L300: if ((0, model_1.findAnn)(field.annotations, "JsonIgnore")) {
+[1] ConditionalExpression || sHidden(field.annotations))
+      L303: if (isHidden(field.annotations)) {
+[1] StringLiteral || JsonProperty")
+      L314: const jsonProp = (0, model_1.findAnn)(field.annotations, "JsonProperty");
+[1] StringLiteral || SerializedName")
+      L315: const gsonName = (0, model_1.findAnn)(field.annotations, "SerializedName");
+[1] ConditionalExpression || ule.typeOverride.format)
+      L326: if (rule.typeOverride.format) {
+[1] LogicalOperator || jsonProp ? (0, model_1.annStr)(jsonProp.args, "value", "name") : undefined) ?? (gsonName ? (0, model_1.annStr)(gsonName.
+      L318: ((jsonProp ? (0, model_1.annStr)(jsonProp.args, "value", "name") : undefined) ??
+[1] ConditionalExpression || 0, model_1.annBool)(jsonProp?.args ?? {}, "required") === true 
+      L351: let isRequired = (0, model_1.annBool)(jsonProp?.args ?? {}, "required") === true ||
+[1] StringLiteral || required")
+      L351: let isRequired = (0, model_1.annBool)(jsonProp?.args ?? {}, "required") === true ||
+[1] ConditionalExpression || 0, model_1.annBool)(apiProp.args, "required") === true 
+      L353: (apiProp ? (0, model_1.annBool)(apiProp.args, "required") === true : false) ||
+[1] ConditionalExpression || ule.required !== undefined)
+      L356: if (rule.required !== undefined) {
+[1] ConditionalExpression || equired.length)
+      L369: if (required.length) {
+[1] ObjectLiteral ||  type: "number" },
+      L389: Number: { type: "number" },
+[1] StringLiteral || number" 
+      L389: Number: { type: "number" },
+[1] ObjectLiteral ||  type: "boolean" },
+      L390: boolean: { type: "boolean" },
+[1] ObjectLiteral ||  type: "string", format: "binary" },
+      L409: MultipartFile: { type: "string", format: "binary" },
+[1] StringLiteral || binary" 
+      L409: MultipartFile: { type: "string", format: "binary" },
+[1] ObjectLiteral ||  type: "string", format: "uuid" },
+      L410: UUID: { type: "string", format: "uuid" },
+[1] StringLiteral || uuid" 
+      L410: UUID: { type: "string", format: "uuid" },
+[1] StringLiteral || ArrayList",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || LinkedList",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || Collection",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || Set",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || HashSet",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || LinkedHashSet",
+      L413: "List", "ArrayList", "LinkedList", "Collection", "Set", "HashSet", "LinkedHashSet",
+[1] StringLiteral || TreeSet",
+      L414: "TreeSet", "Iterable", "Queue", "Deque", "Stack",
+[1] StringLiteral || Iterable",
+      L414: "TreeSet", "Iterable", "Queue", "Deque", "Stack",
+[1] StringLiteral || Queue",
+      L414: "TreeSet", "Iterable", "Queue", "Deque", "Stack",
+[1] StringLiteral || Deque",
+      L414: "TreeSet", "Iterable", "Queue", "Deque", "Stack",
+[1] StringLiteral || Stack",
+      L414: "TreeSet", "Iterable", "Queue", "Deque", "Stack",
+[1] StringLiteral || HashMap",
+      L416: const MAPS = new Set(["Map", "HashMap", "TreeMap", "LinkedHashMap", "ConcurrentHashMap", "SortedMap"]);
+[1] StringLiteral || TreeMap",
+      L416: const MAPS = new Set(["Map", "HashMap", "TreeMap", "LinkedHashMap", "ConcurrentHashMap", "SortedMap"]);
+[1] StringLiteral || LinkedHashMap",
+      L416: const MAPS = new Set(["Map", "HashMap", "TreeMap", "LinkedHashMap", "ConcurrentHashMap", "SortedMap"]);
+[1] StringLiteral || ConcurrentHashMap",
+      L416: const MAPS = new Set(["Map", "HashMap", "TreeMap", "LinkedHashMap", "ConcurrentHashMap", "SortedMap"]);
+[1] StringLiteral || SortedMap"]
+      L416: const MAPS = new Set(["Map", "HashMap", "TreeMap", "LinkedHashMap", "ConcurrentHashMap", "SortedMap"]);
+[1] ObjectLiteral ||  type: "integer", format: "int64" };
+      L420: const int64 = { type: "integer", format: "int64" };
+[1] ObjectLiteral ||  type: "integer", format: "int32" };
+      L421: const int32 = { type: "integer", format: "int32" };
+[1] ObjectLiteral ||  type: "boolean" };
+      L422: const bool = { type: "boolean" };
+[1] StringLiteral || PageInfo«${t.args[0] ? (0, typeText_1.typeToKeyText)(t.args[0]) : "Object"}»`,
+      L427: title: `PageInfo«${t.args[0] ? (0, typeText_1.typeToKeyText)(t.args[0]) : "Object"}»`,
+[1] StringLiteral || 分页数据(PageHelper)",
+      L428: description: "分页数据(PageHelper)",
+[1] ObjectLiteral ||  ...int32, description: "当前页码" },
+      L432: pageNum: { ...int32, description: "当前页码" },
+[1] StringLiteral || 上一页页码" 
+      L435: prePage: { ...int32, description: "上一页页码" },
+[1] ObjectLiteral ||  ...int32, description: "上一页页码" },
+      L435: prePage: { ...int32, description: "上一页页码" },
+[1] ObjectLiteral ||  ...int32, description: "下一页页码" },
+      L436: nextPage: { ...int32, description: "下一页页码" },
+[1] StringLiteral || 下一页页码" 
+      L436: nextPage: { ...int32, description: "下一页页码" },
+[1] StringLiteral || 是否有上一页" 
+      L439: hasPreviousPage: { ...bool, description: "是否有上一页" },
+[1] ObjectLiteral ||  ...bool, description: "是否有上一页" },
+      L439: hasPreviousPage: { ...bool, description: "是否有上一页" },
+[1] ObjectLiteral ||  ...bool, description: "是否有下一页" },
+      L440: hasNextPage: { ...bool, description: "是否有下一页" },
+[1] StringLiteral || 是否有下一页" 
+      L440: hasNextPage: { ...bool, description: "是否有下一页" },
+[1] ConditionalExpression || ame === "IPage")
+      L445: if (name === "IPage") {
+[1] StringLiteral || IPage")
+      L445: if (name === "IPage") {
+[1] ConditionalExpression || ame === "PageImpl" 
+      L460: if (name === "Page" || name === "PageImpl" || name === "Slice") {
+[1] StringLiteral || PageImpl" 
+      L460: if (name === "Page" || name === "PageImpl" || name === "Slice") {
+[1] ConditionalExpression || ame === "Slice")
+      L460: if (name === "Page" || name === "PageImpl" || name === "Slice") {
+[1] StringLiteral || Slice")
+      L460: if (name === "Page" || name === "PageImpl" || name === "Slice") {
+[1] ConditionalExpression || ame === "Slice"
+      L461: const style = name === "Slice"
+[1] StringLiteral || Slice"
+      L461: const style = name === "Slice"
+[1] OptionalChaining || tx.options?.pageStyle 
+      L463: : ctx.options?.pageStyle === "spring-data"
+[1] StringLiteral || mybatis-plus";
+      L465: : "mybatis-plus";
+[1] StringLiteral || 分页数据(Spring Data)",
+      L470: description: "分页数据(Spring Data)",
+[1] StringLiteral || 当前页码(0 基)" 
+      L475: number: { ...int32, description: "当前页码(0 基)" },
+[1] ObjectLiteral ||  ...int32, description: "当前页码(0 基)" },
+      L475: number: { ...int32, description: "当前页码(0 基)" },
+[1] StringLiteral || 当前页实际条数" 
+      L477: numberOfElements: { ...int32, description: "当前页实际条数" },
+[1] ObjectLiteral ||  ...int32, description: "当前页实际条数" },
+      L477: numberOfElements: { ...int32, description: "当前页实际条数" },
+[1] ObjectLiteral ||  ...bool, description: "是否为空" },
+      L480: empty: { ...bool, description: "是否为空" },
+[1] StringLiteral || 是否为空" 
+      L480: empty: { ...bool, description: "是否为空" },
+[1] StringLiteral || 分页数据(MyBatis-Plus)",
+      L487: description: "分页数据(MyBatis-Plus)",
+[1] ObjectLiteral ||  ...int64, description: "当前页码" },
+      L492: current: { ...int64, description: "当前页码" },
+[1] ObjectLiteral ||  ...int64, description: "每页条数" },
+      L491: size: { ...int64, description: "每页条数" },
+[1] ObjectLiteral ||  ...int64, description: "总页数" },
+      L493: pages: { ...int64, description: "总页数" },
+[1] ConditionalExpression || ref?.startsWith(prefix))
+      L508: if (!ref?.startsWith(prefix)) {
+[1] OptionalChaining || ef?.startsWith(
+      L508: if (!ref?.startsWith(prefix)) {
+[1] ConditionalExpression || ame === "ResponseEntity" || name === "Mono")
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] LogicalOperator || ame === "ResponseEntity" || name === "Mono")
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] ConditionalExpression || ame === "ResponseEntity" 
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] StringLiteral || ResponseEntity" 
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] ConditionalExpression || ame === "Mono")
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] StringLiteral || Mono")
+      L525: if (name === "ResponseEntity" || name === "Mono") {
+[1] ConditionalExpression || ame === "Flux")
+      L528: if (name === "Flux") {
+[1] ConditionalExpression || ullableRef)
+      L536: if (nullableRef) {
+[1] StringLiteral || Flux")
+      L528: if (name === "Flux") {
+[1] ConditionalExpression || allback && fallback.trim() 
+      L555: return fallback && fallback.trim() ? fallback : undefined;
+[1] MethodExpression || allback.trim() 
+      L555: return fallback && fallback.trim() ? fallback : undefined;
+[1] BlockStatement ||  const schema = (0, model_1.findAnn)(annotations, "Schema"); if (schema && (0, model_1.annBool)(schema.args, "hidden") =
+      L558: function isHidden(annotations) {
+[1] StringLiteral || Schema")
+      L559: const schema = (0, model_1.findAnn)(annotations, "Schema");
+[1] ConditionalExpression || chema && (0, model_1.annBool)(schema.args, "hidden") === true)
+      L560: if (schema && (0, model_1.annBool)(schema.args, "hidden") === true) {
+[1] BooleanLiteral || rue)
+      L560: if (schema && (0, model_1.annBool)(schema.args, "hidden") === true) {
+[1] ConditionalExpression || !modelProp && (0, model_1.annBool)(modelProp.args, "hidden") === true;
+      L564: return !!modelProp && (0, model_1.annBool)(modelProp.args, "hidden") === true;
+[1] StringLiteral || Size",
+      L573: "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+[1] StringLiteral || DecimalMax",
+      L573: "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+[1] StringLiteral || PositiveOrZero",
+      L573: "Size", "Min", "Max", "DecimalMin", "DecimalMax", "Positive", "PositiveOrZero",
+[1] StringLiteral || NegativeOrZero",
+      L574: "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+[1] StringLiteral || NotEmpty",
+      L574: "Negative", "NegativeOrZero", "Pattern", "Email", "NotBlank", "NotEmpty",
+[1] ConditionalExpression || chema.type === "string";
+      L587: const isString = schema.type === "string";
+[1] ConditionalExpression || chema.$ref)
+      L582: if (schema.$ref) {
+[1] ConditionalExpression || chema.type === "array";
+      L588: const isArray = schema.type === "array";
+[1] StringLiteral || array";
+      L588: const isArray = schema.type === "array";
+[1] ConditionalExpression || in !== undefined)
+      L602: if (min !== undefined) {
+[1] ConditionalExpression || ax !== undefined)
+      L605: if (max !== undefined) {
+[1] ConditionalExpression ||  !== undefined 
+      L616: const num = v !== undefined ? javaNumberLiteral(v) : undefined;
+[1] ConditionalExpression || um === undefined)
+      L617: if (num === undefined) {
+[1] ConditionalExpression || nclusive === false)
+      L623: if (inclusive === false) {
+[1] ConditionalExpression || ey === "minimum")
+      L624: if (key === "minimum") {
+[1] StringLiteral || DecimalMax")
+      L635: range((0, model_1.findAnn)(annotations, "DecimalMax"), "maximum");
+[1] StringLiteral || maximum")
+      L635: range((0, model_1.findAnn)(annotations, "DecimalMax"), "maximum");
+[1] StringLiteral || PositiveOrZero")
+      L636: const positive = (0, model_1.findAnn)(annotations, "Positive", "PositiveOrZero");
+[1] ConditionalExpression || ositive)
+      L637: if (positive) {
+[1] StringLiteral || NegativeOrZero")
+      L643: const negative = (0, model_1.findAnn)(annotations, "Negative", "NegativeOrZero");
+[1] ConditionalExpression || egative)
+      L644: if (negative) {
+[1] ConditionalExpression || egexp)
+      L652: if (regexp) {
+[1] LogicalOperator || sString && (0, model_1.findAnn)(annotations, "Email"))
+      L655: if (isString && (0, model_1.findAnn)(annotations, "Email")) {
+[1] BlockStatement ||  if (isArray) { schema.minItems = schema.minItems ?? 1; } else if (isString) { schema.minLength = schema.minLength ?? 1;
+      L658: if ((0, model_1.findAnn)(annotations, "NotBlank", "NotEmpty")) {
+[1] BlockStatement ||  schema.minLength = schema.minLength ?? 1; }
+      L662: else if (isString) {
+[1] MethodExpression || aw.trim();
+      L670: const s = raw.trim();
+[1] ConditionalExpression || ypeof v === "number")
+      L681: if (typeof v === "number") {
+[1] ConditionalExpression || 1)
+      L693: if (e1) {
+[1] StringLiteral || example")
+      L697: return modelProp ? (0, model_1.annStr)(modelProp.args, "example") : undefined;
+[1] EqualityOperator || epth < 8;
+      L708: for (let depth = 0; depth < 8; depth++) {
+[1] UpdateOperator || epth++)
+      L708: for (let depth = 0; depth < 8; depth++) {
+[1] BlockStatement ||  t = { ...t, dims: t.dims - 1 }; continue; }
+      L709: if (t.dims > 0) {
+[1] EqualityOperator || .dims > 0)
+      L709: if (t.dims > 0) {
+[1] LogicalOperator || OLLECTIONS.has(name) && t.args[0])
+      L714: if (COLLECTIONS.has(name) && t.args[0]) {
+[1] ConditionalExpression || nfo.kind === "enum" 
+      L719: return info && info.kind === "enum" ? name : undefined;
+[1] StringLiteral || boolean",
+      L723: const FIELD_TYPE_OVERRIDABLE = new Set(["string", "integer", "number", "boolean", "object", "array"]);
+[1] StringLiteral || array"]
+      L723: const FIELD_TYPE_OVERRIDABLE = new Set(["string", "integer", "number", "boolean", "object", "array"]);
+[1] MethodExpression || aw.trim())
+      L726: const m = /^([a-zA-Z]+)(?::([a-zA-Z0-9._-]+))?$/.exec(raw.trim());
+[1] StringLiteral || ${classInfo.simpleName}.${field.name}`,
+      L742: subject: `${classInfo.simpleName}.${field.name}`,
+[1] ConditionalExpression || tx.options?.enumFieldDoc === true 
+      L761: const enumName = ctx.options?.enumFieldDoc === true ? enumTypeNameOf(field, ctx) : undefined;
+[1] OptionalChaining || tx.options?.enumFieldDoc 
+      L761: const enumName = ctx.options?.enumFieldDoc === true ? enumTypeNameOf(field, ctx) : undefined;
+[1] ConditionalExpression || .key !== "json.rule.field.ignore")
+      L778: if (e.key !== "field.ignore" && e.key !== "json.rule.field.ignore") {
+[1] StringLiteral || json.rule.field.ignore")
+      L778: if (e.key !== "field.ignore" && e.key !== "json.rule.field.ignore") {
+[1] BlockStatement ||  if (e.key !== "field.required") { continue; } const cond = (0, ruleEval_1.evalCondition)(e.cond, rctx, e.key, warn); if
+      L824: for (const e of entries) {
+[1] EqualityOperator || .key !== "field.required")
+      L825: if (e.key !== "field.required") {
+[1] BooleanLiteral || cond.supported 
+      L829: if (!cond.supported || !cond.hit) {
+[1] StringLiteral || field.required")
+      L825: if (e.key !== "field.required") {
+[1] BooleanLiteral || cond.hit)
+      L829: if (!cond.supported || !cond.hit) {
+[1] ConditionalExpression || .key !== "field.type" && e.key !== "json.rule.field.type")
+      L840: if (e.key !== "field.type" && e.key !== "json.rule.field.type") {
+[1] ConditionalExpression || .key !== "json.rule.field.type")
+      L840: if (e.key !== "field.type" && e.key !== "json.rule.field.type") {
+[1] EqualityOperator || .key !== "json.rule.field.type")
+      L840: if (e.key !== "field.type" && e.key !== "json.rule.field.type") {
+[1] StringLiteral || json.rule.field.type")
+      L840: if (e.key !== "field.type" && e.key !== "json.rule.field.type") {
+[1] ConditionalExpression || .key !== "field.description" 
+      L869: if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
+[1] StringLiteral || field.description" 
+      L869: if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
+[1] ConditionalExpression || .key !== "json.rule.field.description")
+      L869: if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
+[1] StringLiteral || json.rule.field.description")
+      L869: if (e.key !== "field.doc" && e.key !== "field.description" && e.key !== "json.rule.field.description") {
+[1] ConditionalExpression || ocRules.length)
+      L889: if (docRules.length) {
+[1] ConditionalExpression || d.includes(r.text))
+      L897: else if (!d.includes(r.text)) {
+[1] StringLiteral || \n" 
+      L898: d = d + "\n" + r.text;
+[1] LogicalOperator || .annotations ?? [],
+      L922: annotations: p.annotations ?? [],
+[1] StringLiteral || ${subject} 的参数 ${p.name}`,
+      L924: subject: `${subject} 的参数 ${p.name}`,
+[1] EqualityOperator || nfo?.kind === "enum",
+      L926: isEnum: info?.kind === "enum",
+[1] StringLiteral || enum",
+      L926: isEnum: info?.kind === "enum",
+[1] ConditionalExpression || nfo?.kind === "enum" 
+      L927: enumSimpleName: info?.kind === "enum" ? info.simpleName : undefined,
+[1] StringLiteral || enum" 
+      L927: enumSimpleName: info?.kind === "enum" ? info.simpleName : undefined,
+[1] ConditionalExpression || .value === "TRUE";
+      L978: result.required = v.value === "true" || v.value === "TRUE";
+[1] StringLiteral || TRUE";
+      L978: result.required = v.value === "true" || v.value === "TRUE";
+[1] ConditionalExpression || .key !== "param.type" && e.key !== "json.rule.param.type")
+      L983: if (e.key !== "param.type" && e.key !== "json.rule.param.type") {
+[1] ConditionalExpression || .key !== "json.rule.param.type")
+      L983: if (e.key !== "param.type" && e.key !== "json.rule.param.type") {
+[1] StringLiteral || json.rule.param.type")
+      L983: if (e.key !== "param.type" && e.key !== "json.rule.param.type") {
+[1] EqualityOperator || .key !== "json.rule.param.type")
+      L983: if (e.key !== "param.type" && e.key !== "json.rule.param.type") {
+[1] ConditionalExpression || override)
+      L1003: if (!override) {
+[1] ConditionalExpression || .key !== "param.doc" && e.key !== "param.description")
+      L1011: if (e.key !== "param.doc" && e.key !== "param.description") {
+[1] ConditionalExpression || .key !== "param.description")
+      L1011: if (e.key !== "param.doc" && e.key !== "param.description") {
+[1] EqualityOperator || .key !== "param.description")
+      L1011: if (e.key !== "param.doc" && e.key !== "param.description") {
+[1] StringLiteral || param.description")
+      L1011: if (e.key !== "param.doc" && e.key !== "param.description") {
+[1] LogicalOperator || .matched && v.value !== undefined && v.value.trim())
+      L1027: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] ConditionalExpression || .matched && v.value !== undefined 
+      L1027: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] BlockStatement ||  return s.length > n ? s.slice(0, n) + "…" : s; }
+      L1033: function truncate(s, n) {

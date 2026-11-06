@@ -65,6 +65,12 @@ test("maxDependencyJars:配置文件生效、默认值与非法值校验", () =>
   const bad = temporaryProject();
   fs.writeFileSync(path.join(bad, ".api2apifox.json"), JSON.stringify({ maxDependencyJars: -1 }));
   assert.throws(() => resolveConfig(bad), /maxDependencyJars 必须是大于等于 0 的整数/);
+
+  // 0 是合法值（语义：关闭依赖解析），不能被 "<= 0" 误判为非法
+  const zero = temporaryProject();
+  fs.writeFileSync(path.join(zero, ".api2apifox.json"), JSON.stringify({ maxDependencyJars: 0 }));
+  assert.equal(resolveConfig(zero).config.maxDependencyJars, 0);
+  assert.equal(resolveConfig(temporaryProject(), { maxDependencyJars: 0 }).config.maxDependencyJars, 0);
 });
 
 test("updateFolderOfChangedEndpoint:默认开启,配置文件与 CLI 可覆盖", () => {

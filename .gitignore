@@ -8,3 +8,9 @@ openapi.gen.json
 !.vscode/launch.json
 !.vscode/tasks.json
 .vscode-test/
+
+# 交付/变异测试产物（不入库）
+coverage/
+reports/
+.stryker-tmp/
+stryker-output-*.json

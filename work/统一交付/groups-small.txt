@@ -1,0 +1,122 @@
+##### out/core/syncService.js  存活 3
+-- [1] StringLiteral || ""
+    4:32  export interface SyncProjectRequest {
+-- [1] BooleanLiteral || false
+    4:55  export interface SyncProjectRequest {
+-- [1] ObjectLiteral || {}
+    4:46  export interface SyncProjectRequest {
+##### out/openapi/builder.js  存活 44
+-- [8] ConditionalExpression || true
+    54:9  const usedOperationIds = new Map<string, number>();
+    57:9  for (const ep of parse.endpoints) {
+    103:13  const op: Record<string, unknown> = {
+-- [7] StringLiteral || ""
+    4:32  JsonSchema,
+    102:102  const opCtx: ResolveContext = epScope ? { ...ctx, scope: epScope } : ctx;
+    131:52  }
+-- [7] ConditionalExpression || false
+    31:52  tags?: { name: string; description?: string }[];
+    106:13  description: ep.description,
+    127:21  }
+-- [4] BlockStatement || {}
+    106:38  description: ep.description,
+    157:33  if (ep.requestBody) {
+    197:43  op.requestBody = {
+-- [3] CallExpression || ;
+    95:9  return { spec, warnings: parse.warnings };
+    137:25  schema,
+    199:9  content: buildContent(ep.consumes, "application/json", jsonBody),
+-- [2] ObjectLiteral || {}
+    4:46  JsonSchema,
+    167:24  }
+-- [1] BooleanLiteral || false
+    4:55  JsonSchema,
+-- [1] LogicalOperator || tags.get(ep.tag) && undefined
+    24:26  /** 为每个 operation 计算 x-apifox-folder 目录(与 folderNameSource/rootFolderName 对应) */
+-- [1] StringLiteral || ``
+    84:26  paths,
+-- [1] LogicalOperator || ep.methodName && ep.operationId
+    84:46  paths,
+-- [1] MethodExpression || [p.description, ...rule.appendDoc]
+    102:46  const opCtx: ResolveContext = epScope ? { ...ctx, scope: epScope } : ctx;
+-- [1] EqualityOperator || p.example === undefined
+    106:13  description: ep.description,
+-- [1] LogicalOperator || ep.responseDescription && "OK"
+    167:39  }
+-- [1] ArrayDeclaration || ["Stryker was here"]
+    174:46  : resolveTypeText(f.typeText, opCtx);
+-- [1] MethodExpression || typeText
+    207:13  if (innerReturn) {
+-- [1] Regex || /^(?:ResponseEntity|Mono|HttpEntity)\s*<(.*)>/
+    208:15  okResponse.content = buildContent(ep.produces, "*/*", { schema: resolveTypeText(innerReturn, opCtx) });
+-- [1] Regex || /(?:ResponseEntity|Mono|HttpEntity)\s*<(.*)>$/
+    208:15  okResponse.content = buildContent(ep.produces, "*/*", { schema: resolveTypeText(innerReturn, opCtx) });
+-- [1] MethodExpression || m[1]
+    210:13  responses["200"] = okResponse;
+-- [1] Regex || /^(?:ResponseEntity|Mono|HttpEntity)\S*<(.*)>$/
+    208:15  okResponse.content = buildContent(ep.produces, "*/*", { schema: resolveTypeText(innerReturn, opCtx) });
+##### out/apifox/client.js  存活 57
+-- [10] ConditionalExpression || false
+    100:23  async importOpenapi(projectId: number, openapiJson: string, options: ImportOptions = {}): Promise<ImportResult> {
+    142:9  }
+    201:12  signal.addEventListener("abort", listener, { once: true });
+-- [9] StringLiteral || ""
+    4:32  id: number;
+    46:41  private readonly signal?: AbortSignal
+    109:45  };
+-- [9] ConditionalExpression || true
+    47:44  ) {}
+    70:33  */
+    142:9  }
+-- [3] StringLiteral || "Stryker was here!"
+    184:63  };
+    197:55  break;
+    200:49  listeners.push({ signal, listener });
+-- [2] OptionalChaining || item.name
+    40:83  private readonly baseUrl: string,
+    47:83  ) {}
+-- [2] BlockStatement || {}
+    142:48  }
+    207:42  if (status === 401) {
+-- [2] ArrayDeclaration || ["Stryker was here"]
+    188:88  }
+-- [1] BooleanLiteral || false
+    4:55  id: number;
+-- [1] ObjectLiteral || {}
+    4:46  id: number;
+-- [1] LogicalOperator || typeof item?.id === "number" || typeof item?.name === "strin
+    47:44  ) {}
+-- [1] OptionalChaining || item.id
+    47:51  ) {}
+-- [1] EqualityOperator || failed >= 0
+    70:33  */
+-- [1] EqualityOperator || teams.length >= 0
+    70:47  */
+-- [1] EqualityOperator || typeof AbortSignal.any !== "function"
+    142:9  }
+-- [1] MethodExpression || value
+    197:40  break;
+-- [1] MethodExpression || host.replace(/^\[|\]$/g, "").toUpperCase()
+    200:24  listeners.push({ signal, listener });
+-- [1] Regex || /^\[|\]/g
+    200:37  listeners.push({ signal, listener });
+-- [1] Regex || /\[|\]$/g
+    200:37  listeners.push({ signal, listener });
+-- [1] LogicalOperator || normalized === "localhost" && normalized === "::1"
+    201:12  signal.addEventListener("abort", listener, { once: true });
+-- [1] LogicalOperator || !code && message.includes(code)
+    207:9  if (status === 401) {
+-- [1] BooleanLiteral || code
+    207:9  if (status === 401) {
+-- [1] EqualityOperator || typeof node.port !== "number"
+    217:12  return `Apifox 开放 API 请求失败(${status})${msg ? `: ${msg}` : ""}`;
+-- [1] EqualityOperator || depth >= MAX_ERROR_DEPTH
+    227:13  interface ErrorNode {
+-- [1] CallExpression || ;
+    230:9  loopback?: string;
+-- [1] ArithmeticOperator || depth - 1
+    237:28  return typeof value === "object" && value !== null;
+-- [1] MethodExpression || nodes.map(node => node.text)
+    243:12  
+-- [1] MethodExpression || collectErrorChain(err).every(node => node.name === "TimeoutE
+    277:12  }

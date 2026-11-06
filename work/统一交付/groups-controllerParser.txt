@@ -1,0 +1,725 @@
+groups 362 rows 528
+[11] Regex || ^\s*import\s+(?!static\s+)([\w.]+);/gm)
+      L607: for (const match of pf.source.matchAll(/^\s*import\s+(?!static\s+)([\w.]+);/gm)) {
+[10] Regex || ^\s*package\s+([\w.]+)\s*;/m.
+      L610: scope = { packageName: /^\s*package\s+([\w.]+)\s*;/m.exec(pf.source)?.[1], imported };
+[9] Regex || implementation\s*=\s*(\w+(?:\.\w+)*)\.class/.
+      L1043: const m = /implementation\s*=\s*(\w+(?:\.\w+)*)\.class/.exec(rawAnn);
+[8] ArrayDeclaration || ];
+      L112: const chain = sites ? superTypeChain(site, sites.byName) : [];
+[7] ConditionalExpression || cond.supported)
+      L144: if (!cond.supported) {
+[7] ConditionalExpression || cond.hit)
+      L148: if (!cond.hit) {
+[7] ConditionalExpression || .skipped && v.reason)
+      L152: if (v.skipped && v.reason) {
+[6] StringLiteral || ")
+      L78: return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
+[6] StringLiteral || value")
+      L125: let tag = (tagAnn && (0, model_1.annStr)(tagAnn.args, "name", "value")) ||
+[6] LogicalOperator || .skipped && v.reason)
+      L152: if (v.skipped && v.reason) {
+[6] ConditionalExpression || .value !== undefined 
+      L156: if (v.matched && v.value !== undefined && v.value !== "") {
+[6] LogicalOperator || .matched && v.value !== undefined 
+      L156: if (v.matched && v.value !== undefined && v.value !== "") {
+[6] Regex || ^@?(?:[\w.]*\.)?(\w+)\(([\s\S]*)\)$/.
+      L1004: const m = /^@?(?:[\w.]*\.)?(\w+)\(([\s\S]*)\)$/.exec(trimmed);
+[5] StringLiteral || .")
+      L77: const last = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
+[5] ConditionalExpression || .matched && v.value !== undefined && v.value.trim())
+      L180: if (v.matched && v.value !== undefined && v.value.trim()) {
+[5] BooleanLiteral || rue,
+      L787: required: true,
+[5] StringLiteral || query",
+      L816: in: "query",
+[4] ArrowFunction || m) => ruleWarnings.push(m))
+      L143: const cond = (0, ruleEval_1.evalCondition)(e.cond, classCtx, e.key, (m) => ruleWarnings.push(m));
+[4] MethodExpression || .value.trim())
+      L180: if (v.matched && v.value !== undefined && v.value.trim()) {
+[4] StringLiteral || name")
+      L784: name: (pathVar && ((0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName)) || paramName,
+[4] Regex || ^\d{3}$/.
+      L1047: if (/^\d{3}$/.test(raw)) {
+[4] Regex || ^(int|Integer|long|Long|short|Short|byte|Byte|float|Float|double|Double|boolean|Boolean|String|char|Character|BigDecimal
+      L1147: return /^(int|Integer|long|Long|short|Short|byte|Byte|float|Float|double|Double|boolean|Boolean|String|char|Character|BigDecimal|BigInteger|
+[3] Regex || ^[A-Z]$/.
+      L639: : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("
+[3] StringLiteral || ,")
+      L643: return `${(0, cst_1.tokenImage)(declarator, "Identifier") ?? ""}(${types.join(",")})`;
+[3] ConditionalExpression || operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) || (apiOperation && (0, model_1.annStr)(apiOperat
+      L741: let description = (operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) ||
+[3] StringLiteral || value",
+      L784: name: (pathVar && ((0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName)) || paramName,
+[3] StringLiteral || required")
+      L809: requestBody = { typeText, required: (0, model_1.annBool)(reqBody.args, "required") ?? true, description };
+[3] BooleanLiteral || alse,
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[3] ArrayDeclaration || ] 
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[3] StringLiteral || /")
+      L928: finalPath = joinPath(a.path, selectorNames.join("/"));
+[2] StringLiteral || */*",
+      L38: ALL: "*/*",
+[2] MethodExpression || aw.trim().
+      L78: return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
+[2] Regex || ^"|"$/g,
+      L78: return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
+[2] StringLiteral || Api")
+      L124: const apiAnn = (0, model_1.findAnn)(typeAnnotations, "Api");
+[2] StringLiteral || ${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`)
+      L145: ruleWarnings.push(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+[2] LogicalOperator || .cond ?? "",
+      L145: ruleWarnings.push(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`);
+[2] ConditionalExpression || .value !== "")
+      L156: if (v.matched && v.value !== undefined && v.value !== "") {
+[2] CallExpression || ettledSignatures.add(signature);
+      L203: settledSignatures.add(signature);
+[2] ConditionalExpression || lavor === "jaxrs"
+      L340: const consumes = flavor === "jaxrs"
+[2] StringLiteral || jaxrs"
+      L340: const consumes = flavor === "jaxrs"
+[2] StringLiteral || classModifier")
+      L395: ...(0, cst_1.childAll)(interfaceDecl, "classModifier"),
+[2] ConditionalExpression || list)
+      L408: if (!list) {
+[2] StringLiteral || Object")
+      L438: if (name && name !== "Object") {
+[2] ConditionalExpression || nherited === "spring-mvc")
+      L508: if (inherited === "spring-mvc") {
+[2] ConditionalExpression || )
+      L568: if (m) {
+[2] MethodExpression || 0, cst_1.childAll)(paramList, "formalParameter").filter(cst_1.isCstNode))
+      L628: for (const fp of (0, cst_1.childAll)(paramList, "formalParameter").filter(cst_1.isCstNode)) {
+[2] Regex || ^(?:boolean|byte|short|int|long|char|float|double|void)$/.
+      L637: const resolvedName = /^(?:boolean|byte|short|int|long|char|float|double|void)$/.test(name) ? name : name.includes(".")
+[2] ConditionalExpression || !regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[2] ConditionalExpression || .length > n 
+      L646: return s.length > n ? s.slice(0, n) + "…" : s;
+[2] EqualityOperator || .length > n 
+      L646: return s.length > n ? s.slice(0, n) + "…" : s;
+[2] ArrayDeclaration || ],
+      L705: return { consumes: [], produces: [] };
+[2] LogicalOperator || operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) || (apiOperation && (0, model_1.annStr)(apiOperat
+      L741: let description = (operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) ||
+[2] StringLiteral || description")
+      L741: let description = (operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) ||
+[2] StringLiteral || Parameter")
+      L771: const paramAnn = (0, model_1.findAnn)(annotations, "Parameter");
+[2] StringLiteral || ApiParam")
+      L772: const apiParam = (0, model_1.findAnn)(annotations, "ApiParam");
+[2] ConditionalExpression || paramAnn && (0, model_1.annStr)(paramAnn.args, "example")) || (0, schemaResolver_1.schemaExample)(annotations);
+      L774: const example = (paramAnn && (0, model_1.annStr)(paramAnn.args, "example")) || (0, schemaResolver_1.schemaExample)(annotations);
+[2] LogicalOperator || xample ?? dv,
+      L803: example: example ?? dv,
+[2] StringLiteral || int",
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[2] ArrowFunction || p) => p.name === f.name)
+      L870: if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
+[2] ConditionalExpression || avadoc?.returns?.trim() || "OK";
+      L922: const responseDescription = javadoc?.returns?.trim() || "OK";
+[2] ConditionalExpression || irect)
+      L973: if (direct) {
+[2] ConditionalExpression || 0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+      L987: const allowMultiple = (0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+[2] ConditionalExpression || llowMultiple && dataType 
+      L992: dataType: allowMultiple && dataType ? `List<${dataType}>` : dataType,
+[2] MethodExpression || ypeText.trim();
+      L1062: const t = typeText.trim();
+[2] ConditionalExpression || aramDocs[fieldName]?.trim() || undefined;
+      L1067: return paramDocs[fieldName]?.trim() || undefined;
+[2] Regex || ^\/+|\/+$/g,
+      L1162: .map((s) => s.replace(/^\/+|\/+$/g, ""))
+[2] Regex || ^(boolean|byte|short|int|long|char|float|double)$/.
+      L1168: return /^(boolean|byte|short|int|long|char|float|double)$/.test(typeText.trim());
+[1] BooleanLiteral || rue 
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[1] StringLiteral || __esModule",
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[1] ObjectLiteral ||  value: true })
+      L2: Object.defineProperty(exports, "__esModule", { value: true });
+[1] StringLiteral || PUT",
+      L26: GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
+[1] StringLiteral || PATCH",
+      L26: GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
+[1] StringLiteral || DELETE",
+      L26: GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
+[1] StringLiteral || HEAD",
+      L26: GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
+[1] StringLiteral || OPTIONS",
+      L26: GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
+[1] StringLiteral || 200",
+      L29: OK: "200", CREATED: "201", ACCEPTED: "202", NO_CONTENT: "204",
+[1] StringLiteral || 201",
+      L29: OK: "200", CREATED: "201", ACCEPTED: "202", NO_CONTENT: "204",
+[1] StringLiteral || 202",
+      L29: OK: "200", CREATED: "201", ACCEPTED: "202", NO_CONTENT: "204",
+[1] StringLiteral || 204",
+      L29: OK: "200", CREATED: "201", ACCEPTED: "202", NO_CONTENT: "204",
+[1] StringLiteral || 301",
+      L30: MOVED_PERMANENTLY: "301", FOUND: "302", NOT_MODIFIED: "304",
+[1] StringLiteral || 302",
+      L30: MOVED_PERMANENTLY: "301", FOUND: "302", NOT_MODIFIED: "304",
+[1] StringLiteral || 304",
+      L30: MOVED_PERMANENTLY: "301", FOUND: "302", NOT_MODIFIED: "304",
+[1] StringLiteral || 400",
+      L31: BAD_REQUEST: "400", UNAUTHORIZED: "401", PAYMENT_REQUIRED: "402", FORBIDDEN: "403", NOT_FOUND: "404",
+[1] StringLiteral || 401",
+      L31: BAD_REQUEST: "400", UNAUTHORIZED: "401", PAYMENT_REQUIRED: "402", FORBIDDEN: "403", NOT_FOUND: "404",
+[1] StringLiteral || 402",
+      L31: BAD_REQUEST: "400", UNAUTHORIZED: "401", PAYMENT_REQUIRED: "402", FORBIDDEN: "403", NOT_FOUND: "404",
+[1] StringLiteral || 404",
+      L31: BAD_REQUEST: "400", UNAUTHORIZED: "401", PAYMENT_REQUIRED: "402", FORBIDDEN: "403", NOT_FOUND: "404",
+[1] StringLiteral || 405",
+      L32: METHOD_NOT_ALLOWED: "405", NOT_ACCEPTABLE: "406", CONFLICT: "409", GONE: "410",
+[1] StringLiteral || 409",
+      L32: METHOD_NOT_ALLOWED: "405", NOT_ACCEPTABLE: "406", CONFLICT: "409", GONE: "410",
+[1] StringLiteral || 406",
+      L32: METHOD_NOT_ALLOWED: "405", NOT_ACCEPTABLE: "406", CONFLICT: "409", GONE: "410",
+[1] StringLiteral || 410",
+      L32: METHOD_NOT_ALLOWED: "405", NOT_ACCEPTABLE: "406", CONFLICT: "409", GONE: "410",
+[1] StringLiteral || 415",
+      L33: UNSUPPORTED_MEDIA_TYPE: "415", TOO_MANY_REQUESTS: "429",
+[1] StringLiteral || 429",
+      L33: UNSUPPORTED_MEDIA_TYPE: "415", TOO_MANY_REQUESTS: "429",
+[1] StringLiteral || 500",
+      L34: INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
+[1] StringLiteral || 501",
+      L34: INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
+[1] StringLiteral || 502",
+      L34: INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
+[1] StringLiteral || 503",
+      L34: INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
+[1] StringLiteral || application/atom+xml",
+      L39: APPLICATION_ATOM_XML: "application/atom+xml",
+[1] StringLiteral || application/cbor",
+      L40: APPLICATION_CBOR: "application/cbor",
+[1] StringLiteral || application/x-www-form-urlencoded",
+      L41: APPLICATION_FORM_URLENCODED: "application/x-www-form-urlencoded",
+[1] StringLiteral || application/graphql",
+      L42: APPLICATION_GRAPHQL: "application/graphql",
+[1] StringLiteral || application/graphql-response+json",
+      L43: APPLICATION_GRAPHQL_RESPONSE: "application/graphql-response+json",
+[1] StringLiteral || application/json;charset=UTF-8",
+      L45: APPLICATION_JSON_UTF8: "application/json;charset=UTF-8",
+[1] StringLiteral || application/x-ndjson",
+      L46: APPLICATION_NDJSON: "application/x-ndjson",
+[1] StringLiteral || application/octet-stream",
+      L47: APPLICATION_OCTET_STREAM: "application/octet-stream",
+[1] StringLiteral || application/problem+json;charset=UTF-8",
+      L50: APPLICATION_PROBLEM_JSON_UTF8: "application/problem+json;charset=UTF-8",
+[1] StringLiteral || application/problem+xml",
+      L51: APPLICATION_PROBLEM_XML: "application/problem+xml",
+[1] StringLiteral || application/x-protobuf",
+      L52: APPLICATION_PROTOBUF: "application/x-protobuf",
+[1] StringLiteral || application/rss+xml",
+      L53: APPLICATION_RSS_XML: "application/rss+xml",
+[1] StringLiteral || application/stream+json",
+      L54: APPLICATION_STREAM_JSON: "application/stream+json",
+[1] StringLiteral || application/xhtml+xml",
+      L55: APPLICATION_XHTML_XML: "application/xhtml+xml",
+[1] StringLiteral || application/yaml",
+      L57: APPLICATION_YAML: "application/yaml",
+[1] StringLiteral || image/gif",
+      L58: IMAGE_GIF: "image/gif",
+[1] StringLiteral || image/jpeg",
+      L59: IMAGE_JPEG: "image/jpeg",
+[1] StringLiteral || multipart/form-data",
+      L61: MULTIPART_FORM_DATA: "multipart/form-data",
+[1] StringLiteral || multipart/mixed",
+      L62: MULTIPART_MIXED: "multipart/mixed",
+[1] StringLiteral || multipart/related",
+      L63: MULTIPART_RELATED: "multipart/related",
+[1] StringLiteral || text/html",
+      L65: TEXT_HTML: "text/html",
+[1] StringLiteral || text/plain",
+      L67: TEXT_PLAIN: "text/plain",
+[1] StringLiteral || text/markdown",
+      L66: TEXT_MARKDOWN: "text/markdown",
+[1] StringLiteral || text/xml",
+      L68: TEXT_XML: "text/xml",
+[1] MethodExpression || ast.trim()]
+      L78: return MEDIA_TYPE_CONSTANTS[last.trim()] ?? raw.trim().replace(/^"|"$/g, "");
+[1] MethodExpression || alue.trim();
+      L84: const mime = value.trim();
+[1] ConditionalExpression || ime && !out.includes(mime))
+      L85: if (mime && !out.includes(mime)) {
+[1] LogicalOperator || ime && !out.includes(mime))
+      L85: if (mime && !out.includes(mime)) {
+[1] MethodExpression || 0, cst_1.findAll)(pf.cst, "typeDeclaration") .map((d) => typeSiteOf(pf, d)) .filter((s) => !!s);
+      L106: : (0, cst_1.findAll)(pf.cst, "typeDeclaration")
+[1] StringLiteral || tags",
+      L126: (apiAnn && (0, model_1.annArray)(apiAnn.args, "tags", "value")[0]) ||
+[1] StringLiteral || 类 ${typeName}`,
+      L136: subject: `类 ${typeName}`,
+[1] BlockStatement ||  ruleWarnings.push(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`); continue; }
+      L144: if (!cond.supported) {
+[1] ConditionalExpression || piAnn && (0, model_1.annArray)(apiAnn.args, "tags", "value")[0])
+      L126: (apiAnn && (0, model_1.annArray)(apiAnn.args, "tags", "value")[0]) ||
+[1] ConditionalExpression || .key !== "folder.name" || typeIgnored)
+      L164: if (e.key !== "folder.name" || typeIgnored) {
+[1] BlockStatement ||  if (e.key !== "folder.name" || typeIgnored) { continue; } const cond = (0, ruleEval_1.evalCondition)(e.cond, classCtx, 
+      L163: for (const e of rules.entries) {
+[1] StringLiteral || folder.name" 
+      L164: if (e.key !== "folder.name" || typeIgnored) {
+[1] BooleanLiteral || cond.supported)
+      L168: if (!cond.supported) {
+[1] BooleanLiteral || cond.hit)
+      L172: if (!cond.hit) {
+[1] EqualityOperator || .value !== undefined 
+      L180: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] BlockStatement ||  tag = v.value; }
+      L180: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] MethodExpression || 0, cst_1.childAll)(method, modifierKey).filter(cst_1.isCstNode),
+      L198: const methodAnnotations = (0, annotation_1.collectAnnotations)((0, cst_1.childAll)(method, modifierKey).filter(cst_1.isCstNode), source);
+[1] ConditionalExpression || 0, model_1.annBool)(apiMethodAnn?.args ?? {}, "hidden") === true)
+      L202: if ((0, model_1.annBool)(operationAnn?.args ?? {}, "hidden") === true || (0, model_1.annBool)(apiMethodAnn?.args ?? {}, "hidden") === true) 
+[1] StringLiteral || hidden")
+      L202: if ((0, model_1.annBool)(operationAnn?.args ?? {}, "hidden") === true || (0, model_1.annBool)(apiMethodAnn?.args ?? {}, "hidden") === true) 
+[1] BooleanLiteral || rue)
+      L202: if ((0, model_1.annBool)(operationAnn?.args ?? {}, "hidden") === true || (0, model_1.annBool)(apiMethodAnn?.args ?? {}, "hidden") === true) 
+[1] ArrowFunction || m) => ruleWarnings.push(m);
+      L225: const warn = (m) => ruleWarnings.push(m);
+[1] StringLiteral || 方法 ${typeName}.${methodName}`,
+      L222: subject: `方法 ${typeName}.${methodName}`,
+[1] BlockStatement ||  warn(`${e.key} 条件无法求值,已跳过:${truncate(e.cond ?? "", 50)}(文件 ${e.file}:${e.line})`); continue; }
+      L231: if (!cond.supported) {
+[1] ConditionalExpression || methodName)
+      L209: if (!methodName) {
+[1] ConditionalExpression || methodIgnored)
+      L248: if (!methodIgnored) {
+[1] ConditionalExpression || .key !== "method.description" 
+      L295: if (e.key !== "method.description" && e.key !== "method.doc") {
+[1] StringLiteral || method.description" 
+      L295: if (e.key !== "method.description" && e.key !== "method.doc") {
+[1] LogicalOperator || .matched && v.value !== undefined && v.value.trim())
+      L311: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] ConditionalExpression || .matched && v.value !== undefined 
+      L311: if (v.matched && v.value !== undefined && v.value.trim()) {
+[1] StringLiteral || \n")
+      L316: ruleDescAppend = appends.join("\n");
+[1] ConditionalExpression || ppends.length)
+      L315: if (appends.length) {
+[1] ArrayDeclaration || ...jaxrsMethodMedia.consumes, ...classMedia.jaxrs.consumes];
+      L336: const jaxrsConsumes = [...jaxrsMethodMedia.consumes, ...classMedia.jaxrs.consumes];
+[1] BlockStatement ||  return undefined; }
+      L386: if (!inner) {
+[1] ConditionalExpression || p)
+      L368: if (ep) {
+[1] ConditionalExpression || inner)
+      L386: if (!inner) {
+[1] ConditionalExpression || typeName)
+      L390: if (!typeName) {
+[1] MethodExpression ||  ...(0, cst_1.childAll)(classDecl, "classModifier"), ...(0, cst_1.childAll)(interfaceDecl, "classModifier"), ...(0, cst_
+      L393: const typeAnnotations = (0, annotation_1.collectAnnotations)([
+[1] StringLiteral || interfaceModifier")
+      L398: ...(0, cst_1.childAll)(inner, "interfaceModifier"),
+[1] MethodExpression || 0, cst_1.childAll)(list, "interfaceType").filter(cst_1.isCstNode))
+      L435: for (const it of (0, cst_1.childAll)(list, "interfaceType").filter(cst_1.isCstNode)) {
+[1] ConditionalExpression || ame && name !== "Object")
+      L438: if (name && name !== "Object") {
+[1] ConditionalExpression || ame !== "Object")
+      L438: if (name && name !== "Object") {
+[1] LogicalOperator || ame && name !== "Object")
+      L438: if (name && name !== "Object") {
+[1] BlockStatement ||  return; }
+      L432: if (!list) {
+[1] StringLiteral || interfaceExtends")
+      L444: pushInterfaceList((0, cst_1.childNode)(site.inner, "interfaceExtends"));
+[1] BlockStatement ||  pushInterfaceList((0, cst_1.childNode)(site.inner, "interfaceExtends")); }
+      L443: if (site.isInterface) {
+[1] ConditionalExpression || ite.isInterface)
+      L443: if (site.isInterface) {
+[1] StringLiteral || ";
+      L449: const superName = classType ? typeTextName((0, cst_1.nodeText)(source, classType)) : "";
+[1] ConditionalExpression || uperName && superName !== "Object")
+      L450: if (superName && superName !== "Object") {
+[1] ConditionalExpression || uperName !== "Object")
+      L450: if (superName && superName !== "Object") {
+[1] LogicalOperator || uperName && superName !== "Object")
+      L450: if (superName && superName !== "Object") {
+[1] ArrayDeclaration || root.typeName])
+      L463: const visited = new Set([root.typeName]);
+[1] ConditionalExpression || isited.has(name))
+      L469: if (visited.has(name)) {
+[1] ConditionalExpression || sup)
+      L473: if (!sup) {
+[1] CallExpression || isited.add(name);
+      L476: visited.add(name);
+[1] CallExpression || ext.push(sup);
+      L478: next.push(sup);
+[1] StringLiteral || Controller")
+      L488: if ((0, model_1.findAnn)(s.typeAnnotations, "RestController", "Controller")) {
+[1] ConditionalExpression || 0, model_1.findAnn)(s.typeAnnotations, "Endpoint"))
+      L497: if ((0, model_1.findAnn)(s.typeAnnotations, "Endpoint")) {
+[1] BlockStatement ||  const inherited = s.isInterface ? undefined : probe(s); if (inherited === "spring-mvc") { return inherited; } }
+      L506: for (const s of chain) {
+[1] EqualityOperator || nherited === "spring-mvc")
+      L508: if (inherited === "spring-mvc") {
+[1] StringLiteral || spring-mvc")
+      L508: if (inherited === "spring-mvc") {
+[1] ConditionalExpression || wn)
+      L503: if (own) {
+[1] ConditionalExpression || lavor !== "spring-mvc" && flavor !== "feign")
+      L516: if (flavor !== "spring-mvc" && flavor !== "feign") {
+[1] ConditionalExpression || lavor !== "feign")
+      L516: if (flavor !== "spring-mvc" && flavor !== "feign") {
+[1] EqualityOperator || lavor !== "feign")
+      L516: if (flavor !== "spring-mvc" && flavor !== "feign") {
+[1] StringLiteral || feign")
+      L516: if (flavor !== "spring-mvc" && flavor !== "feign") {
+[1] BlockStatement ||  return []; }
+      L516: if (flavor !== "spring-mvc" && flavor !== "feign") {
+[1] OptionalChaining || ndpointAnn?.args 
+      L535: return ["/actuator/" + ((0, model_1.annStr)(endpointAnn?.args ?? {}, "id", "value") ?? hierarchy[0].typeName.toLowerCase())];
+[1] ConditionalExpression || athAnn)
+      L540: if (pathAnn) {
+[1] ConditionalExpression || lavor === "feign")
+      L552: if (flavor === "feign") {
+[1] ConditionalExpression || eignPath)
+      L555: if (feignPath) {
+[1] MethodExpression || 0, cst_1.childAll)((0, cst_1.childNode)(site.inner, "interfaceBody"), "interfaceMemberDeclaration").filter(cst_1.isCstNo
+      L566: for (const member of (0, cst_1.childAll)((0, cst_1.childNode)(site.inner, "interfaceBody"), "interfaceMemberDeclaration").filter(cst_1.isCst
+[1] MethodExpression || 0, cst_1.childAll)(method, modifierKey) .filter(cst_1.isCstNode)
+      L585: return (0, cst_1.childAll)(method, modifierKey)
+[1] MethodExpression || 0, cst_1.childAll)((0, cst_1.childNode)(site.inner, "classBody"), "classBodyDeclaration").filter(cst_1.isCstNode))
+      L574: for (const member of (0, cst_1.childAll)((0, cst_1.childNode)(site.inner, "classBody"), "classBodyDeclaration").filter(cst_1.isCstNode)) {
+[1] ConditionalExpression || scope)
+      L605: if (!scope) {
+[1] BlockStatement ||  imported.set((0, typeText_1.simpleName)(match[1]), match[1]); }
+      L607: for (const match of pf.source.matchAll(/^\s*import\s+(?!static\s+)([\w.]+);/gm)) {
+[1] CallExpression || mported.set((0, typeText_1.simpleName)(match[1]), match[1]);
+      L608: imported.set((0, typeText_1.simpleName)(match[1]), match[1]);
+[1] CallExpression || ileScopeCache.set(pf, scope);
+      L611: fileScopeCache.set(pf, scope);
+[1] ArrayDeclaration ||  "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer", "Long", "Math", "Number", "
+      L622: const javaLang = new Set([
+[1] StringLiteral || Boolean",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Byte",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Character",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Class",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Double",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Enum",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Exception",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Float",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Integer",
+      L623: "Boolean", "Byte", "Character", "Class", "Double", "Enum", "Exception", "Float", "Integer",
+[1] StringLiteral || Long",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Math",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Number",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Object",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Record",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || RuntimeException",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Short",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || String",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Throwable",
+      L624: "Long", "Math", "Number", "Object", "Record", "RuntimeException", "Short", "String", "Throwable",
+[1] StringLiteral || Void",
+      L625: "Void",
+[1] ConditionalExpression || typeNode)
+      L631: if (!typeNode) {
+[1] StringLiteral || java.lang.${name}` 
+      L639: : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("
+[1] LogicalOperator || mported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filte
+      L639: : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("
+[1] MethodExpression || packageName, name].filter(Boolean).
+      L639: : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("
+[1] ArrayDeclaration || packageName, name].
+      L639: : imported.get(name) ?? (javaLang.has(name) ? `java.lang.${name}` : /^[A-Z]$/.test(name) ? name : [packageName, name].filter(Boolean).join("
+[1] LogicalOperator || !regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] BooleanLiteral || !regular 
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] ConditionalExpression || 0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] BooleanLiteral || regular 
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] EqualityOperator || 0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] StringLiteral || variableArityParameter")
+      L640: const varargs = !!regular && (0, cst_1.childNode)(fp, "variableArityParameter") !== undefined;
+[1] StringLiteral || []".
+      L641: types.push(`${resolvedName}${"[]".repeat(ref.dims + (varargs ? 1 : 0))}`);
+[1] ArithmeticOperator || ef.dims + (varargs ? 1 : 0))
+      L641: types.push(`${resolvedName}${"[]".repeat(ref.dims + (varargs ? 1 : 0))}`);
+[1] BlockStatement ||  return s.length > n ? s.slice(0, n) + "…" : s; }
+      L645: function truncate(s, n) {
+[1] StringLiteral || WriteOperation",
+      L651: const op = (0, model_1.findAnn)(annotations, "ReadOperation", "WriteOperation", "DeleteOperation");
+[1] ConditionalExpression || op)
+      L652: if (!op) {
+[1] ConditionalExpression || p.name === "WriteOperation" 
+      L655: const verb = op.name === "ReadOperation" ? "GET" : op.name === "WriteOperation" ? "POST" : "DELETE";
+[1] StringLiteral || WriteOperation" 
+      L655: const verb = op.name === "ReadOperation" ? "GET" : op.name === "WriteOperation" ? "POST" : "DELETE";
+[1] ConditionalExpression || verbAnn)
+      L660: if (!verbAnn) {
+[1] OptionalChaining || arn?.(`类级 method [${baseMethods.join(",")}] 与方法级 method [${declared.join(",")}] 无交集,已跳过该映射`);
+      L677: warn?.(`类级 method [${baseMethods.join(",")}] 与方法级 method [${declared.join(",")}] 无交集,已跳过该映射`);
+[1] OptionalChaining || arn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
+      L688: warn?.("@RequestMapping 未声明 method,已按 GET/POST/PUT/PATCH/DELETE 输出");
+[1] StringLiteral || Consumes")
+      L697: consumes: (0, model_1.annArray)((0, model_1.findAnn)(annotations, "Consumes")?.args ?? {}, "value").map(toMimeType),
+[1] StringLiteral || ApiOperation")
+      L734: const apiOperation = (0, model_1.findAnn)(a.methodAnnotations, "ApiOperation");
+[1] ConditionalExpression || piOperation && (0, model_1.annStr)(apiOperation.args, "value"))
+      L737: (apiOperation && (0, model_1.annStr)(apiOperation.args, "value")) ||
+[1] ConditionalExpression || perationAnn && (0, model_1.annStr)(operationAnn.args, "description"))
+      L741: let description = (operationAnn && (0, model_1.annStr)(operationAnn.args, "description")) ||
+[1] StringLiteral || notes")
+      L742: (apiOperation && (0, model_1.annStr)(apiOperation.args, "notes")) ||
+[1] ConditionalExpression || piOperation && (0, model_1.annStr)(apiOperation.args, "notes"))
+      L742: (apiOperation && (0, model_1.annStr)(apiOperation.args, "notes")) ||
+[1] ConditionalExpression || avadoc.description !== javadoc.firstLine 
+      L743: (javadoc && javadoc.description && javadoc.description !== javadoc.firstLine ? javadoc.description : undefined);
+[1] EqualityOperator || avadoc.description !== javadoc.firstLine 
+      L743: (javadoc && javadoc.description && javadoc.description !== javadoc.firstLine ? javadoc.description : undefined);
+[1] ConditionalExpression || avadoc && javadoc.description && javadoc.description !== javadoc.firstLine 
+      L743: (javadoc && javadoc.description && javadoc.description !== javadoc.firstLine ? javadoc.description : undefined);
+[1] ConditionalExpression || .ruleDescAppend)
+      L744: if (a.ruleDescAppend) {
+[1] ConditionalExpression || regular)
+      L757: if (!regular) {
+[1] MethodExpression || 0, cst_1.childAll)(regular, "variableModifier").filter(cst_1.isCstNode),
+      L760: const annotations = (0, annotation_1.collectAnnotations)((0, cst_1.childAll)(regular, "variableModifier").filter(cst_1.isCstNode), pf.source
+[1] MethodExpression || 0, cst_1.nodeText)(pf.source, typeNode).trim() 
+      L762: const typeText = typeNode ? (0, cst_1.nodeText)(pf.source, typeNode).trim() : "Object";
+[1] ConditionalExpression || paramName)
+      L764: if (!paramName) {
+[1] ConditionalExpression || sHiddenParam(annotations))
+      L767: if (isHiddenParam(annotations)) {
+[1] MethodExpression || aramDocs[paramName]?.trim() 
+      L770: const docDesc = paramDocs[paramName]?.trim() || undefined;
+[1] ConditionalExpression || paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.arg
+      L773: const description = (paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.ar
+[1] LogicalOperator || paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.arg
+      L773: const description = (paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.ar
+[1] ConditionalExpression || aramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value"))
+      L773: const description = (paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.ar
+[1] ConditionalExpression || piParam && (0, model_1.annStr)(apiParam.args, "value"))
+      L773: const description = (paramAnn && (0, model_1.annStr)(paramAnn.args, "description", "value")) || (apiParam && (0, model_1.annStr)(apiParam.ar
+[1] LogicalOperator || paramAnn && (0, model_1.annStr)(paramAnn.args, "example")) || (0, schemaResolver_1.schemaExample)(annotations);
+      L774: const example = (paramAnn && (0, model_1.annStr)(paramAnn.args, "example")) || (0, schemaResolver_1.schemaExample)(annotations);
+[1] ConditionalExpression || aramAnn && (0, model_1.annStr)(paramAnn.args, "example"))
+      L774: const example = (paramAnn && (0, model_1.annStr)(paramAnn.args, "example")) || (0, schemaResolver_1.schemaExample)(annotations);
+[1] StringLiteral || PathParam")
+      L775: const pathVar = (0, model_1.findAnn)(annotations, "PathVariable", "PathParam");
+[1] ConditionalExpression || athVar && ((0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName))
+      L784: name: (pathVar && ((0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName)) || paramName,
+[1] LogicalOperator || 0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName)
+      L784: name: (pathVar && ((0, model_1.annStr)(pathVar.args, "value", "name") ?? paramName)) || paramName,
+[1] ConditionalExpression || .flavor === "jaxrs" 
+      L801: required: a.flavor === "jaxrs" ? defaultValueAnn === undefined : (0, model_1.annBool)(reqHeader.args, "required") ?? true,
+[1] StringLiteral || jaxrs" 
+      L801: required: a.flavor === "jaxrs" ? defaultValueAnn === undefined : (0, model_1.annBool)(reqHeader.args, "required") ?? true,
+[1] ConditionalExpression || efaultValueAnn === undefined 
+      L801: required: a.flavor === "jaxrs" ? defaultValueAnn === undefined : (0, model_1.annBool)(reqHeader.args, "required") ?? true,
+[1] LogicalOperator || 0, model_1.annStr)(reqPart.args, "value", "name") ?? paramName)
+      L815: name: reqPart ? ((0, model_1.annStr)(reqPart.args, "value", "name") ?? paramName) : paramName,
+[1] ConditionalExpression || v !== undefined 
+      L832: required: dv !== undefined ? false : (0, model_1.annBool)(reqParam.args, "required") ?? a.flavor !== "jaxrs",
+[1] ConditionalExpression || .flavor !== "jaxrs",
+      L832: required: dv !== undefined ? false : (0, model_1.annBool)(reqParam.args, "required") ?? a.flavor !== "jaxrs",
+[1] StringLiteral || 页码(0 基)",
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[1] StringLiteral || 每页条数",
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[1] StringLiteral || List<String>",
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[1] StringLiteral || 排序,如 name,asc",
+      L841: parameters.push({ name: "page", in: "query", typeText: "int", required: false, description: "页码(0 基)", annotations: [] }, { name: "size", in
+[1] ConditionalExpression || .index)
+      L860: else if (a.index) {
+[1] LogicalOperator || .declaringType ?? a.controller;
+      L863: const declaring = a.declaringType ?? a.controller;
+[1] LogicalOperator || parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name))
+      L870: if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
+[1] ConditionalExpression || parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name))
+      L870: if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
+[1] ConditionalExpression || .name === f.name)
+      L870: if (!parameters.some((p) => p.name === f.name) && !formFields.some((p) => p.name === f.name)) {
+[1] ConditionalExpression || mp.paramType === "body")
+      L885: if (imp.paramType === "body") {
+[1] StringLiteral || body")
+      L885: if (imp.paramType === "body") {
+[1] ConditionalExpression || mp.paramType === "form")
+      L891: if (imp.paramType === "form") {
+[1] StringLiteral || form")
+      L891: if (imp.paramType === "form") {
+[1] ConditionalExpression || arameters.some((p) => p.name === imp.name))
+      L897: if (parameters.some((p) => p.name === imp.name)) {
+[1] MethodExpression || arameters.some((p) => p.name === imp.name))
+      L897: if (parameters.some((p) => p.name === imp.name)) {
+[1] ArrowFunction || p) => p.name === imp.name)
+      L897: if (parameters.some((p) => p.name === imp.name)) {
+[1] ConditionalExpression || .name === imp.name)
+      L897: if (parameters.some((p) => p.name === imp.name)) {
+[1] LogicalOperator || mp.dataType ?? "String",
+      L903: typeText: imp.dataType ?? "String",
+[1] StringLiteral || __multipart__",
+      L916: requestBody = { typeText: "__multipart__", required: true, formFields };
+[1] LogicalOperator || avadoc?.returns?.trim() || "OK";
+      L922: const responseDescription = javadoc?.returns?.trim() || "OK";
+[1] MethodExpression || avadoc?.returns?.trim() 
+      L922: const responseDescription = javadoc?.returns?.trim() || "OK";
+[1] MethodExpression || arameters.filter((p) => p.in === "path").
+      L926: const selectorNames = parameters.filter((p) => p.in === "path").map((p) => `{${p.name}}`);
+[1] ConditionalExpression || .in === "path")
+      L926: const selectorNames = parameters.filter((p) => p.in === "path").map((p) => `{${p.name}}`);
+[1] StringLiteral || OK";
+      L922: const responseDescription = javadoc?.returns?.trim() || "OK";
+[1] ConditionalExpression || electorNames.length)
+      L927: if (selectorNames.length) {
+[1] ConditionalExpression || .ownerPath && a.ownerPath !== pf.fsPath 
+      L945: ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
+[1] LogicalOperator || .ownerPath && a.ownerPath !== pf.fsPath 
+      L945: ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
+[1] ConditionalExpression || .ownerPath !== pf.fsPath 
+      L945: ...(a.ownerPath && a.ownerPath !== pf.fsPath ? { ownerFsPath: a.ownerPath } : {}),
+[1] ConditionalExpression || loc)
+      L957: if (!loc) {
+[1] LogicalOperator || oc.startLine ?? 1 
+      L960: return { startOffset: loc.startOffset, endOffset: loc.endOffset, startLine: loc.startLine ?? 1 };
+[1] ConditionalExpression || mp.name !== "ApiImplicitParam")
+      L978: if (imp.name !== "ApiImplicitParam") {
+[1] StringLiteral || ApiImplicitParam")
+      L972: const direct = (0, model_1.findAnn)(annotations, "ApiImplicitParam");
+[1] ConditionalExpression || name)
+      L982: if (!name) {
+[1] ConditionalExpression || t === "path" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] StringLiteral || path" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] ConditionalExpression || t === "body" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] StringLiteral || body" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] ConditionalExpression || t === "form" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] StringLiteral || form" 
+      L986: const paramType = pt === "path" ? "path" : pt === "header" ? "header" : pt === "body" ? "body" : pt === "form" ? "form" : "query";
+[1] EqualityOperator || 0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+      L987: const allowMultiple = (0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+[1] StringLiteral || allowMultiple")
+      L987: const allowMultiple = (0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+[1] StringLiteral || true";
+      L987: const allowMultiple = (0, model_1.annStr)(imp.args, "allowMultiple") === "true";
+[1] StringLiteral || dataType")
+      L988: const dataType = (0, model_1.annStr)(imp.args, "dataType");
+[1] LogicalOperator || llowMultiple && dataType 
+      L992: dataType: allowMultiple && dataType ? `List<${dataType}>` : dataType,
+[1] ConditionalExpression || 0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+      L993: required: (0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+[1] ConditionalExpression || 0, model_1.annStr)(imp.args, "required") === "true" 
+      L993: required: (0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+[1] LogicalOperator || 0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+      L993: required: (0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+[1] StringLiteral || true" 
+      L993: required: (0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+[1] ConditionalExpression || 0, model_1.annBool)(imp.args, "required") === true,
+      L993: required: (0, model_1.annStr)(imp.args, "required") === "true" || (0, model_1.annBool)(imp.args, "required") === true,
+[1] StringLiteral || example")
+      L995: example: (0, model_1.annStr)(imp.args, "example"),
+[1] Regex || ^_nested_/,
+      L1003: const trimmed = raw.trim().replace(/^_nested_/, "").replace(/_annotation$/, "");
+[1] Regex || _annotation$/,
+      L1003: const trimmed = raw.trim().replace(/^_nested_/, "").replace(/_annotation$/, "");
+[1] ConditionalExpression || m)
+      L1005: if (!m) {
+[1] ConditionalExpression || ode)
+      L1017: if (code) {
+[1] ConditionalExpression || nn.name !== "ApiResponse")
+      L1025: if (ann.name !== "ApiResponse") {
+[1] StringLiteral || responseCode")
+      L1028: push(normalizeStatus((0, model_1.annStr)(ann.args, "code", "responseCode") ?? ""), (0, model_1.annStr)(ann.args, "message", "description"), 
+[1] StringLiteral || ApiResponse")
+      L1031: const direct = (0, model_1.findAnn)(annotations, "ApiResponse");
+[1] StringLiteral || code")
+      L1037: push(normalizeStatus((0, model_1.annStr)(status.args, "value", "code") ?? ""), (0, model_1.annStr)(status.args, "reason") || undefined);
+[1] BlockStatement ||  const m = /implementation\s*=\s*(\w+(?:\.\w+)*)\.class/.exec(rawAnn); return m ? m[1] : undefined; }
+      L1042: function implementationOfClass(rawAnn) {
+[1] ConditionalExpression || ^\d{3}$/.test(raw))
+      L1047: if (/^\d{3}$/.test(raw)) {
+[1] BlockStatement ||  return raw; }
+      L1047: if (/^\d{3}$/.test(raw)) {
+[1] MethodExpression || ame.trim()]
+      L1051: return HTTP_STATUS_BY_NAME[name.trim()] || raw;
+[1] BlockStatement ||  const p = (0, model_1.findAnn)(annotations, "Parameter"); if (p && (0, model_1.annBool)(p.args, "hidden") === true) { r
+      L1053: function isHiddenParam(annotations) {
+[1] ConditionalExpression ||  && (0, model_1.annBool)(p.args, "hidden") === true)
+      L1055: if (p && (0, model_1.annBool)(p.args, "hidden") === true) {
+[1] ConditionalExpression || !ap && (0, model_1.annBool)(ap.args, "hidden") === true;
+      L1059: return !!ap && (0, model_1.annBool)(ap.args, "hidden") === true;
+[1] BlockStatement ||  return paramDocs[fieldName]?.trim() || undefined; }
+      L1066: function docDescOf(paramDocs, fieldName) {
+[1] MethodExpression || aramDocs[fieldName]?.trim() 
+      L1067: return paramDocs[fieldName]?.trim() || undefined;
+[1] LogicalOperator || aramDocs[fieldName]?.trim() || undefined;
+      L1067: return paramDocs[fieldName]?.trim() || undefined;
+[1] ConditionalExpression ||  === "org.springframework.data.domain.Pageable";
+      L1063: return t === "Pageable" || t === "org.springframework.data.domain.Pageable";
+[1] StringLiteral || org.springframework.data.domain.Pageable";
+      L1063: return t === "Pageable" || t === "org.springframework.data.domain.Pageable";
+[1] ConditionalExpression || nfo.kind === "enum")
+      L1085: if (!info || info.kind === "enum") {
+[1] StringLiteral || enum")
+      L1085: if (!info || info.kind === "enum") {
+[1] ConditionalExpression || een.has(name))
+      L1102: if (seen.has(name)) {
+[1] ConditionalExpression || Ref.dims === 0 
+      L1108: const sub = fRef.dims === 0 ? (0, typeIndex_1.resolveScopedType)(index, fRef.name, scope) : undefined;
+[1] ConditionalExpression || ub.kind === "record")
+      L1109: const nested = !!sub && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple);
+[1] StringLiteral || record")
+      L1109: const nested = !!sub && (sub.kind === "class" || sub.kind === "record") && !isPlainValueType(fSimple);
+[1] CallExpression || een.add(name);
+      L1122: seen.add(name);
+[1] BooleanLiteral || !(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+      L1123: const required = !!(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+[1] StringLiteral || NotNull",
+      L1123: const required = !!(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+[1] BooleanLiteral || (0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+      L1123: const required = !!(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+[1] StringLiteral || NotEmpty")
+      L1123: const required = !!(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+[1] StringLiteral || NotBlank",
+      L1123: const required = !!(0, model_1.findAnn)(f.annotations, "NotNull", "NotBlank", "NotEmpty");
+[1] ConditionalExpression || up && (sup.kind === "class" || sup.kind === "record"))
+      L1138: if (sup && (sup.kind === "class" || sup.kind === "record")) {
+[1] LogicalOperator || up && (sup.kind === "class" || sup.kind === "record"))
+      L1138: if (sup && (sup.kind === "class" || sup.kind === "record")) {
+[1] LogicalOperator || .javadoc.description || f.javadoc.firstLine)
+      L1125: const desc = (0, schemaResolver_1.schemaDescription)(f.annotations, (f.javadoc && (f.javadoc.description || f.javadoc.firstLine)) || undefin
+[1] ConditionalExpression || up.kind === "class" || sup.kind === "record")
+      L1138: if (sup && (sup.kind === "class" || sup.kind === "record")) {
+[1] BlockStatement ||  return /^(int|Integer|long|Long|short|Short|byte|Byte|float|Float|double|Double|boolean|Boolean|String|char|Character|B
+      L1146: function isPlainValueType(simple) {
+[1] ArrayDeclaration || info.simpleName])
+      L1143: walk(info, "", 0, new Set([info.simpleName]));
+[1] MethodExpression || 0, cst_1.nodeText)(pf.source, unannType).trim() 
+      L1151: return unannType ? (0, cst_1.nodeText)(pf.source, unannType).trim() : undefined;
+[1] ConditionalExpression ||  !== "/")
+      L1161: .filter((s) => s && s !== "/")
+[1] MethodExpression || ypeText.trim())
+      L1168: return /^(boolean|byte|short|int|long|char|float|double)$/.test(typeText.trim());
+[1] Regex || \/{2,}/g,
+      L1164: return p.replace(/\/{2,}/g, "/") || "/";
+[1] Regex || (\[\])$/,
+      L1173: const simple = t.slice(t.lastIndexOf(".") + 1).replace(/(\[\])$/, "");

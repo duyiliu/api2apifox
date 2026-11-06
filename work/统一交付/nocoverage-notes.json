@@ -1,0 +1,1454 @@
+[
+  {
+    "file": "out/pipeline.js",
+    "lines": "120-123",
+    "mutants": 5,
+    "testability": "TESTABLE_TODO",
+    "note": "optionsCacheKey 的 rules 段（5 变异集中区）：补「AnalyzeCache 携带 rules 的两次分析」用例",
+    "ids": [
+      "102",
+      "103",
+      "104",
+      "105",
+      "106"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "9-10",
+    "mutants": 4,
+    "testability": "NOT_TESTABLE",
+    "note": "tsc __createBinding/__setModuleDefault/__importStar 辅助函数：编译产物，无业务语义",
+    "ids": [
+      "23",
+      "24",
+      "25",
+      "26"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "15-22",
+    "mutants": 6,
+    "testability": "NOT_TESTABLE",
+    "note": "tsc __createBinding/__setModuleDefault/__importStar 辅助函数：编译产物，无业务语义",
+    "ids": [
+      "37",
+      "38",
+      "49",
+      "50",
+      "51",
+      "52"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "72-72",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "title 默认取 basename(root)：补「未配置 title」用例",
+    "ids": [
+      "115"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "120-121",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "title 字符串校验：补空白 title 用例",
+    "ids": [
+      "213",
+      "214"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "138-140",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "overrides.title：补 CLI 覆盖 title 用例",
+    "ids": [
+      "258",
+      "259",
+      "260"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "207-208",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "配置文件非对象校验：补「配置文件是数组/标量」用例",
+    "ids": [
+      "349",
+      "351"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "250-251",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "projectId 校验：补负数/非整数 projectId 用例",
+    "ids": [
+      "397",
+      "399"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "282-283",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "stringValue 校验：补数字型字符串字段",
+    "ids": [
+      "466",
+      "468"
+    ]
+  },
+  {
+    "file": "out/core/config.js",
+    "lines": "312-313",
+    "mutants": 6,
+    "testability": "TESTABLE_TODO",
+    "note": "stringArrayValue 校验：补「数组含非字符串」用例",
+    "ids": [
+      "508",
+      "509",
+      "510",
+      "511",
+      "512",
+      "514"
+    ]
+  },
+  {
+    "file": "out/openapi/builder.js",
+    "lines": "91-91",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "typeOverride.format：补带 format 的字段类型覆盖规则",
+    "ids": [
+      "87"
+    ]
+  },
+  {
+    "file": "out/openapi/builder.js",
+    "lines": "125-128",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "rule.ignored 字段跳过：补 field.ignore 规则在 builder 层的用例",
+    "ids": [
+      "128",
+      "129",
+      "130",
+      "131"
+    ]
+  },
+  {
+    "file": "out/openapi/builder.js",
+    "lines": "133-133",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "rule.ignored 字段跳过：补 field.ignore 规则在 builder 层的用例",
+    "ids": [
+      "137",
+      "138"
+    ]
+  },
+  {
+    "file": "out/openapi/builder.js",
+    "lines": "174-175",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "extraResponses 带 schemaText：补 @ApiResponse 带 schema 的附加响应",
+    "ids": [
+      "185",
+      "186",
+      "187"
+    ]
+  },
+  {
+    "file": "out/apifox/client.js",
+    "lines": "71-71",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "团队项目列表全失败文案：补多团队全失败 mock",
+    "ids": [
+      "59"
+    ]
+  },
+  {
+    "file": "out/apifox/client.js",
+    "lines": "144-167",
+    "mutants": 22,
+    "testability": "TESTABLE_TODO",
+    "note": "手动 AbortSignal 组合实现（22 变异集中区）：Node>=20 有 AbortSignal.any 时走不到；补特性探测强制关闭的用例（monkey-patch）或拆分函数",
+    "ids": [
+      "129",
+      "130",
+      "131",
+      "132",
+      "134",
+      "135",
+      "136",
+      "137",
+      "138",
+      "139",
+      "140",
+      "141",
+      "142",
+      "143",
+      "144",
+      "145",
+      "146",
+      "147",
+      "149",
+      "151",
+      "152",
+      "153"
+    ]
+  },
+  {
+    "file": "out/apifox/client.js",
+    "lines": "208-208",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "错误 message+code 拼接 else 分支：补无 message 的错误响应",
+    "ids": [
+      "218"
+    ]
+  },
+  {
+    "file": "out/apifox/client.js",
+    "lines": "230-232",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "errors 数组遍历：补带 errors 数组的错误响应",
+    "ids": [
+      "252",
+      "253",
+      "255"
+    ]
+  },
+  {
+    "file": "out/apifox/client.js",
+    "lines": "269-269",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "catch 兜底：补抛错型响应",
+    "ids": [
+      "281"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "20-21",
+    "mutants": 4,
+    "testability": "NOT_TESTABLE",
+    "note": "tsc 互操作辅助函数样板：编译产物，无业务语义",
+    "ids": [
+      "23",
+      "24",
+      "25",
+      "26"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "26-33",
+    "mutants": 6,
+    "testability": "NOT_TESTABLE",
+    "note": "tsc 互操作辅助函数样板：编译产物，无业务语义",
+    "ids": [
+      "37",
+      "38",
+      "49",
+      "50",
+      "51",
+      "52"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "80-80",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "EOCD 后 central directory 签名校验（CDE_SIG）分支：补「中央目录签名损坏」zip 用例",
+    "ids": [
+      "105"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "111-113",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "parseClassFile 的 catch 分支：补「常量池损坏/截断的 .class」用例",
+    "ids": [
+      "126",
+      "127",
+      "128"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "191-204",
+    "mutants": 37,
+    "testability": "TESTABLE_TODO",
+    "note": "toArgValue 的数组/嵌套注解/非标量分支：补「注解值为数组」「嵌套注解」的 .class 字节级用例（Demo.class 目前只覆盖字符串值）",
+    "ids": [
+      "199",
+      "200",
+      "208",
+      "209",
+      "218",
+      "219",
+      "220",
+      "221",
+      "222",
+      "223",
+      "225",
+      "226",
+      "227",
+      "228",
+      "229",
+      "230",
+      "231",
+      "232",
+      "233",
+      "234",
+      "235",
+      "236",
+      "237",
+      "238",
+      "239",
+      "240",
+      "241",
+      "242",
+      "243",
+      "244",
+      "245",
+      "246",
+      "247",
+      "248",
+      "249",
+      "250",
+      "251"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "215-215",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "toClassInfo 的 kind 三元（enum/interface）：补 access_flags 带 ACC_ENUM/ACC_INTERFACE 的 .class 用例",
+    "ids": [
+      "259",
+      "264"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "305-306",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "lookup 的 !jar||!entry 分支：jar.test.ts 已有 lookup(不存在)，但按需解析路径未走到该组合，补「索引内简单名但条目缺失」用例",
+    "ids": [
+      "348",
+      "349"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "448-449",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "versionCompare 的 pa[i]??\"\"（段数不同）：补「1.0.0 vs 1.0.0.1」版本目录用例",
+    "ids": [
+      "497",
+      "499"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "459-459",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "versionCompare 的 localeCompare 非数字段分支：补「2.10.0-RC1 vs 2.10.0」用例",
+    "ids": [
+      "519",
+      "520",
+      "521",
+      "522"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "486-486",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "readEmbeddedPomXml 的 !pom（jar 无 META-INF/maven 条目）：补「合法 zip 但无内嵌 pom」用例",
+    "ids": [
+      "551"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "494-496",
+    "mutants": 5,
+    "testability": "TESTABLE_TODO",
+    "note": "内嵌 pom 的 DEFLATE（method=8）解压分支：补 deflate:true 的内嵌 pom zip 用例",
+    "ids": [
+      "569",
+      "570",
+      "571",
+      "575",
+      "577"
+    ]
+  },
+  {
+    "file": "out/java/jarIndex.js",
+    "lines": "561-561",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "maxJars 丢弃提示的尾部文案（dropped>10）：补「超过 10 个 jar 被丢弃」用例",
+    "ids": [
+      "655"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "105-105",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "sites.byFile.get(pf) ?? []：跨文件站点索引缺失分支，补多文件继承场景",
+    "ids": [
+      "117"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "145-153",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则「条件无法求值」告警：补不支持语法的 Groovy 条件用例",
+    "ids": [
+      "166",
+      "170",
+      "175",
+      "177"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "168-177",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则求值主链：补类级 rule（class.ignore/class.name）命中与未命中用例",
+    "ids": [
+      "202",
+      "204",
+      "205",
+      "206",
+      "210",
+      "215",
+      "217"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "208-209",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "declarator Identifier 缺失回退：补无标识符声明器的畸形方法",
+    "ids": [
+      "256",
+      "260"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "232-240",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则「条件无法求值」告警（第二条规则类型）",
+    "ids": [
+      "282",
+      "286",
+      "290",
+      "292"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "254-263",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则求值主链（参数级）",
+    "ids": [
+      "318",
+      "320",
+      "321",
+      "322",
+      "326",
+      "330",
+      "332"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "276-285",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则求值主链（另一规则类型）",
+    "ids": [
+      "351",
+      "353",
+      "354",
+      "355",
+      "359",
+      "363",
+      "365"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "299-308",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则求值主链（另一规则类型）",
+    "ids": [
+      "390",
+      "392",
+      "393",
+      "394",
+      "398",
+      "402",
+      "404"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "390-390",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "typeName 缺失分支：补无类型名的声明",
+    "ids": [
+      "467"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "437-437",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "classType 缺失回退：补无 classType 的成员",
+    "ids": [
+      "507"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "469-473",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "继承链 visited 去重：补循环继承 fixture",
+    "ids": [
+      "546",
+      "550"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "508-508",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "inherited === spring-mvc 分支：补继承父 Controller 的场景",
+    "ids": [
+      "586"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "535-535",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "Actuator 端点 id 注解分支：补 @Endpoint(id=...) 用例",
+    "ids": [
+      "627"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "544-544",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "hierarchy 为空返回 [\"\"]：补空层级 fixture",
+    "ids": [
+      "638",
+      "639"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "575-575",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "classMemberDeclaration 回退 memberDeclaration：补两种成员声明形态",
+    "ids": [
+      "680"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "629-632",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "variableArityParameter 回退链：补可变参数方法",
+    "ids": [
+      "771",
+      "776",
+      "778"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "643-655",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "构造器签名文本：补构造器参数解析用例",
+    "ids": [
+      "805",
+      "812",
+      "813",
+      "814",
+      "827",
+      "828",
+      "838"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "660-661",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "构造器签名文本：补构造器参数解析用例",
+    "ids": [
+      "853",
+      "854"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "745-745",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "ruleDescAppend 追加：补字段级 description 追加规则",
+    "ids": [
+      "971"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "756-757",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "参数级规则求值主链：补 parameter.* 规则用例",
+    "ids": [
+      "986",
+      "990"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "762-767",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "参数级规则求值主链：补 parameter.* 规则用例",
+    "ids": [
+      "995",
+      "999",
+      "1003",
+      "1006"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "773-774",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "参数级规则求值主链：补 parameter.* 规则用例",
+    "ids": [
+      "1021",
+      "1022",
+      "1025",
+      "1031"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "794-794",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "@RequestParam defaultValue：补 defaultValue 用例",
+    "ids": [
+      "1061"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "870-870",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "form 字段去重：补 form 提交同名字段",
+    "ids": [
+      "1185",
+      "1186",
+      "1187"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "879-880",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "else 主链（33 变异）：RequestResponseBody/consumes/produces 全分支，补 @RequestMapping consumes/produces 与 @RequestPart 用例",
+    "ids": [
+      "1197",
+      "1199"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "885-897",
+    "mutants": 30,
+    "testability": "TESTABLE_TODO",
+    "note": "else 主链（33 变异）：RequestResponseBody/consumes/produces 全分支，补 @RequestMapping consumes/produces 与 @RequestPart 用例",
+    "ids": [
+      "1205",
+      "1206",
+      "1207",
+      "1208",
+      "1209",
+      "1210",
+      "1211",
+      "1216",
+      "1217",
+      "1218",
+      "1219",
+      "1220",
+      "1221",
+      "1222",
+      "1223",
+      "1224",
+      "1225",
+      "1226",
+      "1227",
+      "1228",
+      "1229",
+      "1230",
+      "1231",
+      "1232",
+      "1234",
+      "1235",
+      "1236",
+      "1237",
+      "1238",
+      "1246"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "903-903",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "else 主链（33 变异）：RequestResponseBody/consumes/produces 全分支，补 @RequestMapping consumes/produces 与 @RequestPart 用例",
+    "ids": [
+      "1250"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "957-957",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "位置注解缺失分支：补无位置注解的方法",
+    "ids": [
+      "1311"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "973-986",
+    "mutants": 8,
+    "testability": "TESTABLE_TODO",
+    "note": "@ModelAttribute 直接绑定分支：补 @ModelAttribute 用例",
+    "ids": [
+      "1326",
+      "1327",
+      "1334",
+      "1339",
+      "1343",
+      "1348",
+      "1358",
+      "1363"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "992-992",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "@ModelAttribute 直接绑定分支：补 @ModelAttribute 用例",
+    "ids": [
+      "1376"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1005-1006",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "注解解析失败回退：补畸形注解文本",
+    "ids": [
+      "1413",
+      "1414",
+      "1415",
+      "1416"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1025-1037",
+    "mutants": 10,
+    "testability": "TESTABLE_TODO",
+    "note": "@ApiResponse 处理链：补 Swagger @ApiResponse 用例",
+    "ids": [
+      "1437",
+      "1442",
+      "1448",
+      "1450",
+      "1451",
+      "1452",
+      "1453",
+      "1454",
+      "1455",
+      "1464"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1055-1059",
+    "mutants": 10,
+    "testability": "TESTABLE_TODO",
+    "note": "hidden 参数过滤：补 @Parameter(hidden=true)/@ApiParam(hidden) 用例",
+    "ids": [
+      "1500",
+      "1501",
+      "1502",
+      "1503",
+      "1504",
+      "1505",
+      "1512",
+      "1513",
+      "1514",
+      "1515"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1102-1102",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "seen 去重：补重复类名场景",
+    "ids": [
+      "1552"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1138-1138",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "父类型为 class/record：补父类为 record 的继承",
+    "ids": [
+      "1618",
+      "1619",
+      "1620"
+    ]
+  },
+  {
+    "file": "out/java/controllerParser.js",
+    "lines": "1164-1164",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "连续斜杠归一化：补 //a//b 路径",
+    "ids": [
+      "1661"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "20-20",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "stableStringify undefined 回退：补 undefined 值场景",
+    "ids": [
+      "15"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "130-131",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "clone.type 缺失：补无 type 的 schema 克隆",
+    "ids": [
+      "111",
+      "112"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "300-303",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "@JsonIgnore 字段：补 @JsonIgnore 用例",
+    "ids": [
+      "309",
+      "312"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "318-319",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "@JsonProperty 改名：补 @JsonProperty 用例",
+    "ids": [
+      "330",
+      "331",
+      "332",
+      "333"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "329-330",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "nullable schema：补 @Nullable 用例",
+    "ids": [
+      "344",
+      "345"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "356-356",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "rule.required 覆盖：补 required 规则",
+    "ids": [
+      "398"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "419-419",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "数组元素缺参回退：补无泛型参数集合",
+    "ids": [
+      "526",
+      "527"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "427-427",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "PageInfo«T» 标题：补 mybatis-plus PageInfo 用例",
+    "ids": [
+      "544"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "445-455",
+    "mutants": 18,
+    "testability": "TESTABLE_TODO",
+    "note": "IPage 分页信封（18 变异集中区）：补 mybatis-plus IPage 返回类型用例（当前只测 spring-data/mybatis-plus Page）",
+    "ids": [
+      "574",
+      "575",
+      "576",
+      "577",
+      "578",
+      "579",
+      "580",
+      "581",
+      "582",
+      "583",
+      "584",
+      "585",
+      "586",
+      "587",
+      "588",
+      "589",
+      "590",
+      "591"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "462-462",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "pageStyle spring-data 分支：补 pageStyle 配置用例",
+    "ids": [
+      "611"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "469-469",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "Page«T» 标题（spring-data）：补 spring-data Page 用例",
+    "ids": [
+      "627"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "486-486",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "Page«T» 标题（mybatis-plus）：补 mybatis-plus Page 用例",
+    "ids": [
+      "652"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "508-508",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "ref 前缀校验：补 components/schemas 前缀外引用",
+    "ids": [
+      "673"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "519-532",
+    "mutants": 12,
+    "testability": "TESTABLE_TODO",
+    "note": "数组 items 解析：补 List<List<T>> 嵌套集合",
+    "ids": [
+      "685",
+      "686",
+      "692",
+      "693",
+      "703",
+      "708",
+      "709",
+      "710",
+      "711",
+      "712",
+      "718",
+      "719"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "539-539",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "nullable $ref 包裹：补可空引用类型",
+    "ids": [
+      "723",
+      "724"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "560-561",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "@Schema(hidden)：补 @Schema(hidden=true) 用例",
+    "ids": [
+      "750",
+      "751"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "582-585",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "$ref 提前返回：补已解析引用",
+    "ids": [
+      "785",
+      "786",
+      "787"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "593-597",
+    "mutants": 9,
+    "testability": "TESTABLE_TODO",
+    "note": "注解 example 的数组形态：补 example 数组",
+    "ids": [
+      "804",
+      "805",
+      "806",
+      "807",
+      "808",
+      "809",
+      "810",
+      "811",
+      "812"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "617-617",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "默认值数字解析：补 @JsonDefaultValue 数字",
+    "ids": [
+      "836"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "627-628",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "布尔默认值 else：补布尔默认值",
+    "ids": [
+      "849",
+      "850"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "637-647",
+    "mutants": 14,
+    "testability": "TESTABLE_TODO",
+    "note": "正数约束分支：补 @Positive/@Min 用例",
+    "ids": [
+      "867",
+      "868",
+      "869",
+      "870",
+      "871",
+      "872",
+      "873",
+      "878",
+      "879",
+      "880",
+      "881",
+      "882",
+      "883",
+      "884"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "659-660",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "数组约束：补集合元素约束",
+    "ids": [
+      "904",
+      "905"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "673-673",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "日期字面量解析：补日期默认值",
+    "ids": [
+      "935"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "684-684",
+    "mutants": 11,
+    "testability": "TESTABLE_TODO",
+    "note": "字符串默认值 trim：补带空白默认值",
+    "ids": [
+      "942",
+      "943",
+      "944",
+      "945",
+      "946",
+      "947",
+      "948",
+      "949",
+      "950",
+      "951",
+      "952"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "727-727",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "数字字面量回退：补十六进制/科学计数默认值",
+    "ids": [
+      "1003"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "763-763",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "enumFieldDoc 描述追加：pipelineCacheOverloads 已补 DTO 字段枚举；此处为集合元素枚举分支，补 List<Enum> 用例",
+    "ids": [
+      "1034"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "782-786",
+    "mutants": 5,
+    "testability": "TESTABLE_TODO",
+    "note": "字段规则「条件无法求值」告警：补不支持语法",
+    "ids": [
+      "1055",
+      "1057",
+      "1058",
+      "1059",
+      "1063"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "794-800",
+    "mutants": 21,
+    "testability": "TESTABLE_TODO",
+    "note": "字段规则主链 else（21 变异集中区）：补 json.rule.field.* 各规则类型用例",
+    "ids": [
+      "1073",
+      "1074",
+      "1075",
+      "1076",
+      "1077",
+      "1079",
+      "1080",
+      "1081",
+      "1082",
+      "1083",
+      "1084",
+      "1085",
+      "1086",
+      "1087",
+      "1088",
+      "1089",
+      "1090",
+      "1091",
+      "1092",
+      "1093",
+      "1094"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "829-834",
+    "mutants": 11,
+    "testability": "TESTABLE_TODO",
+    "note": "规则值求值链：补表达式型规则值",
+    "ids": [
+      "1134",
+      "1137",
+      "1138",
+      "1139",
+      "1140",
+      "1141",
+      "1142",
+      "1143",
+      "1144",
+      "1145",
+      "1146"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "844-845",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "规则无法求值告警：补无法求值的规则值",
+    "ids": [
+      "1161",
+      "1163",
+      "1164",
+      "1165"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "852-853",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "v.skipped 告警：补被跳过的规则",
+    "ids": [
+      "1173",
+      "1175"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "873-874",
+    "mutants": 4,
+    "testability": "TESTABLE_TODO",
+    "note": "类级规则求值：补 class 级规则",
+    "ids": [
+      "1213",
+      "1215",
+      "1216",
+      "1217"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "922-922",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "参数注解缺省回退：补无注解参数",
+    "ids": [
+      "1263"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "931-932",
+    "mutants": 3,
+    "testability": "TESTABLE_TODO",
+    "note": "字段规则告警出口：补字段规则告警路径",
+    "ids": [
+      "1278",
+      "1279",
+      "1280"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "940-944",
+    "mutants": 5,
+    "testability": "TESTABLE_TODO",
+    "note": "规则类型分发链：补其他规则类型",
+    "ids": [
+      "1290",
+      "1292",
+      "1293",
+      "1294",
+      "1298"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "952-958",
+    "mutants": 21,
+    "testability": "TESTABLE_TODO",
+    "note": "字段规则主链 else（21 变异集中区）：补 json.rule.field.name/type 用例",
+    "ids": [
+      "1308",
+      "1309",
+      "1310",
+      "1311",
+      "1312",
+      "1314",
+      "1315",
+      "1316",
+      "1317",
+      "1318",
+      "1319",
+      "1320",
+      "1321",
+      "1322",
+      "1323",
+      "1324",
+      "1325",
+      "1326",
+      "1327",
+      "1328",
+      "1329"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "973-973",
+    "mutants": 1,
+    "testability": "TESTABLE_TODO",
+    "note": "规则命中组合：补多规则同时命中",
+    "ids": [
+      "1348"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "987-996",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "字段类型覆盖规则：补 field.type 规则",
+    "ids": [
+      "1375",
+      "1377",
+      "1378",
+      "1379",
+      "1383",
+      "1387",
+      "1389"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "1003-1004",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "override 缺省回退：补无 override 的规则",
+    "ids": [
+      "1404",
+      "1406"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "1015-1024",
+    "mutants": 7,
+    "testability": "TESTABLE_TODO",
+    "note": "规则求值链尾部：补规则值表达式",
+    "ids": [
+      "1421",
+      "1423",
+      "1424",
+      "1425",
+      "1429",
+      "1433",
+      "1435"
+    ]
+  },
+  {
+    "file": "out/java/schemaResolver.js",
+    "lines": "1034-1034",
+    "mutants": 2,
+    "testability": "TESTABLE_TODO",
+    "note": "truncate 边界：补超长文案截断",
+    "ids": [
+      "1451",
+      "1452"
+    ]
+  }
+]

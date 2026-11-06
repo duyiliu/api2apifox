@@ -1,6 +1,5 @@
 // 已安装 VSIX 的 Extension Host 断言,由 scripts/test-vsix-install.mjs 通过
 // --extensionTestsPath 注入执行;run() 抛错即测试失败。
-//
 // 该模块运行在隔离 profile 中:extensionDevelopmentPath 指向 vsix 在
 // --extensions-dir 里解出的安装目录,因此加载的就是安装产物本身;
 // extensionUri 断言进一步确认它不是仓库源码或其他位置的同名扩展。

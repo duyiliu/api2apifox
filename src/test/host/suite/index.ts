@@ -109,7 +109,22 @@ function startImportServer(): Promise<{
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension("duyiliu.api2apifox");
   assert.ok(extension, "扩展 duyiliu.api2apifox 未注册");
-  await extension.activate();
+  const hostWindow = vscode.window as any;
+  const createTreeViewOriginal = hostWindow.createTreeView;
+  let refreshCount = 0;
+  let visibilityHandler: ((event: {visible: boolean}) => void) | undefined;
+  const fakeTree: any = {
+    visible: false, onDidExpandElement: () => ({dispose() {}}), onDidCollapseElement: () => ({dispose() {}}),
+    onDidChangeVisibility: (fn: (event: {visible: boolean}) => void) => { visibilityHandler = fn; return {dispose() {}}; },
+    onDidChangeCheckboxState: () => ({dispose() {}}), dispose() {}, reveal: async () => {},
+  };
+  hostWindow.createTreeView = (_id: string, options: any) => {
+    const provider = options.treeDataProvider;
+    const originalRefresh = provider.refresh.bind(provider);
+    provider.refresh = async () => { refreshCount++; return originalRefresh(); };
+    return fakeTree;
+  };
+  try { await extension.activate(); } finally { hostWindow.createTreeView = createTreeViewOriginal; }
 
   const commands = await vscode.commands.getCommands(true);
   for (const command of SYNC_COMMANDS) {
@@ -289,6 +304,50 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand("apifoxHelper.syncWorkspace");
     assert.ok(server.requests.length > requestsBefore, "拒绝后应能重新同步");
 
+    // Exercise real document save events against the extension with controlled tree visibility.
+    await sleep(1000);
+    fakeTree.visible = false;
+    const editDocument = async (suffix: string) => {
+      const editor = await vscode.window.showTextDocument(document, {preview: false, preserveFocus: true});
+      assert.equal(await editor.edit(builder => builder.insert(document.positionAt(document.getText().length), suffix)), true);
+      assert.equal(await document.save(), true);
+    };
+    const beforeHidden = refreshCount;
+    await editDocument("\n// hidden-save-test");
+    await sleep(1100);
+    assert.equal(refreshCount, beforeHidden, "hidden tree must defer refresh");
+    fakeTree.visible = true; visibilityHandler!({visible: true});
+    await waitFor(() => refreshCount > beforeHidden, 15000, "dirty tree refresh on visibility");
+    console.log("G15 PASS: hidden save deferred until visible");
+    const beforeVisible = refreshCount;
+    await editDocument("\n// visible-save-test");
+    await waitFor(() => refreshCount > beforeVisible, 15000, "visible tree refresh on save");
+    console.log("G15 PASS: visible Java save triggers refresh");
+
+    // 命令级冒烟：搜索 QuickPick 立即取消，避免测试等待交互。
+    const w = vscode.window as any;
+    const originalCreate = w.createQuickPick;
+    try {
+      w.createQuickPick = () => ({items: [], value: "", selectedItems: [], onDidChangeValue() {}, onDidAccept() {}, onDidHide() {}, show() {}, dispose() {}});
+      w.showQuickPick = async () => undefined;
+      w.showInputBox = async () => undefined;
+      for (const command of ["exportOpenapi", "filterApi", "searchApi", "checkAllApis", "uncheckAllApis", "copyEndpointPath", "copyEndpointFull", "showStatusBarMenu"]) {
+        await vscode.commands.executeCommand(`apifoxHelper.${command}`);
+        console.log(`G13 PASS: ${command}`);
+      }
+    } finally { w.createQuickPick = originalCreate; w.showQuickPick = originals.showQuickPick; w.showInputBox = () => Promise.resolve("APS-host-smoke"); }
+
+    const clipboardBefore = await vscode.env.clipboard.readText();
+    try {
+      const copyNode = {kind: "endpoint", endpoint: {method: "POST", path: "/host/copy"}};
+      await vscode.commands.executeCommand("apifoxHelper.copyEndpointPath", copyNode);
+      assert.equal(await vscode.env.clipboard.readText(), "/host/copy");
+      console.log("G13 PASS: copy path content");
+      await vscode.commands.executeCommand("apifoxHelper.copyEndpointFull", copyNode);
+      assert.equal(await vscode.env.clipboard.readText(), "POST /host/copy");
+      console.log("G13 PASS: copy full content");
+    } finally { await vscode.env.clipboard.writeText(clipboardBefore); }
+
     // 6) 设置面板 Webview 消息流:ready/testConnection/fetchProjects/save 成功与失败
     const { SettingsPanel } = require("../../../views/SettingsPanel") as {
       SettingsPanel: {
@@ -315,6 +374,40 @@ export async function run(): Promise<void> {
         secretStore.delete(key);
       },
     } as unknown as vscode.SecretStorage;
+    // 宿主级消息处理断言独立于 Webview 页面加载，用于诊断渲染环境故障。
+    const proto = (SettingsPanel as any).prototype;
+    const directMessages: any[] = [];
+    const direct: any = Object.create(proto);
+    direct._secrets = fakeSecrets;
+    direct._panel = {webview: {postMessage: (value: any) => { directMessages.push(value); return Promise.resolve(true); }}};
+    const form = {token: "APS-direct", apiBaseUrl: server.baseUrl, teamName: "Direct Team", projectId: 42, projectName: "Direct Project", endpointConflictBehavior: "OVERWRITE_EXISTING", schemaConflictBehavior: "OVERWRITE_EXISTING", folderNameSource: "tag", pageTypeStyle: "mybatis-plus", rootFolderName: "", schemaFolderId: 0, enumFieldDoc: false};
+    await direct.handleMessage({command: "save", data: form});
+    assert.equal(directMessages.at(-1).ok, true);
+    await direct.handleMessage({command: "save", data: {...form, projectId: 0, token: "changed"}});
+    assert.equal(directMessages.at(-1).ok, false);
+    assert.equal(secretStore.get("apifoxHelper.token"), "APS-direct");
+    console.log("G12 DIRECT PASS: invalid project and token unchanged");
+    const persistedDirect = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, ".vscode", "settings.json"))).toString("utf8"));
+    assert.equal(persistedDirect["apifoxHelper.projectId"], 42);
+    assert.equal(persistedDirect["apifoxHelper.projectName"], "Direct Project");
+    console.log("G12 DIRECT PASS: workspace file persisted");
+    await direct.handleMessage({command: "ready"});
+    assert.equal(directMessages.at(-1).data.settings.projectId, 42);
+    assert.equal(directMessages.at(-1).data.settings.projectName, "Direct Project");
+    console.log("G12 DIRECT PASS: panel message reread");
+    await direct.handleMessage({command: "save", data: {...form, token: ""}});
+    assert.equal(directMessages.at(-1).ok, false);
+    assert.equal(secretStore.get("apifoxHelper.token"), "APS-direct");
+    console.log("G12 DIRECT PASS: empty token and token unchanged");
+    const {setToken, getToken} = require("../../../config/secret");
+    await setToken(fakeSecrets, undefined);
+    assert.equal(await getToken(fakeSecrets), undefined);
+    await direct.handleMessage({command: "ready"});
+    assert.equal(directMessages.at(-1).data.token, "");
+    console.log("G12 DIRECT PASS: clear token and empty init state");
+    await config.update("projectId", 1, target);
+    await config.update("projectName", "host-smoke", target);
+    await config.update("teamName", "host-team", target);
     const settingsPanel = SettingsPanel.createOrShow(fakeSecrets);
     const panel = settingsPanel._panel;
     const observed: Record<string, any>[] = [];
@@ -332,6 +425,7 @@ export async function run(): Promise<void> {
       }
     }, null);
     // 用真实 Webview 脚本走完整的 webview -> extension -> webview 消息链路
+    console.log("WEBVIEW PROBE before html: visible=" + (panel as any).visible + ", active=" + (panel as any).active);
     panel.webview.html = `<!DOCTYPE html><html><body><script>
       const vscode = acquireVsCodeApi();
       window.addEventListener('message', (event) => {
@@ -343,7 +437,7 @@ export async function run(): Promise<void> {
     </script></body></html>`;
     await Promise.race([
       loaded,
-      new Promise<void>((_, reject) => setTimeout(() => reject(new Error("Webview 未加载")), 15000)),
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error("Webview 未加载")), 60000)),
     ]);
     const sendMessage = async (message: Record<string, any>, expected: string): Promise<Record<string, any>> => {
       const before = observed.length;
@@ -429,11 +523,27 @@ export async function run(): Promise<void> {
       assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
       assert.equal(vscode.workspace.getConfiguration("apifoxHelper").get("projectName"), "Host Project Saved");
 
+      const invalidProject = await sendMessage({ command: "save", data: { ...saveData, projectId: 0, token: "changed" } }, "saveResult");
+      assert.equal(invalidProject.ok, false);
+      assert.ok(String(invalidProject.message).includes("项目"));
+      assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
+      console.log("G12 PASS: invalid project rejected without changing token");
+      const settingsFile = vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, ".vscode", "settings.json");
+      const persisted = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(settingsFile)).toString("utf8"));
+      assert.equal(persisted["apifoxHelper.projectId"], 10);
+      assert.equal(persisted["apifoxHelper.projectName"], "Host Project Saved");
+      console.log("G12 PASS: workspace settings persisted");
+      const reread = await sendMessage({ command: "ready" }, "init");
+      assert.equal(reread.data.settings.projectId, 10);
+      assert.equal(reread.data.settings.projectName, "Host Project Saved");
+
+      console.log("G12 PASS: settings panel rereads project binding");
       // 保存失败:缺少 token,应返回可见错误且不覆盖已保存的令牌
       const saveFail = await sendMessage({ command: "save", data: { ...saveData, token: "" } }, "saveResult");
       assert.equal(saveFail.ok, false);
       assert.ok(String(saveFail.message).includes("令牌"), `失败应说明原因:${JSON.stringify(saveFail)}`);
       assert.equal(secretStore.get("apifoxHelper.token"), "APS-settings");
+      console.log("G12 PASS: missing token rejected without changing token");
     } finally {
       settingsPanel.dispose();
     }

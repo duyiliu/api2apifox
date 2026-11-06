@@ -1,0 +1,311 @@
+groups 155 rows 191
+[8] Regex || ^\d+$/.
+   L450: const na = /^\d+$/.test(xa) ? parseInt(xa, 10) : NaN;
+[5] ArrayDeclaration || ];
+   L359: let products = [];
+[4] BlockStatement ||  continue; }
+   L250: if (e.name.endsWith("module-info.class") || e.name.endsWith("package-info.class")) {
+[3] EqualityOperator || ocd < 0)
+   L141: if (eocd < 0) {
+[3] ArithmeticOperator || ocd + 10)
+   L144: const total = tail.readUInt16LE(eocd + 10);
+[3] ArithmeticOperator || ocd + 12)
+   L157: const cdSize = buf.readUInt32LE(eocd + 12);
+[2] ConditionalExpression || desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable))
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[2] ConditionalExpression || esc.writable || desc.configurable)
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[2] BooleanLiteral || rue,
+   L17: desc = { enumerable: true, get: function() { return m[k]; } };
+[2] ConditionalExpression || od && mod.__esModule)
+   L39: if (mod && mod.__esModule) return mod;
+[2] ConditionalExpression || ead.length < 30 
+   L164: if (head.length < 30 || head.readUInt32LE(0) !== LFH_SIG) {
+[2] ConditionalExpression || c.kind === "enum" 
+   L215: const kind = pc.kind === "enum" ? "enum" : pc.kind === "interface" ? "interface" : "class";
+[2] Regex || <macro\s+name="MAVEN_REPOSITORY"\s+value="([^"]+)"/.
+   L371: const m = /<macro\s+name="MAVEN_REPOSITORY"\s+value="([^"]+)"/.exec(macros);
+[2] ConditionalExpression || )
+   L372: if (m) {
+[2] Regex || ^https?:/i.
+   L381: if (v && !/^https?:/i.test(v)) {
+[2] StringLiteral || JetBrains")
+   L409: out.push(path.join(home, ".config", "JetBrains"));
+[2] Regex || <scope>\s*(test|provided)\s*<\/scope>/.
+   L427: if (/<scope>\s*(test|provided)\s*<\/scope>/.test(d)) {
+[2] EqualityOperator ||  < Math.max(pa.length, pb.length);
+   L447: for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+[2] ConditionalExpression || isNaN(na) && !isNaN(nb))
+   L452: if (!isNaN(na) && !isNaN(nb)) {
+[2] ConditionalExpression || ytesRead === length 
+   L472: return bytesRead === length ? b : b.subarray(0, bytesRead);
+[2] Regex || ^META-INF\/maven\/[^/]+\/[^/]+\/pom\.xml$/.
+   L485: const pom = parseCentralDirectory(cd, total).find((e) => /^META-INF\/maven\/[^/]+\/[^/]+\/pom\.xml$/.test(e.name));
+[2] BlockStatement ||  break; }
+   L532: if (round === maxRounds || !fresh.length) {
+[1] ConditionalExpression || his && this.__createBinding)
+   L13: var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+[1] ConditionalExpression || 2 === undefined)
+   L14: if (k2 === undefined) k2 = k;
+[1] LogicalOperator || desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable))
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] StringLiteral || get" 
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] BooleanLiteral || desc 
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] BooleanLiteral || m.__esModule 
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] LogicalOperator || esc.writable || desc.configurable)
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] BlockStatement ||  desc = { enumerable: true, get: function() { return m[k]; } }; }
+   L16: if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+[1] ConditionalExpression || his && this.__setModuleDefault)
+   L24: var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+[1] StringLiteral || default",
+   L25: Object.defineProperty(o, "default", { enumerable: true, value: v });
+[1] ObjectLiteral ||  enumerable: true, value: v })
+   L25: Object.defineProperty(o, "default", { enumerable: true, value: v });
+[1] ConditionalExpression || his && this.__importStar)
+   L29: var __importStar = (this && this.__importStar) || (function () {
+[1] LogicalOperator || bject.getOwnPropertyNames || function (o) { var ar = []; for (var k in o) if (Object.prototype.hasOwnProperty.c
+   L31: ownKeys = Object.getOwnPropertyNames || function (o) {
+[1] LogicalOperator || od && mod.__esModule)
+   L39: if (mod && mod.__esModule) return mod;
+[1] ConditionalExpression || od != null)
+   L41: if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mo
+[1] EqualityOperator ||  < k.length;
+   L41: if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mo
+[1] ConditionalExpression || [i] !== "default")
+   L41: if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mo
+[1] StringLiteral || default")
+   L41: if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mo
+[1] CallExpression || _setModuleDefault(result, mod);
+   L42: __setModuleDefault(result, mod);
+[1] StringLiteral || __esModule",
+   L46: Object.defineProperty(exports, "__esModule", { value: true });
+[1] ObjectLiteral ||  value: true })
+   L46: Object.defineProperty(exports, "__esModule", { value: true });
+[1] BooleanLiteral || rue 
+   L46: Object.defineProperty(exports, "__esModule", { value: true });
+[1] UpdateOperator || --)
+   L68: for (let i = tail.length - minTail; i >= start; i--) {
+[1] ArithmeticOperator || ail.length - minTail 
+   L67: const start = Math.max(0, tail.length - minTail - 0xffff);
+[1] EqualityOperator ||  >= start;
+   L68: for (let i = tail.length - minTail; i >= start; i--) {
+[1] EqualityOperator ||  < total;
+   L79: for (let k = 0; k < total; k++) {
+[1] UpdateOperator || ++)
+   L79: for (let k = 0; k < total; k++) {
+[1] LogicalOperator ||  + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG)
+   L80: if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
+[1] EqualityOperator ||  + 46 > cd.length 
+   L80: if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
+[1] ConditionalExpression ||  + 46 > cd.length 
+   L80: if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
+[1] ArithmeticOperator ||  + 46 
+   L80: if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
+[1] ConditionalExpression || d.readUInt32LE(p) !== CDE_SIG)
+   L80: if (p + 46 > cd.length || cd.readUInt32LE(p) !== CDE_SIG) {
+[1] ArithmeticOperator || 6 + nameLen + extraLen 
+   L91: p += 46 + nameLen + extraLen + commentLen;
+[1] EqualityOperator ||  === length 
+   L125: return n === length ? b : b.subarray(0, n);
+[1] BlockStatement ||  try { fs.closeSync(this.fd); } catch { // 重复关闭忽略 } }
+   L127: close() {
+[1] BlockStatement ||  fs.closeSync(this.fd); }
+   L128: try {
+[1] CallExpression || s.closeSync(this.fd);
+   L129: fs.closeSync(this.fd);
+[1] StringLiteral || zip: 未找到 EOCD")
+   L142: throw new Error("zip: 未找到 EOCD");
+[1] ArithmeticOperator || ntry.localOffset + 30 + nameLen + extraLen,
+   L169: const raw = read(entry.localOffset + 30 + nameLen + extraLen, entry.compressedSize);
+[1] StringLiteral || @${a.fqcn}`,
+   L188: return { name: a.name, raw: `@${a.fqcn}`, args };
+[1] ConditionalExpression ||  === null || v === undefined)
+   L194: if (v === null || v === undefined) {
+[1] LogicalOperator ||  === null || v === undefined)
+   L194: if (v === null || v === undefined) {
+[1] ConditionalExpression ||  === undefined)
+   L194: if (v === null || v === undefined) {
+[1] ConditionalExpression ||  === null 
+   L194: if (v === null || v === undefined) {
+[1] ConditionalExpression || ypeof v === "string" || typeof v === "number" || typeof v === "boolean")
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] LogicalOperator || ypeof v === "string" || typeof v === "number" || typeof v === "boolean")
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] ConditionalExpression || ypeof v === "string" || typeof v === "number" 
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] LogicalOperator || ypeof v === "string" || typeof v === "number" 
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] ConditionalExpression || ypeof v === "string" 
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] StringLiteral || string" 
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] BlockStatement ||  return v; }
+   L197: if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+[1] ConditionalExpression || c.kind === "interface" 
+   L215: const kind = pc.kind === "enum" ? "enum" : pc.kind === "interface" ? "interface" : "class";
+[1] StringLiteral || class";
+   L215: const kind = pc.kind === "enum" ? "enum" : pc.kind === "interface" ? "interface" : "class";
+[1] ArrayDeclaration || ],
+   L222: recordComponents: [],
+[1] LogicalOperator || .name.endsWith("module-info.class") || e.name.endsWith("package-info.class"))
+   L250: if (e.name.endsWith("module-info.class") || e.name.endsWith("package-info.class")) {
+[1] BlockStatement ||  return this.jarCache.get(jarPath) ?? null; }
+   L270: if (this.jarCache.has(jarPath)) {
+[1] CallExpression || his.jarCache.set(jarPath, val);
+   L277: this.jarCache.set(jarPath, val);
+[1] CallExpression || rc.close();
+   L281: src.close();
+[1] CallExpression || his.jarCache.set(jarPath, null);
+   L287: this.jarCache.set(jarPath, null);
+[1] CallExpression || his.cache.set(simpleName, null);
+   L299: this.cache.set(simpleName, null);
+[1] OptionalChaining || ar?.entries.
+   L304: const entry = jar?.entries.get(ref.entryName);
+[1] ConditionalExpression || jar || !entry)
+   L305: if (!jar || !entry) {
+[1] LogicalOperator || jar || !entry)
+   L305: if (!jar || !entry) {
+[1] BlockStatement ||  for (const jar of this.jarCache.values()) { jar?.src.close(); } this.jarCache.clear(); this.cache.clear(); }
+   L321: dispose() {
+[1] CallExpression || his.cache.clear();
+   L326: this.cache.clear();
+[1] CallExpression || his.jarCache.clear();
+   L325: this.jarCache.clear();
+[1] BlockStatement ||  return; }
+   L341: if (!p) {
+[1] ConditionalExpression || p)
+   L341: if (!p) {
+[1] ConditionalExpression || acros)
+   L370: if (macros) {
+[1] ConditionalExpression ||  && !/^https?:/i.test(v))
+   L381: if (v && !/^https?:/i.test(v)) {
+[1] LogicalOperator ||  && !/^https?:/i.test(v))
+   L381: if (v && !/^https?:/i.test(v)) {
+[1] ConditionalExpression || ettingsText)
+   L391: if (settingsText) {
+[1] MethodExpression || [1].trim())
+   L394: await push(m[1].trim());
+[1] ConditionalExpression || ppData)
+   L405: if (appData) {
+[1] StringLiteral || .config",
+   L409: out.push(path.join(home, ".config", "JetBrains"));
+[1] StringLiteral || Library",
+   L410: out.push(path.join(home, "Library", "Application Support", "JetBrains"));
+[1] StringLiteral || Application Support",
+   L410: out.push(path.join(home, "Library", "Application Support", "JetBrains"));
+[1] BlockStatement ||  return undefined; }
+   L417: catch {
+[1] Regex || <dependency>[\s\S]*?<\/dependency>/g)
+   L425: for (const m of content.matchAll(/<dependency>[\s\S]*?<\/dependency>/g)) {
+[1] OptionalChaining || <groupId>\s*([^<]+?)\s*<\/groupId>/.exec(d)?.[1];
+   L430: const g = /<groupId>\s*([^<]+?)\s*<\/groupId>/.exec(d)?.[1];
+[1] OptionalChaining || <artifactId>\s*([^<]+?)\s*<\/artifactId>/.exec(d)?.[1];
+   L431: const a = /<artifactId>\s*([^<]+?)\s*<\/artifactId>/.exec(d)?.[1];
+[1] LogicalOperator || g || !a 
+   L432: if (!g || !a || g.includes("${") || a.includes("${")) {
+[1] ConditionalExpression || g || !a 
+   L432: if (!g || !a || g.includes("${") || a.includes("${")) {
+[1] BlockStatement ||  const pa = a.split(/[.-]/); const pb = b.split(/[.-]/); for (let i = 0; i < Math.max(pa.length, pb.length); i++
+   L444: function versionCompare(a, b) {
+[1] Regex || [.-]/)
+   L446: const pb = b.split(/[.-]/);
+[1] ConditionalExpression ||  < Math.max(pa.length, pb.length);
+   L447: for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+[1] MethodExpression || ath.max(pa.length, pb.length);
+   L447: for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+[1] BlockStatement ||  const xa = pa[i] ?? ""; const xb = pb[i] ?? ""; const na = /^\d+$/.test(xa) ? parseInt(xa, 10) : NaN; const nb 
+   L447: for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+[1] LogicalOperator || b[i] ?? "";
+   L449: const xb = pb[i] ?? "";
+[1] LogicalOperator || isNaN(na) && !isNaN(nb))
+   L452: if (!isNaN(na) && !isNaN(nb)) {
+[1] BooleanLiteral || isNaN(nb))
+   L452: if (!isNaN(na) && !isNaN(nb)) {
+[1] BooleanLiteral || isNaN(na) 
+   L452: if (!isNaN(na) && !isNaN(nb)) {
+[1] BlockStatement ||  if (na !== nb) { return na - nb; } continue; }
+   L452: if (!isNaN(na) && !isNaN(nb)) {
+[1] EqualityOperator || a !== nb)
+   L453: if (na !== nb) {
+[1] ConditionalExpression || a !== nb)
+   L453: if (na !== nb) {
+[1] ArithmeticOperator || a - nb;
+   L454: return na - nb;
+[1] EqualityOperator || ytesRead === length 
+   L472: return bytesRead === length ? b : b.subarray(0, bytesRead);
+[1] ConditionalExpression || pom)
+   L486: if (!pom) {
+[1] StringLiteral || zip: local header 校验失败(${pom.name})`)
+   L491: throw new Error(`zip: local header 校验失败(${pom.name})`);
+[1] ConditionalExpression || om.method === 0 
+   L494: const data = pom.method === 0 ? Buffer.from(raw) : pom.method === 8 ? zlib.inflateRawSync(raw) : undefined;
+[1] ArithmeticOperator || om.localOffset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28),
+   L493: const raw = await readAt(pom.localOffset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28), pom.compressedSize);
+[1] ConditionalExpression || data)
+   L495: if (!data) {
+[1] BlockStatement ||  await fh.close().catch(() => undefined); }
+   L500: finally {
+[1] StringLiteral || ${c.groupId}:${c.artifactId}`)
+   L513: const knownCoords = new Set(pomCoords.map((c) => `${c.groupId}:${c.artifactId}`));
+[1] LogicalOperator || pts.maxRounds ?? 2;
+   L509: const maxRounds = opts.maxRounds ?? 2;
+[1] ArrowFunction || c) => `${c.groupId}:${c.artifactId}`)
+   L513: const knownCoords = new Set(pomCoords.map((c) => `${c.groupId}:${c.artifactId}`));
+[1] LogicalOperator || ound <= maxRounds && collected.length < maxJars;
+   L518: for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
+[1] ConditionalExpression || ound <= maxRounds 
+   L518: for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
+[1] UpdateOperator || ound++)
+   L518: for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
+[1] ConditionalExpression || ollected.length < maxJars;
+   L518: for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
+[1] EqualityOperator || ollected.length < maxJars;
+   L518: for (let round = 0; round <= maxRounds && collected.length < maxJars; round++) {
+[1] MethodExpression || ars.filter((j) => !collectedSet.has(j));
+   L520: const fresh = jars.filter((j) => !collectedSet.has(j));
+[1] ConditionalExpression || roppedNames.length < 10)
+   L524: if (droppedNames.length < 10) {
+[1] EqualityOperator || roppedNames.length < 10)
+   L524: if (droppedNames.length < 10) {
+[1] CallExpression || ollectedSet.add(j);
+   L530: collectedSet.add(j);
+[1] ConditionalExpression || ound === maxRounds || !fresh.length)
+   L532: if (round === maxRounds || !fresh.length) {
+[1] LogicalOperator || ound === maxRounds || !fresh.length)
+   L532: if (round === maxRounds || !fresh.length) {
+[1] StringLiteral || ${c.groupId}:${c.artifactId}`;
+   L542: const key = `${c.groupId}:${c.artifactId}`;
+[1] ConditionalExpression || knownCoords.has(key))
+   L543: if (!knownCoords.has(key)) {
+[1] CallExpression || nownCoords.add(key);
+   L544: knownCoords.add(key);
+[1] ConditionalExpression || next.length)
+   L554: if (!next.length) {
+[1] ConditionalExpression || ropped > droppedNames.length 
+   L561: `${dropped > droppedNames.length ? " 等" : ""}(更深层未展开的传递依赖不在其中;可用 maxDependencyJars 调高上限或 dependencyJars 显式补充)`);
+[1] EqualityOperator || ropped > droppedNames.length 
+   L561: `${dropped > droppedNames.length ? " 等" : ""}(更深层未展开的传递依赖不在其中;可用 maxDependencyJars 调高上限或 dependencyJars 显式补充)`);
+[1] StringLiteral || ";
+   L572: let artifactDirHit = "";
+[1] ConditionalExpression || ^\./.test(v))
+   L584: if (/^\./.test(v)) {
+[1] ConditionalExpression || await fs.promises.stat(path.join(artifactDir, v))).isDirectory())
+   L588: if ((await fs.promises.stat(path.join(artifactDir, v))).isDirectory()) {
+[1] ConditionalExpression || ers.length)
+   L596: if (vers.length) {
+[1] ConditionalExpression || versions.length)
+   L602: if (!versions.length) {
+[1] MethodExpression || ersions.sort(versionCompare);
+   L605: versions.sort(versionCompare);
+[1] ConditionalExpression ||  === `${c.artifactId}-${versions[i]}.jar` 
+   L610: const jar = (await fs.promises.readdir(vDir)).find((f) => f === `${c.artifactId}-${versions[i]}.jar` && !f.includes("sou
+[1] ConditionalExpression || ar)
+   L611: if (jar) {
+[1] ConditionalExpression || seen.has(full))
+   L613: if (!seen.has(full)) {
+[1] CallExpression || een.add(full);
+   L614: seen.add(full);
