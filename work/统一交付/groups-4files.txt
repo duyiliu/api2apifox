@@ -1,0 +1,334 @@
+##### out/core/syncService.js  存活 3
+-- [1] StringLiteral || ""
+   4:32  exports.hasImportFailures = hasImportFailures;
+-- [1] BooleanLiteral || false
+   4:55  exports.hasImportFailures = hasImportFailures;
+-- [1] ObjectLiteral || {}
+   4:46  exports.hasImportFailures = hasImportFailures;
+##### out/openapi/builder.js  存活 44
+-- [8] ConditionalExpression || true
+   54:9  }
+   57:9  }
+   103:13  }
+   106:13  }
+   146:17  }
+   154:18  const jsonBody = { schema };
+   157:17  }
+   167:39  if (innerReturn) {
+-- [7] StringLiteral || ""
+   4:32  const schemaResolver_1 = require("../java/schemaResolver");
+   102:102  param.description = desc;
+   131:52  : (() => {
+   132:31  const s = rule.typeOverride
+   145:36  schema.required = required;
+   154:34  const jsonBody = { schema };
+   167:65  if (innerReturn) {
+-- [7] ConditionalExpression || false
+   31:52  continue;
+   106:13  }
+   127:21  }
+   157:17  }
+   167:39  if (innerReturn) {
+   176:13  }
+   198:9  }
+-- [4] BlockStatement || {}
+   106:38  }
+   157:33  }
+   197:43  (0, schemaResolver_1.applyConstraints)(p.annotations, schema);
+   198:32  }
+-- [3] CallExpression || ;
+   95:9  name: p.name,
+   137:25  })();
+   199:9  }
+-- [2] ObjectLiteral || {}
+   4:46  const schemaResolver_1 = require("../java/schemaResolver");
+   167:24  if (innerReturn) {
+-- [1] BooleanLiteral || false
+   4:55  const schemaResolver_1 = require("../java/schemaResolver");
+-- [1] LogicalOperator || tags.get(ep.tag) && undefined
+   24:26  const verbKey = ep.method.toLowerCase();
+-- [1] StringLiteral || ``
+   84:26  .map((p) => {
+-- [1] LogicalOperator || ep.methodName && ep.operationId
+   84:46  .map((p) => {
+-- [1] MethodExpression || [p.description, ...rule.appendDoc]
+   102:46  param.description = desc;
+-- [1] EqualityOperator || p.example === undefined
+   106:13  }
+-- [1] LogicalOperator || ep.responseDescription && "OK"
+   167:39  if (innerReturn) {
+-- [1] ArrayDeclaration || ["Stryker was here"]
+   174:46  if (extra.schemaText) {
+-- [1] MethodExpression || typeText
+   207:13  if (m) {
+-- [1] Regex || /^(?:ResponseEntity|Mono|HttpEntity)\s*<(.*)>/
+   208:15  t = m[1].trim();
+-- [1] Regex || /(?:ResponseEntity|Mono|HttpEntity)\s*<(.*)>$/
+   208:15  t = m[1].trim();
+-- [1] MethodExpression || m[1]
+   210:13  if (t === "void" || t === "Void") {
+-- [1] Regex || /^(?:ResponseEntity|Mono|HttpEntity)\S*<(.*)>$/
+   208:15  t = m[1].trim();
+##### out/apifox/client.js  存活 57
+-- [10] ConditionalExpression || false
+   100:23  signal: combineAbortSignals(this.signal ? [this.signal, AbortSignal.timeout(this.timeoutMs)] : [AbortSignal.timeout(this.timeoutMs)]),
+   142:9  return AbortSignal.any(signals);
+   201:12  }
+   201:12  }
+   201:42  }
+   207:9  return message;
+   217:12  }
+   227:13  return;
+   232:13  for (const sub of value.errors) {
+   277:82  }
+-- [9] StringLiteral || ""
+   4:32  exports.ApifoxClient = exports.APIFOX_API_VERSION = exports.ApifoxApiError = void 0;
+   46:41  return extractList(body, (item) => typeof item?.id === "number" && typeof item?.name === "string");
+   109:45  cancelled.name = "AbortError";
+   142:36  return AbortSignal.any(signals);
+   201:27  }
+   201:57  }
+   217:33  }
+   243:64  }
+   277:96  }
+-- [9] ConditionalExpression || true
+   47:44  }
+   47:44  }
+   47:76  }
+   70:33  throw firstError instanceof Error
+   70:47  throw firstError instanceof Error
+   142:9  return AbortSignal.any(signals);
+   194:41  }
+   207:9  return message;
+   217:12  }
+-- [3] StringLiteral || "Stryker was here!"
+   184:63  }
+   197:55  }
+   200:49  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+-- [2] OptionalChaining || item.name
+   40:83  }
+   47:83  }
+-- [2] BlockStatement || {}
+   142:48  return AbortSignal.any(signals);
+   207:42  return message;
+-- [2] ArrayDeclaration || ["Stryker was here"]
+   188:88  return arr.filter(valid);
+   224:19  const seen = new Set();
+-- [1] BooleanLiteral || false
+   4:55  exports.ApifoxClient = exports.APIFOX_API_VERSION = exports.ApifoxApiError = void 0;
+-- [1] ObjectLiteral || {}
+   4:46  exports.ApifoxClient = exports.APIFOX_API_VERSION = exports.ApifoxApiError = void 0;
+-- [1] LogicalOperator || typeof item?.id === "number" || typeof item?.name 
+   47:44  }
+-- [1] OptionalChaining || item.id
+   47:51  }
+-- [1] EqualityOperator || failed >= 0
+   70:33  throw firstError instanceof Error
+-- [1] EqualityOperator || teams.length >= 0
+   70:47  throw firstError instanceof Error
+-- [1] EqualityOperator || typeof AbortSignal.any !== "function"
+   142:9  return AbortSignal.any(signals);
+-- [1] MethodExpression || value
+   197:40  }
+-- [1] MethodExpression || host.replace(/^\[|\]$/g, "").toUpperCase()
+   200:24  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+-- [1] Regex || /^\[|\]/g
+   200:37  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+-- [1] Regex || /\[|\]$/g
+   200:37  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+-- [1] LogicalOperator || normalized === "localhost" && normalized === "::1"
+   201:12  }
+-- [1] LogicalOperator || !code && message.includes(code)
+   207:9  return message;
+-- [1] BooleanLiteral || code
+   207:9  return message;
+-- [1] EqualityOperator || typeof node.port !== "number"
+   217:12  }
+-- [1] EqualityOperator || depth >= MAX_ERROR_DEPTH
+   227:13  return;
+-- [1] CallExpression || ;
+   230:9  nodes.push({ name: readText(value.name), text: describeNode(value), loopback: loopbackEndpoint(value) });
+-- [1] ArithmeticOperator || depth - 1
+   237:28  };
+-- [1] MethodExpression || nodes.map(node => node.text)
+   243:12  }
+-- [1] MethodExpression || collectErrorChain(err).every(node => node.name ===
+   277:12  }
+##### out/core/config.js  存活 143
+-- [63] StringLiteral || ""
+   7:19  }
+   16:30  o["default"] = v;
+   32:92  return result;
+   37:32  exports.resolveConfig = resolveConfig;
+   43:42  class ConfigError extends Error {
+   43:75  class ConfigError extends Error {
+   43:91  class ConfigError extends Error {
+   48:60  }
+   99:34  sources.title = "default";
+   99:59  sources.title = "default";
+   101:21  const helper = isRecord(fileConfig.helperProperties) ? fileConfig.helperProperties : {};
+   104:32  applyFile(config, sources, "endpointConflictBehavior", conflictValue(fileConfig.endpointConflictBehavior, "endpointConflictBehavior", diagnostics), fileSource);
+   104:79  applyFile(config, sources, "endpointConflictBehavior", conflictValue(fileConfig.endpointConflictBehavior, "endpointConflictBehavior", diagnostics), fileSource);
+   105:81  applyFile(config, sources, "schemaConflictBehavior", conflictValue(fileConfig.schemaConflictBehavior, "schemaConflictBehavior", diagnostics), fileSource);
+   108:80  applyFile(config, sources, "exportPath", stringValue(fileConfig.exportPath, "exportPath", diagnostics), fileSource);
+   109:32  applyFile(config, sources, "pageTypeStyle", enumValue(fileConfig.pageTypeStyle, "pageTypeStyle", ["mybatis-plus", "spring-data"], diagnostics), fileSource);
+   109:80  applyFile(config, sources, "pageTypeStyle", enumValue(fileConfig.pageTypeStyle, "pageTypeStyle", ["mybatis-plus", "spring-data"], diagnostics), fileSource);
+   110:81  applyFile(config, sources, "folderNameSource", enumValue(fileConfig.folderNameSource, "folderNameSource", ["tag", "controller"], diagnostics), fileSource);
+   110:32  applyFile(config, sources, "folderNameSource", enumValue(fileConfig.folderNameSource, "folderNameSource", ["tag", "controller"], diagnostics), fileSource);
+   111:32  applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+   111:85  applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+   111:119  applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+   111:103  applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+   112:91  applyFile(config, sources, "updateFolderOfChangedEndpoint", booleanValue(fileConfig.updateFolderOfChangedEndpoint, "updateFolderOfChangedEndpoint", diagnostics), fileSource);
+   112:112  applyFile(config, sources, "updateFolderOfChangedEndpoint", booleanValue(fileConfig.updateFolderOfChangedEndpoint, "updateFolderOfChangedEndpoint", diagnostics), fileSource);
+   113:89  applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
+   113:32  applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
+   115:89  applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
+   116:32  applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
+   116:88  applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
+   117:32  applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
+   118:96  applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
+   118:32  applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
+   117:82  applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
+   119:32  applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
+   119:94  applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
+   120:95  if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
+   122:37  sources.title = fileSource;
+   127:17  applyEnv(config, sources, "projectId", env.API2APIFOX_PROJECT_ID, "API2APIFOX_PROJECT_ID", parseEnvNumber, diagnostics);
+   129:71  applyEnv(config, sources, "endpointConflictBehavior", env.API2APIFOX_ENDPOINT_CONFLICT, "API2APIFOX_ENDPOINT_CONFLICT", parseEnvConflict, diagnostics);
+   132:31  if (key === "configFile" || key === "token" || value === undefined || key === "title") {
+   132:89  if (key === "configFile" || key === "token" || value === undefined || key === "title") {
+   134:21  }
+   134:45  }
+   134:87  }
+   161:9  "projectId",
+   162:9  "apiBaseUrl",
+   167:9  "exportPath",
+   168:9  "pageTypeStyle",
+   170:9  "rootFolderName",
+   169:9  "folderNameSource",
+   172:9  "schemaFolderId",
+   175:9  "dependencyJars",
+   176:9  "maxDependencyJars",
+   177:9  "timeoutMs",
+   193:29  }
+   193:50  }
+   208:63  invalid("配置文件根节点必须是对象", diagnostics, configPath);
+   247:73  if (!CONFLICT_BEHAVIORS.includes(config.schemaConflictBehavior)) {
+   250:71  if (!Number.isInteger(config.projectId) || config.projectId < 0) {
+   256:17  if (!Number.isFinite(config.timeoutMs) || config.timeoutMs <= 0) {
+   328:44  }
+   347:33  //# sourceMappingURL=config.js.map
+-- [24] ConditionalExpression || false
+   4:24  var desc = Object.getOwnPropertyDescriptor(m, k);
+   7:9  }
+   7:51  }
+   15:27  }) : function(o, v) {
+   20:21  ownKeys = Object.getOwnPropertyNames || function (o) {
+   30:13  if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+   122:9  sources.title = fileSource;
+   134:13  }
+   134:13  }
+   134:13  }
+   134:13  }
+   134:37  }
+   134:56  }
+   134:79  }
+   140:9  sources.title = "cli";
+   209:13  return {};
+   252:9  }
+   252:48  }
+   284:9  return undefined;
+   294:9  return undefined;
+   294:9  return undefined;
+   314:9  return undefined;
+   327:9  return undefined;
+   327:9  return undefined;
+-- [16] ConditionalExpression || true
+   5:9  if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+   7:9  }
+   7:51  }
+   30:13  if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+   32:13  return result;
+   32:83  return result;
+   99:26  sources.title = "default";
+   99:26  sources.title = "default";
+   99:51  sources.title = "default";
+   145:36  }
+   188:13  }
+   193:21  }
+   193:21  }
+   193:42  }
+   314:9  return undefined;
+   344:41  function toPosix(value) {
+-- [5] BlockStatement || {}
+   7:88  }
+   15:96  }) : function(o, v) {
+   134:96  }
+   294:63  return undefined;
+   327:63  return undefined;
+-- [3] BooleanLiteral || false
+   8:28  Object.defineProperty(o, k2, desc);
+   16:55  o["default"] = v;
+   37:55  exports.resolveConfig = resolveConfig;
+-- [2] ObjectLiteral || {}
+   16:41  o["default"] = v;
+   37:46  exports.resolveConfig = resolveConfig;
+-- [2] ArrayDeclaration || ["Stryker was here"]
+   92:25  maxDependencyJars: 120,
+   91:26  // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
+-- [2] StringLiteral || ``
+   203:83  return {};
+   219:22  });
+-- [1] LogicalOperator || !desc && ("get" in desc ? !m.__esModule : desc.wri
+   7:9  }
+-- [1] BooleanLiteral || desc
+   7:9  }
+-- [1] BooleanLiteral || m.__esModule
+   7:35  }
+-- [1] LogicalOperator || desc.writable && desc.configurable
+   7:51  }
+-- [1] LogicalOperator || Object.getOwnPropertyNames && function (o) { var a
+   22:19  for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+-- [1] LogicalOperator || mod || mod.__esModule
+   30:13  if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+-- [1] EqualityOperator || i <= k.length
+   32:60  return result;
+-- [1] CallExpression || ;
+   33:9  };
+-- [1] LogicalOperator || path.relative(root, configPath) && path.basename(c
+   62:40  if (Object.prototype.hasOwnProperty.call(fileConfig, "token")) {
+-- [1] MethodExpression || Object.keys(defaults)
+   98:40  .map((key) => [key, "default"]));
+-- [1] LogicalOperator || key !== "projectRoot" || key !== "title"
+   99:26  sources.title = "default";
+-- [1] ArrayDeclaration || []
+   111:102  applyFile(config, sources, "rootFolderName", stringValue(fileConfig.rootFolderName, "rootFolderName", diagnostics), fileSource);
+-- [1] LogicalOperator || (key === "configFile" || key === "token" || value 
+   134:13  }
+-- [1] LogicalOperator || (key === "configFile" || key === "token") && value
+   134:13  }
+-- [1] LogicalOperator || key === "configFile" && key === "token"
+   134:13  }
+-- [1] MethodExpression || overrides.title
+   140:9  sources.title = "cli";
+-- [1] LogicalOperator || key !== "enabled" || key !== "enumFieldDoc"
+   193:21  }
+-- [1] LogicalOperator || !isRecord(parsed) && Array.isArray(parsed)
+   209:13  return {};
+-- [1] LogicalOperator || !Number.isInteger(config.projectId) && config.proj
+   252:9  }
+-- [1] LogicalOperator || typeof value !== "number" && !Number.isFinite(valu
+   294:9  return undefined;
+-- [1] LogicalOperator || !Array.isArray(value) && !value.every(item => type
+   314:9  return undefined;
+-- [1] BooleanLiteral || Array.isArray(value)
+   314:9  return undefined;
+-- [1] BooleanLiteral || value.every(item => typeof item === "string")
+   314:34  return undefined;
+-- [1] ArrowFunction || () => undefined
+   314:47  return undefined;
+-- [1] MethodExpression || value.some(item => typeof item === "string")
+   314:35  return undefined;
+-- [1] LogicalOperator || typeof value !== "string" && !values.includes(valu
+   327:9  return undefined;

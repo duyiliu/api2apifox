@@ -9,11 +9,31 @@ export interface ParsedFile {
   fsPath: string;
   source: string;
   cst: CstNode;
+  /** 语法解析失败的原始信息;存在时 cst 为空壳,该文件不参与索引与接口提取 */
+  parseError?: string;
 }
 
-/** 解析单个 Java 源文件 */
+/** 空 CST:解析失败时代的占位,使 findAll/buildIndex 等纯读路径无需额外判空 */
+const EMPTY_CST: CstNode = { name: "compilationUnit", children: {} };
+
+/**
+ * 解析单个 Java 源文件。
+ * java-parser 遇到语法错误、词法错误或超深嵌套时直接抛异常;此处隔离为文件级失败,
+ * 否则项目里任意一个语法错误的文件会让整次扫描/同步失败(用户无法只同步其余接口)。
+ */
 export function parseJava(fsPath: string, content: string): ParsedFile {
-  return { fsPath, source: content, cst: parse(content) as CstNode };
+  try {
+    return { fsPath, source: content, cst: parse(content) as CstNode };
+  } catch (err) {
+    return { fsPath, source: content, cst: EMPTY_CST, parseError: parseErrorMessage(err) };
+  }
+}
+
+/** 把 java-parser 的多行报错压成一行,便于放进 warning */
+function parseErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? raw;
+  return firstLine || "未知解析错误";
 }
 
 function childNodes(node: CstNode | undefined, key: string): CstNode[] {
@@ -303,6 +323,10 @@ export function buildIndex(files: ParsedFile[]): TypeIndex {
   const byFile = new Map<string, string[]>();
 
   for (const pf of files) {
+    if (pf.parseError) {
+      byFile.set(pf.fsPath, []);
+      continue;
+    }
     const names: string[] = [];
     const out = { types, nested, names };
 

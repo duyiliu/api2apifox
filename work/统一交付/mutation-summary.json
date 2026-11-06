@@ -1,0 +1,176 @@
+{
+  "generatedAt": "2026-11-06T06:42:14.013Z",
+  "files": {
+    "pipeline": {
+      "mutants": 238,
+      "killed": 203,
+      "survived": 30,
+      "noCoverage": 5,
+      "timeout": 0,
+      "error": 0,
+      "byFile": {
+        "out/pipeline.js": {
+          "mutants": 238,
+          "killed": 203,
+          "survived": 30,
+          "noCoverage": 5
+        }
+      },
+      "embeddedHeaderOffset": 0,
+      "effectiveKilled": 203,
+      "scoreTotal": 85.29,
+      "scoreCovered": 87.12
+    },
+    "syncService": {
+      "mutants": 40,
+      "killed": 37,
+      "survived": 3,
+      "noCoverage": 0,
+      "timeout": 0,
+      "error": 0,
+      "byFile": {
+        "out/core/syncService.js": {
+          "mutants": 40,
+          "killed": 37,
+          "survived": 3,
+          "noCoverage": 0
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 37,
+      "scoreTotal": 92.5,
+      "scoreCovered": 92.5
+    },
+    "config": {
+      "mutants": 498,
+      "killed": 308,
+      "survived": 143,
+      "noCoverage": 28,
+      "timeout": 0,
+      "error": 19,
+      "byFile": {
+        "out/core/config.js": {
+          "mutants": 498,
+          "killed": 308,
+          "survived": 143,
+          "noCoverage": 28
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 308,
+      "scoreTotal": 64.3,
+      "scoreCovered": 68.29
+    },
+    "builder": {
+      "mutants": 220,
+      "killed": 166,
+      "survived": 44,
+      "noCoverage": 10,
+      "timeout": 0,
+      "error": 0,
+      "byFile": {
+        "out/openapi/builder.js": {
+          "mutants": 220,
+          "killed": 166,
+          "survived": 44,
+          "noCoverage": 10
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 166,
+      "scoreTotal": 75.45,
+      "scoreCovered": 79.05
+    },
+    "client": {
+      "mutants": 285,
+      "killed": 197,
+      "survived": 57,
+      "noCoverage": 28,
+      "timeout": 3,
+      "error": 0,
+      "byFile": {
+        "out/apifox/client.js": {
+          "mutants": 285,
+          "killed": 197,
+          "survived": 57,
+          "noCoverage": 28
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 200,
+      "scoreTotal": 70.18,
+      "scoreCovered": 77.82
+    },
+    "jarIndex": {
+      "mutants": 697,
+      "killed": 418,
+      "survived": 191,
+      "noCoverage": 68,
+      "timeout": 1,
+      "error": 19,
+      "byFile": {
+        "out/java/jarIndex.js": {
+          "mutants": 697,
+          "killed": 418,
+          "survived": 191,
+          "noCoverage": 68
+        }
+      },
+      "embeddedHeaderOffset": 0,
+      "effectiveKilled": 419,
+      "scoreTotal": 61.8,
+      "scoreCovered": 68.69
+    },
+    "controllerParser": {
+      "mutants": 1632,
+      "killed": 956,
+      "survived": 528,
+      "noCoverage": 147,
+      "timeout": 1,
+      "error": 0,
+      "byFile": {
+        "out/java/controllerParser.js": {
+          "mutants": 1632,
+          "killed": 956,
+          "survived": 528,
+          "noCoverage": 147
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 957,
+      "scoreTotal": 58.64,
+      "scoreCovered": 64.44
+    },
+    "schemaResolver": {
+      "mutants": 1427,
+      "killed": 738,
+      "survived": 486,
+      "noCoverage": 194,
+      "timeout": 9,
+      "error": 0,
+      "byFile": {
+        "out/java/schemaResolver.js": {
+          "mutants": 1427,
+          "killed": 738,
+          "survived": 486,
+          "noCoverage": 194
+        }
+      },
+      "embeddedHeaderOffset": 2,
+      "effectiveKilled": 747,
+      "scoreTotal": 52.35,
+      "scoreCovered": 60.58
+    }
+  },
+  "totals": {
+    "mutants": 5037,
+    "killed": 3023,
+    "survived": 1482,
+    "noCoverage": 480,
+    "timeout": 14,
+    "error": 38,
+    "effectiveKilled": 3037,
+    "scoreTotal": 60.75,
+    "scoreCovered": 67.21
+  }
+}

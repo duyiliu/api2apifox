@@ -4,7 +4,7 @@ import { HelperProperties, loadPropertiesFiles } from "../config/helperPropertie
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "../java/jarIndex";
 import { EndpointInfo } from "../java/model";
 import { analyze, analyzeSubset } from "../pipeline";
-import { ProjectAnalysisResult, ResolvedConfig } from "./types";
+import { Diagnostic, ProjectAnalysisResult, ResolvedConfig } from "./types";
 import { findProjectFiles, scanProject, throwIfAborted } from "./projectScanner";
 
 export interface AnalyzeProjectRequest {
@@ -17,6 +17,10 @@ export interface AnalyzeProjectRequest {
 export async function analyzeProject(request: AnalyzeProjectRequest): Promise<ProjectAnalysisResult> {
   const { config, signal } = request;
   const scanned = await scanProject(config, signal);
+  // 扫描级诊断(反斜杠 glob 归一、文件读取失败)此前只放在 diagnostics 字段里,
+  // 而 CLI/扩展都只消费 warnings,导致这些告警在任何用户可见输出中都不可达。
+  // 这里把 warning 级诊断并入 warnings,保证用户看得到(结构化 consumers 仍可读 diagnostics)。
+  const diagnosticWarnings = diagnosticMessagesOf(scanned.diagnostics);
   if (!scanned.files.length) {
     return {
       projectRoot: config.projectRoot,
@@ -25,7 +29,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
       diagnostics: scanned.diagnostics,
       spec: emptySpec(config.title),
       endpoints: [],
-      warnings: [],
+      warnings: diagnosticWarnings,
     };
   }
 
@@ -58,7 +62,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
       : analyze(scanned.files, options);
 
     const dependencyWarnings = [...dependency.warnings, ...(dependency.index?.warnings ?? [])];
-    const warnings = [...new Set([...(helperProperties?.warnings ?? []), ...dependencyWarnings, ...output.warnings])];
+    const warnings = [...new Set([...diagnosticWarnings, ...(helperProperties?.warnings ?? []), ...dependencyWarnings, ...output.warnings])];
     return {
       ...output,
       warnings,
@@ -171,4 +175,9 @@ function pathDepth(file: string): number {
 
 function emptySpec(title: string): ProjectAnalysisResult["spec"] {
   return { openapi: "3.0.3", info: { title, version: "1.0.0" }, paths: {} };
+}
+
+/** warning 级扫描诊断转成告警文案(与 CLI diagnosticMessages 同口径:`CODE: message`) */
+function diagnosticMessagesOf(diagnostics: Diagnostic[]): string[] {
+  return diagnostics.filter((item) => item.level === "warning").map((item) => `${item.code}: ${item.message}`);
 }

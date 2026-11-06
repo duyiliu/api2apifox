@@ -496,14 +496,22 @@
     "release:major": "node scripts/release.mjs major",
     "watch": "node esbuild.js --watch",
     "test:host": "npm run compile && npm run build:test && node out/test/host/runHostTest.js",
-    "test:vsix": "node scripts/test-vsix-install.mjs"
+    "test:vsix": "node scripts/test-vsix-install.mjs",
+    "test:core": "npm run build:test && node scripts/run-tests.mjs",
+    "test:cli": "npm run build:cli && node --test packages/cli/test/cli.test.js packages/cli/test/exitCodes.test.js packages/cli/test/syncIntegration.test.js packages/cli/test/reportInjection.test.js packages/cli/test/cli-sync.test.js",
+    "test:coverage": "npm run build:test && c8 --reporter=text --reporter=text-summary --reporter=json-summary --include='out/pipeline.js' --include='out/core/*.js' --include='out/apifox/*.js' --include='out/openapi/*.js' --include='out/config/*.js' --include='out/java/*.js' --include='out/ui/*.js' --include='out/providers/*.js' node scripts/run-tests.mjs",
+    "test:mutation": "npm run build:test && stryker run",
+    "test:skill": "node --test skills/api2apifox/scripts/__tests__/wrapper.test.mjs"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/tap-runner": "^10.1.1",
     "@types/node": "^20.14.0",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.0.0",
     "ajv": "^8.20.0",
+    "c8": "^12.0.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
   },

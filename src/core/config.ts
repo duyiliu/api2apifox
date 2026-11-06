@@ -281,6 +281,14 @@ function applyEnv<K extends keyof ResolvedConfig>(
 }
 
 function validateResolvedConfig(config: ResolvedConfig, diagnostics: Diagnostic[]): void {
+  // 冲突策略：file/env 各自有校验，但 overrides 是直接赋值，必须在这里统一兜底，
+  // 否则手改 settings / 代码传入非法值时会被静默发给 Apifox。
+  if (!CONFLICT_BEHAVIORS.includes(config.endpointConflictBehavior)) {
+    invalid(`endpointConflictBehavior 必须是 ${CONFLICT_BEHAVIORS.join(" | ")}`, diagnostics);
+  }
+  if (!CONFLICT_BEHAVIORS.includes(config.schemaConflictBehavior)) {
+    invalid(`schemaConflictBehavior 必须是 ${CONFLICT_BEHAVIORS.join(" | ")}`, diagnostics);
+  }
   if (!Number.isInteger(config.projectId) || config.projectId < 0) {
     invalid("projectId 必须是大于等于 0 的整数", diagnostics);
   }

@@ -121,3 +121,6 @@ jobs:
 
       - name: Verify skill runtime
         run: npm run check:skill
+
+      - name: Run skill wrapper tests
+        run: npm run test:skill

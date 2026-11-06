@@ -25947,8 +25947,18 @@ function parse(inputText, entryPoint = "compilationUnit") {
 }
 
 // ../../src/java/typeIndex.ts
+var EMPTY_CST = { name: "compilationUnit", children: {} };
 function parseJava(fsPath, content) {
-  return { fsPath, source: content, cst: parse(content) };
+  try {
+    return { fsPath, source: content, cst: parse(content) };
+  } catch (err) {
+    return { fsPath, source: content, cst: EMPTY_CST, parseError: parseErrorMessage(err) };
+  }
+}
+function parseErrorMessage(err) {
+  const raw = err instanceof Error ? err.message : String(err);
+  const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? raw;
+  return firstLine || "\u672A\u77E5\u89E3\u6790\u9519\u8BEF";
 }
 function childNodes(node, key) {
   return childAll(node, key).filter(isCstNode);
@@ -26163,6 +26173,10 @@ function buildIndex(files) {
   const nested = /* @__PURE__ */ new Map();
   const byFile = /* @__PURE__ */ new Map();
   for (const pf of files) {
+    if (pf.parseError) {
+      byFile.set(pf.fsPath, []);
+      continue;
+    }
     const names = [];
     const out = { types, nested, names };
     for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
@@ -28436,7 +28450,12 @@ function dedupeEndpoints(endpoints) {
 function filterWarningsForEndpoints(warnings, kept) {
   const keptControllers = new Set(kept.map((e) => e.controller));
   const keptOperations = new Set(kept.map((e) => `${e.controller}.${e.operationId}`));
-  const keptMethodNames = new Set(kept.map((e) => `${e.controller}.${e.methodName ?? e.operationId}`));
+  const methodNameOf = (e) => {
+    if (e.methodName) return e.methodName;
+    const prefix = `${e.controller}_`;
+    return e.operationId.startsWith(prefix) ? e.operationId.slice(prefix.length) : e.operationId;
+  };
+  const keptMethodNames = new Set(kept.map((e) => `${e.controller}.${methodNameOf(e)}`));
   return warnings.filter((w) => {
     const methodMatch = /^([A-Za-z0-9_$]+)\.([A-Za-z0-9_$]+)\s*[:：]/.exec(w);
     if (methodMatch) {
@@ -28454,6 +28473,15 @@ function filterWarningsForEndpoints(warnings, kept) {
     return true;
   });
 }
+function parseErrorWarnings(parsed) {
+  return parsed.filter((pf) => pf.parseError).map((pf) => `${pf.fsPath}: Java \u8BED\u6CD5\u89E3\u6790\u5931\u8D25,\u5DF2\u8DF3\u8FC7\u8BE5\u6587\u4EF6\u7684\u63A5\u53E3\u63D0\u53D6(${pf.parseError})`);
+}
+function collectWarnings(parsed, parseWarnings, kept, endpointFilter) {
+  const parseErrors = parseErrorWarnings(parsed);
+  const others = [...new Set(parseWarnings)];
+  const all = [.../* @__PURE__ */ new Set([...parseErrors, ...others])];
+  return endpointFilter ? [.../* @__PURE__ */ new Set([...parseErrors, ...filterWarningsForEndpoints(others, kept)])] : all;
+}
 function run(files, options, endpointFilter) {
   const parsed = files.map((f) => parseJava(f.fsPath, f.content));
   const index = buildIndex(parsed);
@@ -28469,8 +28497,7 @@ function run(files, options, endpointFilter) {
     enumFieldDoc: options.enumFieldDoc,
     folderOf: options.folderOf
   });
-  const rawWarnings = [...new Set(parseResult.warnings)];
-  const warnings = endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings;
+  const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
   return { spec, endpoints: kept, warnings };
 }
 function analyze(files, options) {
@@ -28544,15 +28571,7 @@ function createGitEntryProbe(exists) {
 async function scanProject(config, signal) {
   throwIfAborted(signal);
   const diagnostics = [];
-  const matches = await (0, import_fast_glob.default)(config.include, {
-    cwd: config.projectRoot,
-    ignore: config.exclude,
-    absolute: true,
-    onlyFiles: true,
-    unique: true,
-    dot: true,
-    followSymbolicLinks: false
-  });
+  const matches = await globJavaFiles(config, diagnostics);
   matches.sort((a, b) => a.localeCompare(b));
   const probe = createGitEntryProbe((candidate) => fs2.existsSync(candidate));
   let skippedFiles = 0;
@@ -28577,6 +28596,34 @@ async function scanProject(config, signal) {
     }
   }
   return { files, scannedFiles: files.length, skippedFiles, diagnostics };
+}
+async function globJavaFiles(config, diagnostics) {
+  const options = {
+    cwd: config.projectRoot,
+    absolute: true,
+    onlyFiles: true,
+    unique: true,
+    dot: true,
+    followSymbolicLinks: false
+  };
+  const matches = await (0, import_fast_glob.default)(config.include, { ...options, ignore: config.exclude });
+  if (matches.length) {
+    return matches;
+  }
+  const hasBackslash = [...config.include, ...config.exclude].some((pattern) => pattern.includes("\\"));
+  if (!hasBackslash) {
+    return matches;
+  }
+  const toPosix2 = (pattern) => pattern.replace(/\\/g, "/");
+  const retried = await (0, import_fast_glob.default)(config.include.map(toPosix2), { ...options, ignore: config.exclude.map(toPosix2) });
+  if (retried.length) {
+    diagnostics.push({
+      level: "warning",
+      code: "GLOB_BACKSLASH_NORMALIZED",
+      message: "include/exclude \u4F7F\u7528\u4E86\u53CD\u659C\u6760\u8DEF\u5F84\u5206\u9694\u7B26\uFF0C\u5DF2\u6309\u6B63\u659C\u6760\u91CD\u65B0\u5339\u914D\uFF1B\u5EFA\u8BAE\u6539\u7528 / \u5199\u6CD5"
+    });
+  }
+  return retried;
 }
 async function findProjectFiles(projectRoot, pattern, ignore, maxFiles, signal) {
   throwIfAborted(signal);
@@ -28613,6 +28660,7 @@ function throwIfAborted(signal) {
 async function analyzeProject(request) {
   const { config, signal } = request;
   const scanned = await scanProject(config, signal);
+  const diagnosticWarnings = diagnosticMessagesOf(scanned.diagnostics);
   if (!scanned.files.length) {
     return {
       projectRoot: config.projectRoot,
@@ -28621,7 +28669,7 @@ async function analyzeProject(request) {
       diagnostics: scanned.diagnostics,
       spec: emptySpec(config.title),
       endpoints: [],
-      warnings: []
+      warnings: diagnosticWarnings
     };
   }
   throwIfAborted(signal);
@@ -28649,7 +28697,7 @@ async function analyzeProject(request) {
       return fileMatch && endpointMatch;
     }) : analyze(scanned.files, options);
     const dependencyWarnings = [...dependency.warnings, ...dependency.index?.warnings ?? []];
-    const warnings = [.../* @__PURE__ */ new Set([...helperProperties?.warnings ?? [], ...dependencyWarnings, ...output.warnings])];
+    const warnings = [.../* @__PURE__ */ new Set([...diagnosticWarnings, ...helperProperties?.warnings ?? [], ...dependencyWarnings, ...output.warnings])];
     return {
       ...output,
       warnings,
@@ -28745,6 +28793,9 @@ function pathDepth(file) {
 }
 function emptySpec(title) {
   return { openapi: "3.0.3", info: { title, version: "1.0.0" }, paths: {} };
+}
+function diagnosticMessagesOf(diagnostics) {
+  return diagnostics.filter((item) => item.level === "warning").map((item) => `${item.code}: ${item.message}`);
 }
 
 // ../../src/core/config.ts
@@ -28945,6 +28996,12 @@ function applyEnv(config, sources, key, raw, envName, parser2, diagnostics) {
   sources[key] = `env:${envName}`;
 }
 function validateResolvedConfig(config, diagnostics) {
+  if (!CONFLICT_BEHAVIORS.includes(config.endpointConflictBehavior)) {
+    invalid(`endpointConflictBehavior \u5FC5\u987B\u662F ${CONFLICT_BEHAVIORS.join(" | ")}`, diagnostics);
+  }
+  if (!CONFLICT_BEHAVIORS.includes(config.schemaConflictBehavior)) {
+    invalid(`schemaConflictBehavior \u5FC5\u987B\u662F ${CONFLICT_BEHAVIORS.join(" | ")}`, diagnostics);
+  }
   if (!Number.isInteger(config.projectId) || config.projectId < 0) {
     invalid("projectId \u5FC5\u987B\u662F\u5927\u4E8E\u7B49\u4E8E 0 \u7684\u6574\u6570", diagnostics);
   }

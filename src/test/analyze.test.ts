@@ -828,7 +828,6 @@ test("跨包覆写的基本类型参数不拼包名,只保留子类路由", () =
   }
 });
 
-
 test("endpointsOfFile 回写解析缓存:后续 analyze 复用同一 CST 且版本不变", () => {
   const file: SourceFile = {
     fsPath: "/mem/CacheProbeController.java",

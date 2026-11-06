@@ -54,8 +54,16 @@ export interface AnalyzeOutput {
 export function filterWarningsForEndpoints(warnings: string[], kept: EndpointInfo[]): string[] {
   const keptControllers = new Set(kept.map((e) => e.controller));
   const keptOperations = new Set(kept.map((e) => `${e.controller}.${e.operationId}`));
-  // 告警正文按 Controller.methodName 书写(controllerParser 的 warnings),operationId 口径兜底
-  const keptMethodNames = new Set(kept.map((e) => `${e.controller}.${e.methodName ?? e.operationId}`));
+  // 告警正文按 Controller.methodName 书写(controllerParser 的 warnings)。
+  // methodName 是可选字段:继承/下游重建的端点可能没有它,此时从 operationId
+  // (`Controller_method` 口径)反推方法名。此前直接用 operationId 拼接,
+  // 兜底键变成 `Controller.Controller_method`,parser 口径告警(C-D4)被静默丢弃。
+  const methodNameOf = (e: EndpointInfo): string => {
+    if (e.methodName) return e.methodName;
+    const prefix = `${e.controller}_`;
+    return e.operationId.startsWith(prefix) ? e.operationId.slice(prefix.length) : e.operationId;
+  };
+  const keptMethodNames = new Set(kept.map((e) => `${e.controller}.${methodNameOf(e)}`));
 
   return warnings.filter((w) => {
     // 形式 1: "UserController.patchUser: ..."
@@ -78,6 +86,27 @@ export function filterWarningsForEndpoints(warnings: string[], kept: EndpointInf
   });
 }
 
+/** 解析失败文件转成用户可定位的告警(不阻断其余文件的接口提取) */
+function parseErrorWarnings(parsed: ParsedFile[]): string[] {
+  return parsed
+    .filter((pf) => pf.parseError)
+    .map((pf) => `${pf.fsPath}: Java 语法解析失败,已跳过该文件的接口提取(${pf.parseError})`);
+}
+
+/**
+ * 汇总原始告警并做子集过滤。
+ * 解析失败告警是**项目级事实**(坏文件可能正是用户想同步的文件),不属于任何接口,
+ * 因此不参与 filterWarningsForEndpoints:其文本以文件路径开头,当路径是裸文件名
+ * (如 `UserController.java: ...`)时会命中形式 1 正则被当成 `Controller.method`
+ * 归属告警,在子集模式下被误删,用户看不到坏文件的存在。
+ */
+function collectWarnings(parsed: ParsedFile[], parseWarnings: string[], kept: EndpointInfo[], endpointFilter?: (ep: EndpointInfo) => boolean): string[] {
+  const parseErrors = parseErrorWarnings(parsed);
+  const others = [...new Set(parseWarnings)];
+  const all = [...new Set([...parseErrors, ...others])];
+  return endpointFilter ? [...new Set([...parseErrors, ...filterWarningsForEndpoints(others, kept)])] : all;
+}
+
 function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep: EndpointInfo) => boolean): AnalyzeOutput {
   const parsed = files.map((f) => parseJava(f.fsPath, f.content));
   const index = buildIndex(parsed);
@@ -93,8 +122,7 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
     enumFieldDoc: options.enumFieldDoc,
     folderOf: options.folderOf,
   });
-  const rawWarnings = [...new Set(parseResult.warnings)];
-  const warnings = endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings;
+  const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
   return { spec, endpoints: kept, warnings };
 }
 
@@ -217,8 +245,8 @@ export class AnalyzeCache {
       enumFieldDoc: opts.enumFieldDoc,
       folderOf: opts.folderOf,
     });
-    const rawWarnings = [...new Set(parseResult.warnings)];
-    const output = { spec, endpoints: kept, warnings: endpointFilter ? filterWarningsForEndpoints(rawWarnings, kept) : rawWarnings };
+    const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
+    const output = { spec, endpoints: kept, warnings };
     // 缓存存副本:调用方(如 syncToApifox)会原地 push warnings,不能污染缓存
     this.lastResult = { key, output: { ...output, warnings: [...output.warnings] } };
     return output;
