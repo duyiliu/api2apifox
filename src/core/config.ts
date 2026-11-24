@@ -23,6 +23,7 @@ interface FileConfig {
   schemaFolderId?: unknown;
   helperProperties?: unknown;
   securityDocMode?: unknown;
+  applySpringPathPrefix?: unknown;
   dependencyRepos?: unknown;
   dependencyJars?: unknown;
   maxDependencyJars?: unknown;
@@ -50,6 +51,7 @@ export interface ConfigOverrides {
   helperPropertiesEnabled?: boolean;
   enumFieldDoc?: boolean;
   securityDocMode?: "description" | "extension";
+  applySpringPathPrefix?: boolean;
   dependencyRepos?: string[];
   dependencyJars?: string[];
   maxDependencyJars?: number;
@@ -111,6 +113,8 @@ export function resolveConfig(
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
     securityDocMode: "description",
+    // 默认读取 application 配置补齐真实路径前缀(网关/context-path 项目);关闭后产物与旧版本一致
+    applySpringPathPrefix: true,
     dependencyRepos: [],
     dependencyJars: [],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
@@ -144,6 +148,7 @@ export function resolveConfig(
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
   applyFile(config, sources, "securityDocMode", enumValue(fileConfig.securityDocMode, "securityDocMode", ["description", "extension"], diagnostics), fileSource);
+  applyFile(config, sources, "applySpringPathPrefix", booleanValue(fileConfig.applySpringPathPrefix, "applySpringPathPrefix", diagnostics), fileSource);
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
@@ -160,6 +165,7 @@ export function resolveConfig(
   applyEnv(config, sources, "apiBaseUrl", env.API2APIFOX_API_BASE_URL, "API2APIFOX_API_BASE_URL", parseEnvString, diagnostics);
   applyEnv(config, sources, "endpointConflictBehavior", env.API2APIFOX_ENDPOINT_CONFLICT, "API2APIFOX_ENDPOINT_CONFLICT", parseEnvConflict, diagnostics);
   applyEnv(config, sources, "schemaConflictBehavior", env.API2APIFOX_SCHEMA_CONFLICT, "API2APIFOX_SCHEMA_CONFLICT", parseEnvConflict, diagnostics);
+  applyEnv(config, sources, "applySpringPathPrefix", env.API2APIFOX_APPLY_SPRING_PATH_PREFIX, "API2APIFOX_APPLY_SPRING_PATH_PREFIX", parseEnvBoolean, diagnostics);
 
   for (const [key, value] of Object.entries(overrides) as [keyof ConfigOverrides, ConfigOverrides[keyof ConfigOverrides]][]) {
     if (key === "configFile" || key === "token" || value === undefined || key === "title" || key === "openapiInfoVersion") {
@@ -215,6 +221,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
     "schemaFolderId",
     "helperProperties",
     "securityDocMode",
+    "applySpringPathPrefix",
     "dependencyRepos",
     "dependencyJars",
     "maxDependencyJars",
@@ -415,6 +422,17 @@ function parseEnvNumber(raw: string): number | undefined {
 
 function parseEnvString(raw: string): string | undefined {
   return raw;
+}
+
+function parseEnvBoolean(raw: string): boolean | undefined {
+  const value = raw.trim().toLowerCase();
+  if (value === "true" || value === "1") {
+    return true;
+  }
+  if (value === "false" || value === "0") {
+    return false;
+  }
+  return undefined;
 }
 
 function parseEnvConflict(raw: string): ConflictBehavior | undefined {
