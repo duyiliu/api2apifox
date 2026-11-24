@@ -6,8 +6,7 @@ import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDepende
 import { EndpointInfo } from "../java/model";
 import { analyze, analyzeSubset } from "../pipeline";
 import { Diagnostic, ProjectAnalysisResult, ResolvedConfig } from "./types";
-import { findProjectFiles, scanProject, throwIfAborted } from "./projectScanner";
-import { discoverSpringPathPrefixes } from "./springPathPrefix";
+import { discoverSpringPathPrefixes, findProjectFiles, scanProject, throwIfAborted } from "./projectScanner";
 
 export interface AnalyzeProjectRequest {
   config: ResolvedConfig;

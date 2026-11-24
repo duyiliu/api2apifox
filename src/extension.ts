@@ -15,7 +15,7 @@ import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
 import { AnalyzeCache, endpointAt, withPathPrefix } from "./pipeline";
 import { createSingleFlight } from "./core/singleFlight";
-import { loadSpringPathPrefixes, resetSpringPathPrefixCache, SpringPathPrefixes } from "./core/springPathPrefix";
+import { loadSpringPathPrefixes, resetSpringPathPrefixCache, SpringPathPrefixes } from "./core/projectScanner";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";

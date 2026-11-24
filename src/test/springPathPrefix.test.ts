@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { resolveConfig } from "../core/config";
 import { analyzeProject } from "../core/projectAnalyzer";
-import { discoverSpringPathPrefixes, parseSpringPathPrefixes } from "../core/springPathPrefix";
+import { discoverSpringPathPrefixes, parseSpringPathPrefixes } from "../core/projectScanner";
 import { analyze, withPathPrefix } from "../pipeline";
 import { SourceFile } from "../java/model";
 
@@ -187,12 +187,12 @@ test("spring 前缀:profile 只覆盖自己声明的键,其余键沿用基础层
   assert.equal(parsed.modules[0].prefix, "/dev/dispatch");
 });
 
-test("spring 前缀:sample 夹具的 application.yml 导出带前缀,叠加 profile 变体后按覆盖次序生效", async () => {
+test("spring 前缀:sample 夹具(application.yml + application-dev.yml)导出带前缀且 profile 覆盖生效", async () => {
   const parsed = await discoverSpringPathPrefixes([SPRING_FIXTURE]);
-  // 夹具基础层:context-path=/api-xxx + servlet.path=/dispatch(spring.profiles.active=dev)
-  assert.equal(parsed.modules[0].prefix, "/api-xxx/dispatch");
+  // 基础层 context-path=/api-xxx + servlet.path=/dispatch,application-dev.yml 后激活覆盖 context-path
+  assert.equal(parsed.modules[0].prefix, "/api-dev/dispatch");
   assert.deepEqual(parsed.messages, [
-    "已应用 context-path=/api-xxx（application.yml）",
+    "已应用 context-path=/api-dev（application-dev.yml）",
     "已应用 servlet.path=/dispatch（application.yml）",
   ]);
   // 用夹具里的真实 resources 文件跑完整导出(夹具只放配置,Controller 由用例提供,避免影响 sample 的既有断言)
@@ -201,11 +201,8 @@ test("spring 前缀:sample 夹具的 application.yml 导出带前缀,叠加 prof
     .readdirSync(resources)
     .filter((name) => name.startsWith("application"))
     .map((name) => [name, fs.readFileSync(path.join(resources, name), "utf8")] as const);
-  // 补上 profile 变体,锁定「后激活覆盖先激活」
-  configFiles.push(["application-dev.yml", "server:\n  servlet:\n    context-path: /api-dev\n"]);
   const fx = fixture(project(Object.fromEntries(configFiles)));
   try {
-    assert.deepEqual(fs.readdirSync(resources).filter((name) => name.includes("dev")), [], "夹具只保留基础层文件");
     const config = resolveConfig(fx.root, { include: ["**/*.java"], exclude: [] }).config;
     const result = await analyzeProject({ config });
     assert.deepEqual(
@@ -213,10 +210,7 @@ test("spring 前缀:sample 夹具的 application.yml 导出带前缀,叠加 prof
       ["/api-dev/dispatch/user/list"],
       "导出路径必须是真实前缀 + Controller 路径"
     );
-    assert.ok(
-      result.warnings.includes("已应用 context-path=/api-dev（application-dev.yml）"),
-      result.warnings.join("|")
-    );
+    assert.ok(result.warnings.includes("已应用 context-path=/api-dev（application-dev.yml）"), result.warnings.join("|"));
   } finally {
     fx.cleanup();
   }

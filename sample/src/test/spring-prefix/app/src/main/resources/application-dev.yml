@@ -1,0 +1,4 @@
+# profile 变体:后激活覆盖基础层,最终前缀为 /api-dev/dispatch
+server:
+  servlet:
+    context-path: /api-dev
