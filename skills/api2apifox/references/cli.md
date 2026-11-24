@@ -59,11 +59,22 @@ api2apifox scan --project . --endpoint "GET /api/users" --format json
 | `-o, --output <file>` | 输出文件路径，默认 `openapi.gen.json` |
 | `--stdout` | 直接输出 OpenAPI JSON 本体（无信封，不能与 `--format json` 同用） |
 | `--force` | 目标文件已存在时覆盖 |
+| `--check` | 基线比对模式：不写文件，检测破坏性 API 变更 |
+| `--baseline <file>` | 基线 OpenAPI 文件（相对项目根或绝对路径），必须与 `--check` 同用 |
 
 ```bash
 api2apifox export --project . --output openapi.gen.json --force --format json
 api2apifox export --project . --stdout > openapi.json
+api2apifox export --project . --baseline openapi.old.json --check --format json
 ```
+
+`--check` 与基线按「操作 + schema」比对（`$ref`/`allOf` 先展开）：
+
+- 破坏性：删路径/操作、删必有响应字段、新增必填参数或请求字段、响应必填字段变可选、类型收窄、删响应体
+- 兼容：新增路径/操作、新增可选字段/参数、删可选请求字段、删请求体、描述变化、类型放宽
+- 有破坏性变更时退出码 `6`、`error.code = BREAKING_CHANGES_DETECTED`，清单在 `error.details`；否则退出码 `0`，清单在 `result`
+- 基线缺失/非法时退出码 `2`（`BASELINE_NOT_FOUND` / `BASELINE_INVALID`），不会静默通过
+- 与 `--stdout` / `--output` 互斥；`--file` / `--endpoint` 只比对所选范围
 
 ### sync
 
@@ -204,7 +215,7 @@ api2apifox scan --project . --include "**/src/main/java/**/*.java" --exclude "**
 | 3 | 没有 Java 文件或目标接口 |
 | 4 | Apifox 鉴权或权限错误 |
 | 5 | 网络、超时或服务错误 |
-| 6 | 导入完成但包含失败项 |
+| 6 | 导入完成但包含失败项，或 `export --check` 检测到破坏性 API 变更 |
 | 7 | 本地 I/O 或内部错误 |
 | 130 | 取消（SIGINT）或用户拒绝确认 |
 

@@ -84,6 +84,18 @@ node "<skill-dir>/scripts/api2apifox.mjs" scan --project . --include "**/src/mai
   - 默认 exclude：`**/target/**`、`**/build/**`、`**/src/test/**`、`**/sample/**`、`**/.*/**`
 - `--endpoint` 的方法大写、路径与 OpenAPI 一致（带 `/` 前缀），可重复；命不中任何接口时退出码 3、`NO_ENDPOINT_MATCHED`。
 
+## 基线比对（破坏性变更检测）
+
+```bash
+node "<skill-dir>/scripts/api2apifox.mjs" export --project . --baseline openapi.old.json --check --format json
+```
+
+- 与基线按「操作 + schema」比对，`$ref`/`allOf` 先展开；`--check` 不写文件，与 `--stdout`/`--output` 互斥。
+- 破坏性（退出码 `6`、`BREAKING_CHANGES_DETECTED`，清单在 `error.details`）：删路径/操作、删必有响应字段、新增必填参数或请求字段、响应必填字段变可选、类型收窄、删响应体。
+- 兼容（退出码 `0`，清单在 `result`）：新增路径/操作、新增可选字段/参数、删可选请求字段、删请求体、描述变化、类型放宽。
+- 基线缺失/非法 JSON/非 OpenAPI：退出码 `2`、`BASELINE_NOT_FOUND` / `BASELINE_INVALID`，不会静默通过。
+- `--file` / `--endpoint` 只比对所选范围；`--file` 的局限是无法检测「文件里最后一个接口被删」。
+
 ## 配置与凭据
 
 配置优先级：**CLI 参数 > `API2APIFOX_*` 环境变量 > `.api2apifox.json` > 内置默认值**。
@@ -144,7 +156,7 @@ node "<skill-dir>/scripts/api2apifox.mjs" scan --project . --include "**/src/mai
 | 3 | 没有 Java 文件或没有匹配接口 | 检查 include/exclude 与 --file/--endpoint |
 | 4 | Apifox 鉴权/权限（`APIFOX_AUTH_FAILED`、`APIFOX_FORBIDDEN`） | 检查 token 与项目权限 |
 | 5 | 网络/超时（`NETWORK_FAILED`、`REQUEST_TIMEOUT`） | 见下方超时规则 |
-| 6 | 导入完成但有失败项（`IMPORT_PARTIAL_FAILURE`） | 读 `error.details` 里的失败清单 |
+| 6 | 导入完成但有失败项（`IMPORT_PARTIAL_FAILURE`），或 `export --check` 检测到破坏性 API 变更（`BREAKING_CHANGES_DETECTED`） | 读 `error.details` 里的失败清单 / diff |
 | 7 | 本地 I/O 或内部错误 | 收集 stderr 排查 |
 | 130 | 取消（SIGINT）或用户拒绝确认 | 如预期取消则正常 |
 

@@ -10,6 +10,7 @@ import { CliOptions, parseCliArgs } from "./args";
 import { CliError, toCliError } from "./errors";
 import { diagnosticMessages, FailureEnvelope, SuccessEnvelope, writeJson, writeText } from "./output";
 import { buildCliSyncReport, folderOfEndpoint, writeReportAndOpen } from "./report";
+import { ApiDiffResult, diffOpenApiScoped, formatDiffText } from "../../../src/openapi/diff";
 
 const VERSION = (require("../package.json") as { version: string }).version;
 
@@ -40,10 +41,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       case "config":
         result = configResult(resolved, options.projectSource);
         warnings = diagnosticMessages(resolved.diagnostics);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check 仅用于 export 命令", 2);
+        }
         break;
       case "scan": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check 仅用于 export 命令", 2);
+        }
         result = scanResult(analyzed, resolved);
         warnings = analyzed.warnings;
         break;
@@ -51,13 +58,40 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
-        result = await exportResult(analyzed, resolved, options, controller.signal);
+        if (options.baseline && !options.check) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline 需要与 --check 一起使用", 2);
+        }
+        if (options.check && options.stdout) {
+          throw new CliError("INVALID_ARGUMENT", "--check 不能与 --stdout 同时使用", 2);
+        }
+        if (options.check && options.output) {
+          throw new CliError("INVALID_ARGUMENT", "--check 不写输出文件，不能与 --output 同时使用", 2);
+        }
         warnings = analyzed.warnings;
+        if (options.check) {
+          const diff = await checkResult(analyzed, resolved, options);
+          if (diff.summary.breaking > 0) {
+            throw new CliError(
+              "BREAKING_CHANGES_DETECTED",
+              `检测到 ${diff.summary.breaking} 项破坏性 API 变更`,
+              6,
+              false,
+              undefined,
+              diff
+            );
+          }
+          result = diff;
+          break;
+        }
+        result = await exportResult(analyzed, resolved, options, controller.signal);
         break;
       }
       case "sync": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check 仅用于 export 命令", 2);
+        }
         validateSyncConfig(resolved, options);
         if (!options.dryRun) {
           await confirmSync(resolved, analyzed, options);
@@ -89,12 +123,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
     return 0;
   } catch (error) {
     const cliError = toCliError(error);
+    if ((options?.format ?? requestedFormat) !== "json" && isBreakingDiff(cliError)) {
+      writeText(formatDiffText(cliError.details as ApiDiffResult));
+    }
     outputFailure(options, cliError, Date.now() - startedAt, requestedFormat);
     return cliError.exitCode;
   } finally {
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
   }
+}
+
+function isBreakingDiff(error: CliError): boolean {
+  return error.code === "BREAKING_CHANGES_DETECTED" && error.details !== undefined;
 }
 
 async function analyzeSelected(
@@ -178,6 +219,82 @@ async function exportResult(
     endpointCount: analyzed.endpoints.length,
     schemaCount: Object.keys(analyzed.spec.components?.schemas ?? {}).length,
   };
+}
+
+/**
+ * export --check：把当前生成的 OpenAPI 与基线文件按「操作 + schema」比对。
+ * 基线缺失或非法必须显式失败，不能静默当作无变更通过。
+ */
+async function checkResult(
+  analyzed: ProjectAnalysisResult,
+  resolved: ResolvedConfigResult,
+  options: CliOptions
+): Promise<ApiDiffResult> {
+  if (!options.baseline) {
+    throw new CliError("BASELINE_REQUIRED", "--check 需要 --baseline <file> 指定基线 OpenAPI 文件", 2);
+  }
+  const baselinePath = path.resolve(resolved.config.projectRoot, options.baseline);
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(baselinePath, "utf8");
+  } catch {
+    throw new CliError("BASELINE_NOT_FOUND", `基线文件不存在或不可读:${baselinePath}`, 2);
+  }
+  let baseline: unknown;
+  try {
+    baseline = JSON.parse(raw);
+  } catch (error) {
+    throw new CliError(
+      "BASELINE_INVALID",
+      `基线文件不是合法 JSON:${baselinePath}（${error instanceof Error ? error.message : String(error)}）`,
+      2
+    );
+  }
+  if (!isOpenApiDocument(baseline)) {
+    throw new CliError("BASELINE_INVALID", `基线文件不是有效的 OpenAPI 文档（缺少 paths 对象）:${baselinePath}`, 2);
+  }
+  return diffOpenApiScoped(baseline, analyzed.spec, baselinePath, selectionScope(analyzed, options));
+}
+
+function isOpenApiDocument(value: unknown): boolean {
+  return typeof value === "object" && value !== null && typeof (value as { paths?: unknown }).paths === "object";
+}
+
+/**
+ * 过滤参数只产出子集；比对范围必须收敛到同一选择，否则未选中的接口会被误报成删除。
+ * --endpoint 的选取范围可由参数本身确定（因此仍能检测选中接口被删）；
+ * --file 只能从当前分析结果反推路径，用于避免误报，但无法检测「文件里最后一个接口被删」。
+ */
+function selectionScope(
+  analyzed: ProjectAnalysisResult,
+  options: CliOptions
+): Map<string, Set<string>> | undefined {
+  if (options.endpoints.length) {
+    const scope = new Map<string, Set<string>>();
+    for (const raw of options.endpoints) {
+      const trimmed = raw.trim();
+      const separator = trimmed.indexOf(" ");
+      if (separator <= 0) {
+        continue;
+      }
+      const method = trimmed.slice(0, separator).toUpperCase();
+      const apiPath = trimmed.slice(separator + 1).trim();
+      const methods = scope.get(apiPath) ?? new Set<string>();
+      methods.add(method);
+      scope.set(apiPath, methods);
+    }
+    return scope;
+  }
+  if (!options.files.length) {
+    return undefined;
+  }
+  const scope = new Map<string, Set<string>>();
+  for (const endpoint of analyzed.endpoints) {
+    const methods = scope.get(endpoint.path) ?? new Set<string>();
+    methods.add(endpoint.method.toUpperCase());
+    scope.set(endpoint.path, methods);
+  }
+  return scope;
 }
 
 function validateSyncConfig(resolved: ResolvedConfigResult, options: CliOptions): void {
@@ -299,6 +416,9 @@ function formatTextResult(command: CliOptions["command"], result: unknown, warni
     return `扫描完成: ${value.scannedFiles} 个 Java 文件，${value.endpointCount} 个接口，${value.schemaCount} 个模型${warningText}`;
   }
   if (command === "export") {
+    if (value && typeof value === "object" && "summary" in value) {
+      return `${formatDiffText(result as ApiDiffResult)}${warningText}`;
+    }
     return `OpenAPI 已导出到 ${value.output}，共 ${value.endpointCount} 个接口${warningText}`;
   }
   if (command === "sync") {
@@ -381,7 +501,7 @@ ${HELP_FLAG}
 
 退出码:
   0 成功        2 参数/配置/确认错误   3 没有 Java 文件或目标接口
-  4 鉴权/权限   5 网络/超时/服务错误   6 导入部分失败
+  4 鉴权/权限   5 网络/超时/服务错误   6 导入部分失败或检测到破坏性 API 变更
   7 本地 I/O 或内部错误              130 取消
 
 配置优先级: 命令行参数 > API2APIFOX_* 环境变量 > .api2apifox.json > 默认值
@@ -413,10 +533,14 @@ ${COMMON_HELP}
   -o, --output <file>       输出文件，默认取配置 exportPath（openapi.gen.json）
   --force                   目标文件已存在时覆盖
   --stdout                  把 OpenAPI 直接写到 stdout（不能与 --format json 同时使用）
+  --check                   基线比对模式：不写文件，按操作+schema 检测破坏性变更
+  --baseline <file>         基线 OpenAPI 文件（相对项目根或绝对路径），必须与 --check 同用
 ${FILTER_HELP}
 ${HELP_FLAG}
 
-${FILTER_NOTE}`;
+${FILTER_NOTE}
+  --check 检测到破坏性变更时退出码为 6（BREAKING_CHANGES_DETECTED），变更清单在 JSON 信封的 error.details。
+  --check 只比对 --file / --endpoint 选中的范围；--file 无法检测「文件里最后一个接口被删」。`;
     case "sync":
       return `api2apifox sync [options]
 

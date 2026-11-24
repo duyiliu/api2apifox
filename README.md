@@ -89,7 +89,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 
 - Token **不允许**写入配置文件，请用 `API2APIFOX_TOKEN`（及 `API2APIFOX_PROJECT_ID`）环境变量。
 - `--format json` 时 stdout 只输出一个 JSON 信封，按 `ok` / `error.code` 分支；`--quiet` 隐藏非致命告警。
-- 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误 / `6` 导入部分失败 / `7` 本地错误；完整表见 SKILL.md。
+- 稳定退出码：`0` 成功 / `2` 参数或确认错误 / `3` 无 Java 文件或目标接口 / `4` 鉴权错误 / `5` 网络或服务错误 / `6` 导入部分失败或检测到破坏性 API 变更 / `7` 本地错误；完整表见 SKILL.md。
 - 真正同步必须在交互终端确认或显式传 `--yes`；首次导入可能较慢，超时上限默认 300s，可用 `--timeout-ms` 调整。返回 `REQUEST_TIMEOUT` 时请先查询目标项目再重试。
 
 > Skill/CLI 与 VS Code 扩展的配置**相互独立**：Skill/CLI 读取 `.api2apifox.json`、`API2APIFOX_*` 环境变量与命令行参数；扩展只读取 VS Code 设置 `apifoxHelper.*`，令牌保存在 VS Code SecretStorage。两边需分别配置，改一边不会影响另一边。

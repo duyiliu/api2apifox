@@ -907,11 +907,11 @@ var require_stackHas = __commonJS({
 // ../../node_modules/java-parser/node_modules/lodash/isObject.js
 var require_isObject = __commonJS({
   "../../node_modules/java-parser/node_modules/lodash/isObject.js"(exports2, module2) {
-    function isObject2(value) {
+    function isObject3(value) {
       var type = typeof value;
       return value != null && (type == "object" || type == "function");
     }
-    module2.exports = isObject2;
+    module2.exports = isObject3;
   }
 });
 
@@ -919,13 +919,13 @@ var require_isObject = __commonJS({
 var require_isFunction = __commonJS({
   "../../node_modules/java-parser/node_modules/lodash/isFunction.js"(exports2, module2) {
     var baseGetTag2 = require_baseGetTag();
-    var isObject2 = require_isObject();
+    var isObject3 = require_isObject();
     var asyncTag2 = "[object AsyncFunction]";
     var funcTag4 = "[object Function]";
     var genTag3 = "[object GeneratorFunction]";
     var proxyTag2 = "[object Proxy]";
     function isFunction2(value) {
-      if (!isObject2(value)) {
+      if (!isObject3(value)) {
         return false;
       }
       var tag = baseGetTag2(value);
@@ -986,7 +986,7 @@ var require_baseIsNative = __commonJS({
   "../../node_modules/java-parser/node_modules/lodash/_baseIsNative.js"(exports2, module2) {
     var isFunction2 = require_isFunction();
     var isMasked2 = require_isMasked();
-    var isObject2 = require_isObject();
+    var isObject3 = require_isObject();
     var toSource2 = require_toSource();
     var reRegExpChar2 = /[\\^$.*+?()[\]{}|]/g;
     var reIsHostCtor2 = /^\[object .+?Constructor\]$/;
@@ -998,7 +998,7 @@ var require_baseIsNative = __commonJS({
       "^" + funcToString3.call(hasOwnProperty18).replace(reRegExpChar2, "\\$&").replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, "$1.*?") + "$"
     );
     function baseIsNative2(value) {
-      if (!isObject2(value) || isMasked2(value)) {
+      if (!isObject3(value) || isMasked2(value)) {
         return false;
       }
       var pattern = isFunction2(value) ? reIsNative2 : reIsHostCtor2;
@@ -2174,9 +2174,9 @@ var require_baseIsMatch = __commonJS({
 // ../../node_modules/java-parser/node_modules/lodash/_isStrictComparable.js
 var require_isStrictComparable = __commonJS({
   "../../node_modules/java-parser/node_modules/lodash/_isStrictComparable.js"(exports2, module2) {
-    var isObject2 = require_isObject();
+    var isObject3 = require_isObject();
     function isStrictComparable2(value) {
-      return value === value && !isObject2(value);
+      return value === value && !isObject3(value);
     }
     module2.exports = isStrictComparable2;
   }
@@ -2600,7 +2600,7 @@ var require_baseTrim = __commonJS({
 var require_toNumber = __commonJS({
   "../../node_modules/java-parser/node_modules/lodash/toNumber.js"(exports2, module2) {
     var baseTrim2 = require_baseTrim();
-    var isObject2 = require_isObject();
+    var isObject3 = require_isObject();
     var isSymbol2 = require_isSymbol();
     var NAN2 = 0 / 0;
     var reIsBadHex2 = /^[-+]0x[0-9a-f]+$/i;
@@ -2614,9 +2614,9 @@ var require_toNumber = __commonJS({
       if (isSymbol2(value)) {
         return NAN2;
       }
-      if (isObject2(value)) {
+      if (isObject3(value)) {
         var other = typeof value.valueOf == "function" ? value.valueOf() : value;
-        value = isObject2(other) ? other + "" : other;
+        value = isObject3(other) ? other + "" : other;
       }
       if (typeof value != "string") {
         return value === 0 ? value : +value;
@@ -3337,7 +3337,7 @@ var require_fill_range = __commonJS({
     "use strict";
     var util = require("util");
     var toRegexRange = require_to_regex_range();
-    var isObject2 = (val) => val !== null && typeof val === "object" && !Array.isArray(val);
+    var isObject3 = (val) => val !== null && typeof val === "object" && !Array.isArray(val);
     var transform = (toNumber2) => {
       return (value) => toNumber2 === true ? Number(value) : String(value);
     };
@@ -3506,14 +3506,14 @@ var require_fill_range = __commonJS({
       if (typeof step === "function") {
         return fill(start, end, 1, { transform: step });
       }
-      if (isObject2(step)) {
+      if (isObject3(step)) {
         return fill(start, end, 0, step);
       }
       let opts = { ...options };
       if (opts.capture === true) opts.wrap = true;
       step = step || opts.step || 1;
       if (!isNumber(step)) {
-        if (step != null && !isObject2(step)) return invalidStep(step, opts);
+        if (step != null && !isObject3(step)) return invalidStep(step, opts);
         return fill(start, end, 1, step);
       }
       if (isNumber(start) && isNumber(end)) {
@@ -5676,7 +5676,7 @@ var require_picomatch = __commonJS({
     var parse2 = require_parse2();
     var utils = require_utils2();
     var constants = require_constants2();
-    var isObject2 = (val) => val && typeof val === "object" && !Array.isArray(val);
+    var isObject3 = (val) => val && typeof val === "object" && !Array.isArray(val);
     var picomatch = (glob, options, returnState = false) => {
       if (Array.isArray(glob)) {
         const fns = glob.map((input) => picomatch(input, options, returnState));
@@ -5689,7 +5689,7 @@ var require_picomatch = __commonJS({
         };
         return arrayMatcher;
       }
-      const isState = isObject2(glob) && glob.tokens && glob.input;
+      const isState = isObject3(glob) && glob.tokens && glob.input;
       if (glob === "" || typeof glob !== "string" && !isState) {
         throw new TypeError("Expected pattern to be a non-empty string");
       }
@@ -30554,6 +30554,8 @@ var argumentOptions = {
   output: { type: "string", short: "o" },
   stdout: { type: "boolean", default: false },
   force: { type: "boolean", default: false },
+  baseline: { type: "string" },
+  check: { type: "boolean", default: false },
   "project-id": { type: "string" },
   token: { type: "string" },
   "dry-run": { type: "boolean", default: false },
@@ -30593,6 +30595,9 @@ function parseCliArgs(argv) {
   if (format !== "text" && format !== "json") {
     throw new CliError("INVALID_ARGUMENT", "--format \u53EA\u652F\u6301 text \u6216 json", 2);
   }
+  if (command !== "export" && (parsed.values.check || parsed.values.baseline !== void 0)) {
+    throw new CliError("INVALID_ARGUMENT", "--baseline / --check \u4EC5\u7528\u4E8E export \u547D\u4EE4", 2);
+  }
   const projectId = parsed.values["project-id"] === void 0 ? void 0 : parsePositiveInteger(parsed.values["project-id"], "--project-id");
   return {
     command,
@@ -30608,6 +30613,8 @@ function parseCliArgs(argv) {
     output: parsed.values.output,
     stdout: parsed.values.stdout ?? false,
     force: parsed.values.force ?? false,
+    baseline: parsed.values.baseline,
+    check: parsed.values.check ?? false,
     projectId,
     token: parsed.values.token,
     dryRun: parsed.values["dry-run"] ?? false,
@@ -31325,6 +31332,651 @@ async function writeReportAndOpen(report) {
   return file;
 }
 
+// ../../src/openapi/diff.ts
+var HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+var MAX_DEPTH = 64;
+function diffOpenApiScoped(baseline, current, baselinePath, methodsByPath) {
+  const baselineRoot = isObject2(baseline) ? baseline : {};
+  const currentRoot = isObject2(current) ? current : {};
+  return diffDocuments(baselineRoot, currentRoot, baselinePath, methodsByPath);
+}
+function diffDocuments(baselineRoot, currentRoot, baselinePath, methodsByPath) {
+  const baselinePaths = asObject(baselineRoot.paths);
+  const currentPaths = asObject(currentRoot.paths);
+  const changes = [];
+  const inScope = (apiPath, method) => !methodsByPath || methodsByPath.get(apiPath)?.has(method.toUpperCase()) === true;
+  const pathSelected = (apiPath) => !methodsByPath || methodsByPath.has(apiPath);
+  for (const [apiPath, baselineItem] of Object.entries(baselinePaths)) {
+    if (!isObject2(baselineItem)) {
+      continue;
+    }
+    if (!isObject2(currentPaths[apiPath]) && pathSelected(apiPath)) {
+      for (const method of operationsOf(baselineItem).keys()) {
+        if (!inScope(apiPath, method)) {
+          continue;
+        }
+        const upper = method.toUpperCase();
+        changes.push({
+          severity: "breaking",
+          kind: "removed-operation",
+          location: `${upper} ${apiPath}`,
+          path: apiPath,
+          method: upper,
+          message: `\u5220\u9664\u64CD\u4F5C ${upper} ${apiPath}`
+        });
+      }
+      continue;
+    }
+    diffPathItem(apiPath, baselineItem, asObject(currentPaths[apiPath]), baselineRoot, currentRoot, changes, inScope);
+  }
+  for (const apiPath of Object.keys(currentPaths)) {
+    if (isObject2(baselinePaths[apiPath])) {
+      continue;
+    }
+    const methods = [...operationsOf(asObject(currentPaths[apiPath])).keys()].filter((method) => inScope(apiPath, method)).map((method) => method.toUpperCase());
+    if (methodsByPath && !methodsByPath.has(apiPath)) {
+      continue;
+    }
+    changes.push({
+      severity: "compatible",
+      kind: "added-path",
+      location: apiPath,
+      path: apiPath,
+      message: `\u65B0\u589E\u8DEF\u5F84 ${apiPath}${methods.length ? `\uFF08${methods.join("/")}\uFF09` : ""}`
+    });
+  }
+  const deduped = dedupe(changes).sort(compareChange);
+  const breaking = deduped.filter((change) => change.severity === "breaking").length;
+  return {
+    baseline: baselinePath,
+    summary: { breaking, compatible: deduped.length - breaking, total: deduped.length },
+    changes: deduped
+  };
+}
+function formatDiffText(diff) {
+  const lines = [`\u57FA\u7EBF\u6BD4\u5BF9\u5B8C\u6210:\u7834\u574F\u6027 ${diff.summary.breaking}\uFF0C\u517C\u5BB9 ${diff.summary.compatible}`];
+  const groups = [
+    { label: "\u7834\u574F\u6027\u53D8\u66F4", severity: "breaking" },
+    { label: "\u517C\u5BB9\u53D8\u66F4", severity: "compatible" }
+  ];
+  for (const group of groups) {
+    const items = diff.changes.filter((change) => change.severity === group.severity);
+    if (!items.length) {
+      continue;
+    }
+    lines.push(`${group.label}:`);
+    for (const item of items) {
+      const field = item.field ? ` ${item.field}` : "";
+      lines.push(`- [${item.kind}] ${item.location}${field} \u2014 ${item.message}`);
+    }
+  }
+  return lines.join("\n");
+}
+function diffPathItem(apiPath, baselineItem, currentItem, baselineRoot, currentRoot, changes, inScope) {
+  const baselineOps = operationsOf(baselineItem);
+  const currentOps = operationsOf(currentItem);
+  for (const [method, baselineOp] of baselineOps) {
+    if (!inScope(apiPath, method)) {
+      continue;
+    }
+    const currentOp = currentOps.get(method);
+    if (!currentOp) {
+      const upper = method.toUpperCase();
+      changes.push({
+        severity: "breaking",
+        kind: "removed-operation",
+        location: `${upper} ${apiPath}`,
+        path: apiPath,
+        method: upper,
+        message: `\u5220\u9664\u64CD\u4F5C ${upper} ${apiPath}`
+      });
+      continue;
+    }
+    diffOperation(apiPath, method, baselineItem, baselineOp, currentItem, currentOp, baselineRoot, currentRoot, changes);
+  }
+  for (const method of currentOps.keys()) {
+    if (baselineOps.has(method) || !inScope(apiPath, method)) {
+      continue;
+    }
+    const upper = method.toUpperCase();
+    changes.push({
+      severity: "compatible",
+      kind: "added-operation",
+      location: `${upper} ${apiPath}`,
+      path: apiPath,
+      method: upper,
+      message: `\u65B0\u589E\u64CD\u4F5C ${upper} ${apiPath}`
+    });
+  }
+}
+function diffOperation(apiPath, method, baselineItem, baselineOp, currentItem, currentOp, baselineRoot, currentRoot, changes) {
+  const location = `${method.toUpperCase()} ${apiPath}`;
+  const context = { location, apiPath, method: method.toUpperCase(), baselineRoot, currentRoot, changes };
+  diffOperationDescription(context, baselineOp, currentOp);
+  diffParameters(context, baselineItem, baselineOp, currentItem, currentOp);
+  diffRequestBody(context, baselineOp, currentOp);
+  diffResponses(context, baselineOp, currentOp);
+}
+function diffOperationDescription(context, baselineOp, currentOp) {
+  for (const key of ["summary", "description"]) {
+    const before = typeof baselineOp[key] === "string" ? baselineOp[key] : "";
+    const after = typeof currentOp[key] === "string" ? currentOp[key] : "";
+    if (before === after) {
+      continue;
+    }
+    context.changes.push({
+      severity: "compatible",
+      kind: "description-changed",
+      location: context.location,
+      path: context.apiPath,
+      method: context.method,
+      field: key,
+      message: `\u64CD\u4F5C${key === "summary" ? "\u6458\u8981" : "\u63CF\u8FF0"}\u53D8\u5316`
+    });
+  }
+}
+function diffParameters(context, baselineItem, baselineOp, currentItem, currentOp) {
+  const baselineParams = parametersOf(baselineItem, baselineOp, context.baselineRoot);
+  const currentParams = parametersOf(currentItem, currentOp, context.currentRoot);
+  for (const [key, baselineParam] of baselineParams) {
+    const currentParam = currentParams.get(key);
+    const name = typeof baselineParam.name === "string" ? baselineParam.name : key;
+    if (!currentParam) {
+      context.changes.push({
+        severity: "compatible",
+        kind: "removed-parameter",
+        location: context.location,
+        path: context.apiPath,
+        method: context.method,
+        field: `parameters.${name}`,
+        message: `\u5220\u9664\u53C2\u6570 ${name}`
+      });
+      continue;
+    }
+    const wasRequired = baselineParam.required === true;
+    const isRequired = currentParam.required === true;
+    if (wasRequired !== isRequired) {
+      context.changes.push({
+        severity: isRequired ? "breaking" : "compatible",
+        kind: isRequired ? "parameter-became-required" : "parameter-became-optional",
+        location: context.location,
+        path: context.apiPath,
+        method: context.method,
+        field: `parameters.${name}`,
+        message: isRequired ? `\u53C2\u6570\u7531\u53EF\u9009\u53D8\u4E3A\u5FC5\u586B:${name}` : `\u53C2\u6570\u7531\u5FC5\u586B\u53D8\u4E3A\u53EF\u9009:${name}`
+      });
+    }
+    diffSchema(baselineParam.schema, currentParam.schema, ["parameters", name], {
+      ...context,
+      direction: "request",
+      schemaName: void 0,
+      visiting: /* @__PURE__ */ new Set(),
+      depth: 0
+    });
+  }
+  for (const [key, currentParam] of currentParams) {
+    if (baselineParams.has(key)) {
+      continue;
+    }
+    const name = typeof currentParam.name === "string" ? currentParam.name : key;
+    const isRequired = currentParam.required === true;
+    context.changes.push({
+      severity: isRequired ? "breaking" : "compatible",
+      kind: isRequired ? "added-required-parameter" : "added-optional-parameter",
+      location: context.location,
+      path: context.apiPath,
+      method: context.method,
+      field: `parameters.${name}`,
+      message: isRequired ? `\u65B0\u589E\u5FC5\u586B\u53C2\u6570:${name}` : `\u65B0\u589E\u53EF\u9009\u53C2\u6570:${name}`
+    });
+  }
+}
+function diffRequestBody(context, baselineOp, currentOp) {
+  const baselineBody = asObject(baselineOp.requestBody);
+  const currentBody = asObject(currentOp.requestBody);
+  const baselineSchema = bodySchemaOf(baselineBody);
+  const currentSchema = bodySchemaOf(currentBody);
+  if (!baselineSchema && !currentSchema) {
+    return;
+  }
+  if (!baselineSchema && currentSchema) {
+    const required = currentBody.required === true;
+    context.changes.push({
+      severity: required ? "breaking" : "compatible",
+      kind: required ? "added-required-request-body" : "added-request-body",
+      location: context.location,
+      path: context.apiPath,
+      method: context.method,
+      field: "requestBody",
+      message: required ? "\u65B0\u589E\u5FC5\u586B\u8BF7\u6C42\u4F53" : "\u65B0\u589E\u8BF7\u6C42\u4F53"
+    });
+    return;
+  }
+  if (baselineSchema && !currentSchema) {
+    context.changes.push({
+      severity: "compatible",
+      kind: "removed-request-body",
+      location: context.location,
+      path: context.apiPath,
+      method: context.method,
+      field: "requestBody",
+      message: "\u5220\u9664\u8BF7\u6C42\u4F53"
+    });
+    return;
+  }
+  if (baselineSchema && currentSchema) {
+    diffSchema(baselineSchema, currentSchema, ["requestBody"], {
+      ...context,
+      direction: "request",
+      schemaName: void 0,
+      visiting: /* @__PURE__ */ new Set(),
+      depth: 0
+    });
+  }
+}
+function diffResponses(context, baselineOp, currentOp) {
+  const baselineResponses = asObject(baselineOp.responses);
+  const currentResponses = asObject(currentOp.responses);
+  for (const [status, baselineResponse] of Object.entries(baselineResponses)) {
+    const currentResponse = currentResponses[status];
+    if (!isObject2(baselineResponse) || !isObject2(currentResponse)) {
+      context.changes.push({
+        severity: "compatible",
+        kind: "removed-response",
+        location: context.location,
+        path: context.apiPath,
+        method: context.method,
+        field: `responses.${status}`,
+        message: `\u5220\u9664\u54CD\u5E94\u72B6\u6001\u7801 ${status}`
+      });
+      continue;
+    }
+    const baselineSchema = bodySchemaOf(baselineResponse);
+    const currentSchema = bodySchemaOf(currentResponse);
+    if (baselineSchema && !currentSchema) {
+      context.changes.push({
+        severity: "breaking",
+        kind: "removed-response-body",
+        location: context.location,
+        path: context.apiPath,
+        method: context.method,
+        field: `responses.${status}`,
+        message: `\u5220\u9664\u54CD\u5E94\u4F53:${status}`
+      });
+      continue;
+    }
+    if (!baselineSchema && currentSchema) {
+      context.changes.push({
+        severity: "compatible",
+        kind: "added-response-body",
+        location: context.location,
+        path: context.apiPath,
+        method: context.method,
+        field: `responses.${status}`,
+        message: `\u65B0\u589E\u54CD\u5E94\u4F53:${status}`
+      });
+      continue;
+    }
+    if (baselineSchema && currentSchema) {
+      diffSchema(baselineSchema, currentSchema, ["responses", status], {
+        ...context,
+        direction: "response",
+        schemaName: void 0,
+        visiting: /* @__PURE__ */ new Set(),
+        depth: 0
+      });
+    }
+  }
+  for (const status of Object.keys(currentResponses)) {
+    if (isObject2(baselineResponses[status])) {
+      continue;
+    }
+    context.changes.push({
+      severity: "compatible",
+      kind: "added-response",
+      location: context.location,
+      path: context.apiPath,
+      method: context.method,
+      field: `responses.${status}`,
+      message: `\u65B0\u589E\u54CD\u5E94\u72B6\u6001\u7801 ${status}`
+    });
+  }
+}
+function diffSchema(baselineNode, currentNode, parts, context) {
+  if (!isObject2(baselineNode) || !isObject2(currentNode) || context.depth > MAX_DEPTH) {
+    return;
+  }
+  const baseline = expandSchema(baselineNode, context.baselineRoot, /* @__PURE__ */ new Set());
+  const current = expandSchema(currentNode, context.currentRoot, /* @__PURE__ */ new Set());
+  const schemaName2 = baseline.name ?? current.name ?? context.schemaName;
+  const recursionKey = baseline.name && current.name ? `${baseline.name}->${current.name}|${context.location}|${parts.join(".")}` : void 0;
+  if (recursionKey) {
+    if (context.visiting.has(recursionKey)) {
+      return;
+    }
+    context.visiting.add(recursionKey);
+  }
+  try {
+    diffResolvedSchema(baseline.node, current.node, parts, { ...context, schemaName: schemaName2, depth: context.depth + 1 });
+  } finally {
+    if (recursionKey) {
+      context.visiting.delete(recursionKey);
+    }
+  }
+}
+function diffResolvedSchema(baseline, current, parts, context) {
+  if (context.depth > MAX_DEPTH) {
+    return;
+  }
+  const baselineNullable = baseline.nullable === true;
+  const currentNullable = current.nullable === true;
+  if (baselineNullable && !currentNullable) {
+    pushTypeChange(context, parts, "type-narrowed", "\u7531\u53EF\u7A7A\u6536\u7A84\u4E3A\u975E\u7A7A");
+  } else if (!baselineNullable && currentNullable) {
+    pushTypeChange(context, parts, "type-widened", "\u7531\u975E\u7A7A\u653E\u5BBD\u4E3A\u53EF\u7A7A");
+  }
+  diffTypes(baseline, current, parts, context);
+  diffVariants(baseline, current, parts, context);
+  diffArrayItems(baseline, current, parts, context);
+  diffObjectProperties(baseline, current, parts, context);
+}
+function diffTypes(baseline, current, parts, context) {
+  const baselineTypes = typeSetOf(baseline);
+  const currentTypes = typeSetOf(current);
+  if (!baselineTypes && !currentTypes) {
+    return;
+  }
+  if (!baselineTypes && currentTypes) {
+    pushTypeChange(context, parts, "type-narrowed", `\u7531\u4EFB\u610F\u7C7B\u578B\u6536\u7A84\u4E3A ${currentTypes.join("|")}`);
+    return;
+  }
+  if (baselineTypes && !currentTypes) {
+    pushTypeChange(context, parts, "type-widened", `\u7531 ${baselineTypes.join("|")} \u653E\u5BBD\u4E3A\u4EFB\u610F\u7C7B\u578B`);
+    return;
+  }
+  if (!baselineTypes || !currentTypes) {
+    return;
+  }
+  const currentSubset = currentTypes.every((type) => baselineTypes.some((base) => isAssignable(type, base)));
+  const baselineSubset = baselineTypes.every((type) => currentTypes.some((next) => isAssignable(type, next)));
+  if (currentSubset && baselineSubset) {
+    return;
+  }
+  const detail = `${baselineTypes.join("|")} \u2192 ${currentTypes.join("|")}`;
+  if (currentSubset) {
+    pushTypeChange(context, parts, "type-narrowed", `\u7C7B\u578B\u6536\u7A84:${detail}`);
+  } else if (baselineSubset) {
+    pushTypeChange(context, parts, "type-widened", `\u7C7B\u578B\u653E\u5BBD:${detail}`);
+  } else {
+    pushTypeChange(context, parts, "type-changed", `\u7C7B\u578B\u53D8\u66F4:${detail}`);
+  }
+}
+function diffVariants(baseline, current, parts, context) {
+  const baselineVariants = variantsOf(baseline);
+  const currentVariants = variantsOf(current);
+  if (!baselineVariants.length && !currentVariants.length) {
+    return;
+  }
+  if (currentVariants.length < baselineVariants.length) {
+    pushTypeChange(
+      context,
+      parts,
+      "type-narrowed",
+      `\u8054\u5408\u7C7B\u578B\u5019\u9009\u7531 ${baselineVariants.length} \u4E2A\u51CF\u5C11\u4E3A ${currentVariants.length} \u4E2A`
+    );
+  }
+  const shared = Math.min(baselineVariants.length, currentVariants.length);
+  for (let index = 0; index < shared; index++) {
+    diffSchema(baselineVariants[index], currentVariants[index], [...parts, `variant[${index}]`], context);
+  }
+}
+function diffArrayItems(baseline, current, parts, context) {
+  const baselineItems = baseline.items;
+  const currentItems = current.items;
+  const baselineArray = typeSetOf(baseline)?.includes("array") === true || isObject2(baselineItems);
+  const currentArray = typeSetOf(current)?.includes("array") === true || isObject2(currentItems);
+  if (!baselineArray && !currentArray) {
+    return;
+  }
+  if (isObject2(baselineItems) && isObject2(currentItems)) {
+    diffSchema(baselineItems, currentItems, [...parts, "[]"], context);
+  } else if (!isObject2(baselineItems) && isObject2(currentItems)) {
+    pushTypeChange(context, parts, "type-narrowed", "\u6570\u7EC4\u5143\u7D20\u7531\u4EFB\u610F\u7C7B\u578B\u6536\u7A84\u4E3A\u5177\u4F53\u7C7B\u578B");
+  } else if (isObject2(baselineItems) && !isObject2(currentItems)) {
+    pushTypeChange(context, parts, "type-widened", "\u6570\u7EC4\u5143\u7D20\u7531\u5177\u4F53\u7C7B\u578B\u653E\u5BBD\u4E3A\u4EFB\u610F\u7C7B\u578B");
+  }
+}
+function diffObjectProperties(baseline, current, parts, context) {
+  const baselineProps = asObject(baseline.properties);
+  const currentProps = asObject(current.properties);
+  if (!Object.keys(baselineProps).length && !Object.keys(currentProps).length) {
+    return;
+  }
+  const currentRequired = new Set(requiredOf(current));
+  const baselineRequired = new Set(requiredOf(baseline));
+  for (const [name, baselineProp] of Object.entries(baselineProps)) {
+    const fieldParts = [...parts, name];
+    const currentProp = currentProps[name];
+    if (!isObject2(currentProp)) {
+      const field = fieldParts.join(".");
+      if (baselineRequired.has(name)) {
+        pushFieldChange(context, "breaking", "removed-required-field", field, `\u5220\u9664\u5FC5\u586B\u5B57\u6BB5:${field}`);
+      } else {
+        const severity = context.direction === "response" ? "breaking" : "compatible";
+        const kind = context.direction === "response" ? "removed-response-field" : "removed-optional-field";
+        pushFieldChange(context, severity, kind, field, `\u5220\u9664${context.direction === "response" ? "\u54CD\u5E94" : "\u53EF\u9009"}\u5B57\u6BB5:${field}`);
+      }
+      continue;
+    }
+    const wasRequired = baselineRequired.has(name);
+    const isRequired = currentRequired.has(name);
+    if (wasRequired !== isRequired) {
+      const field = fieldParts.join(".");
+      if (context.direction === "request" && isRequired) {
+        pushFieldChange(context, "breaking", "field-became-required", field, `\u5B57\u6BB5\u7531\u53EF\u9009\u53D8\u4E3A\u5FC5\u586B:${field}`);
+      } else if (context.direction === "response" && isRequired) {
+        pushFieldChange(context, "compatible", "field-became-required", field, `\u54CD\u5E94\u5B57\u6BB5\u7531\u53EF\u9009\u53D8\u4E3A\u5FC5\u6709:${field}`);
+      } else {
+        pushFieldChange(
+          context,
+          context.direction === "request" ? "compatible" : "breaking",
+          "field-became-optional",
+          field,
+          `\u5B57\u6BB5\u7531\u5FC5\u586B\u53D8\u4E3A\u53EF\u9009:${field}`
+        );
+      }
+    }
+    diffSchema(baselineProp, currentProp, fieldParts, context);
+  }
+  for (const name of Object.keys(currentProps)) {
+    if (isObject2(baselineProps[name])) {
+      continue;
+    }
+    const field = [...parts, name].join(".");
+    const isRequired = currentRequired.has(name);
+    if (context.direction === "request" && isRequired) {
+      pushFieldChange(context, "breaking", "added-required-field", field, `\u65B0\u589E\u5FC5\u586B\u5B57\u6BB5:${field}`);
+    } else {
+      pushFieldChange(context, "compatible", "added-optional-field", field, `\u65B0\u589E\u53EF\u9009\u5B57\u6BB5:${field}`);
+    }
+  }
+}
+function pushTypeChange(context, parts, kind, message) {
+  pushFieldChange(context, kind === "type-widened" ? "compatible" : "breaking", kind, parts.join("."), message);
+}
+function pushFieldChange(context, severity, kind, field, message) {
+  context.changes.push({
+    severity,
+    kind,
+    location: context.location,
+    path: context.apiPath,
+    method: context.method,
+    schema: context.schemaName,
+    field,
+    message
+  });
+}
+function expandSchema(node, root2, seen) {
+  let name;
+  let fromRef = {};
+  const ref = typeof node.$ref === "string" ? node.$ref : void 0;
+  if (ref) {
+    name = componentNameOf(ref);
+    if (!seen.has(ref)) {
+      const target = resolveRef(root2, ref);
+      if (isObject2(target)) {
+        const expanded = expandSchema(target, root2, /* @__PURE__ */ new Set([...seen, ref]));
+        fromRef = expanded.node;
+        name = expanded.name ?? name;
+      }
+    }
+  }
+  const siblings = { ...node };
+  delete siblings.$ref;
+  const allOf = Array.isArray(siblings.allOf) ? siblings.allOf : [];
+  delete siblings.allOf;
+  let merged = {};
+  for (const branch of allOf) {
+    if (!isObject2(branch)) {
+      continue;
+    }
+    const expanded = expandSchema(branch, root2, seen);
+    merged = mergeSchema(merged, expanded.node);
+    name = name ?? expanded.name;
+  }
+  merged = mergeSchema(merged, fromRef);
+  merged = mergeSchema(merged, siblings);
+  return { node: merged, name };
+}
+function mergeSchema(base, overlay) {
+  const result = { ...base, ...overlay };
+  const baseProperties = asObject(base.properties);
+  const overlayProperties = asObject(overlay.properties);
+  if (Object.keys(baseProperties).length || Object.keys(overlayProperties).length) {
+    result.properties = { ...baseProperties, ...overlayProperties };
+  }
+  const baseRequired = requiredOf(base);
+  const overlayRequired = requiredOf(overlay);
+  if (baseRequired.length || overlayRequired.length) {
+    result.required = [.../* @__PURE__ */ new Set([...baseRequired, ...overlayRequired])];
+  }
+  if (overlay.type === void 0 && base.type !== void 0) {
+    result.type = base.type;
+  }
+  if (overlay.nullable === void 0 && base.nullable !== void 0) {
+    result.nullable = base.nullable;
+  }
+  if (overlay.items === void 0 && base.items !== void 0) {
+    result.items = base.items;
+  }
+  return result;
+}
+function resolveRef(root2, ref) {
+  if (!ref.startsWith("#/")) {
+    return void 0;
+  }
+  let current = root2;
+  for (const raw of ref.slice(2).split("/")) {
+    if (!isObject2(current)) {
+      return void 0;
+    }
+    current = current[decodePointer(raw)];
+  }
+  return current;
+}
+function decodePointer(raw) {
+  return raw.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+function componentNameOf(ref) {
+  if (!ref.startsWith("#/")) {
+    return void 0;
+  }
+  const segments = ref.slice(2).split("/");
+  return segments.length ? decodePointer(segments[segments.length - 1]) : void 0;
+}
+function parametersOf(item, op, root2) {
+  const result = /* @__PURE__ */ new Map();
+  for (const raw of [...asArray(item.parameters), ...asArray(op.parameters)]) {
+    if (!isObject2(raw)) {
+      continue;
+    }
+    const param = expandSchema(raw, root2, /* @__PURE__ */ new Set()).node;
+    const location = typeof param.in === "string" ? param.in : "query";
+    const name = typeof param.name === "string" ? param.name : "";
+    result.set(`${location}:${name}`, param);
+  }
+  return result;
+}
+function bodySchemaOf(node) {
+  const content = asObject(node.content);
+  const preferred = content["application/json"] ?? content[Object.keys(content)[0]];
+  const media = asObject(preferred);
+  return isObject2(media.schema) ? media.schema : void 0;
+}
+function operationsOf(item) {
+  const result = /* @__PURE__ */ new Map();
+  for (const method of HTTP_METHODS) {
+    const op = item[method];
+    if (isObject2(op)) {
+      result.set(method, op);
+    }
+  }
+  return result;
+}
+function typeSetOf(node) {
+  if (typeof node.type === "string") {
+    return [node.type];
+  }
+  if (Array.isArray(node.type)) {
+    const types = node.type.filter((value) => typeof value === "string");
+    return types.length ? types : void 0;
+  }
+  return void 0;
+}
+function variantsOf(node) {
+  if (Array.isArray(node.oneOf) && node.oneOf.length) {
+    return node.oneOf;
+  }
+  if (Array.isArray(node.anyOf) && node.anyOf.length) {
+    return node.anyOf;
+  }
+  return [];
+}
+function isAssignable(child2, parent) {
+  return child2 === parent || child2 === "integer" && parent === "number";
+}
+function requiredOf(node) {
+  return asArray(node.required).filter((value) => typeof value === "string");
+}
+function asObject(value) {
+  return isObject2(value) ? value : {};
+}
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+function isObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function dedupe(changes) {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const change of changes) {
+    const key = [change.severity, change.kind, change.location, change.schema ?? "", change.field ?? ""].join("|");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(change);
+  }
+  return result;
+}
+function compareChange(left, right) {
+  if (left.severity !== right.severity) {
+    return left.severity === "breaking" ? -1 : 1;
+  }
+  return left.path.localeCompare(right.path) || (left.method ?? "").localeCompare(right.method ?? "") || (left.field ?? "").localeCompare(right.field ?? "") || left.kind.localeCompare(right.kind);
+}
+
 // src/main.ts
 var VERSION2 = require_package().version;
 async function runCli(argv = process.argv.slice(2)) {
@@ -31352,10 +32004,16 @@ async function runCli(argv = process.argv.slice(2)) {
       case "config":
         result = configResult(resolved, options.projectSource);
         warnings = diagnosticMessages(resolved.diagnostics);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check \u4EC5\u7528\u4E8E export \u547D\u4EE4", 2);
+        }
         break;
       case "scan": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check \u4EC5\u7528\u4E8E export \u547D\u4EE4", 2);
+        }
         result = scanResult(analyzed, resolved);
         warnings = analyzed.warnings;
         break;
@@ -31363,13 +32021,40 @@ async function runCli(argv = process.argv.slice(2)) {
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
-        result = await exportResult(analyzed, resolved, options, controller.signal);
+        if (options.baseline && !options.check) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline \u9700\u8981\u4E0E --check \u4E00\u8D77\u4F7F\u7528", 2);
+        }
+        if (options.check && options.stdout) {
+          throw new CliError("INVALID_ARGUMENT", "--check \u4E0D\u80FD\u4E0E --stdout \u540C\u65F6\u4F7F\u7528", 2);
+        }
+        if (options.check && options.output) {
+          throw new CliError("INVALID_ARGUMENT", "--check \u4E0D\u5199\u8F93\u51FA\u6587\u4EF6\uFF0C\u4E0D\u80FD\u4E0E --output \u540C\u65F6\u4F7F\u7528", 2);
+        }
         warnings = analyzed.warnings;
+        if (options.check) {
+          const diff = await checkResult(analyzed, resolved, options);
+          if (diff.summary.breaking > 0) {
+            throw new CliError(
+              "BREAKING_CHANGES_DETECTED",
+              `\u68C0\u6D4B\u5230 ${diff.summary.breaking} \u9879\u7834\u574F\u6027 API \u53D8\u66F4`,
+              6,
+              false,
+              void 0,
+              diff
+            );
+          }
+          result = diff;
+          break;
+        }
+        result = await exportResult(analyzed, resolved, options, controller.signal);
         break;
       }
       case "sync": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
         ensureEndpoints(analyzed, options);
+        if (options.check || options.baseline) {
+          throw new CliError("INVALID_ARGUMENT", "--baseline / --check \u4EC5\u7528\u4E8E export \u547D\u4EE4", 2);
+        }
         validateSyncConfig(resolved, options);
         if (!options.dryRun) {
           await confirmSync(resolved, analyzed, options);
@@ -31400,12 +32085,18 @@ async function runCli(argv = process.argv.slice(2)) {
     return 0;
   } catch (error) {
     const cliError = toCliError(error);
+    if ((options?.format ?? requestedFormat) !== "json" && isBreakingDiff(cliError)) {
+      writeText(formatDiffText(cliError.details));
+    }
     outputFailure(options, cliError, Date.now() - startedAt, requestedFormat);
     return cliError.exitCode;
   } finally {
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
   }
+}
+function isBreakingDiff(error) {
+  return error.code === "BREAKING_CHANGES_DETECTED" && error.details !== void 0;
 }
 async function analyzeSelected(resolved, options, signal) {
   return analyzeProject({
@@ -31478,6 +32169,63 @@ async function exportResult(analyzed, resolved, options, signal) {
     endpointCount: analyzed.endpoints.length,
     schemaCount: Object.keys(analyzed.spec.components?.schemas ?? {}).length
   };
+}
+async function checkResult(analyzed, resolved, options) {
+  if (!options.baseline) {
+    throw new CliError("BASELINE_REQUIRED", "--check \u9700\u8981 --baseline <file> \u6307\u5B9A\u57FA\u7EBF OpenAPI \u6587\u4EF6", 2);
+  }
+  const baselinePath = path7.resolve(resolved.config.projectRoot, options.baseline);
+  let raw;
+  try {
+    raw = await fs7.promises.readFile(baselinePath, "utf8");
+  } catch {
+    throw new CliError("BASELINE_NOT_FOUND", `\u57FA\u7EBF\u6587\u4EF6\u4E0D\u5B58\u5728\u6216\u4E0D\u53EF\u8BFB:${baselinePath}`, 2);
+  }
+  let baseline;
+  try {
+    baseline = JSON.parse(raw);
+  } catch (error) {
+    throw new CliError(
+      "BASELINE_INVALID",
+      `\u57FA\u7EBF\u6587\u4EF6\u4E0D\u662F\u5408\u6CD5 JSON:${baselinePath}\uFF08${error instanceof Error ? error.message : String(error)}\uFF09`,
+      2
+    );
+  }
+  if (!isOpenApiDocument(baseline)) {
+    throw new CliError("BASELINE_INVALID", `\u57FA\u7EBF\u6587\u4EF6\u4E0D\u662F\u6709\u6548\u7684 OpenAPI \u6587\u6863\uFF08\u7F3A\u5C11 paths \u5BF9\u8C61\uFF09:${baselinePath}`, 2);
+  }
+  return diffOpenApiScoped(baseline, analyzed.spec, baselinePath, selectionScope(analyzed, options));
+}
+function isOpenApiDocument(value) {
+  return typeof value === "object" && value !== null && typeof value.paths === "object";
+}
+function selectionScope(analyzed, options) {
+  if (options.endpoints.length) {
+    const scope2 = /* @__PURE__ */ new Map();
+    for (const raw of options.endpoints) {
+      const trimmed = raw.trim();
+      const separator = trimmed.indexOf(" ");
+      if (separator <= 0) {
+        continue;
+      }
+      const method = trimmed.slice(0, separator).toUpperCase();
+      const apiPath = trimmed.slice(separator + 1).trim();
+      const methods = scope2.get(apiPath) ?? /* @__PURE__ */ new Set();
+      methods.add(method);
+      scope2.set(apiPath, methods);
+    }
+    return scope2;
+  }
+  if (!options.files.length) {
+    return void 0;
+  }
+  const scope = /* @__PURE__ */ new Map();
+  for (const endpoint of analyzed.endpoints) {
+    const methods = scope.get(endpoint.path) ?? /* @__PURE__ */ new Set();
+    methods.add(endpoint.method.toUpperCase());
+    scope.set(endpoint.path, methods);
+  }
+  return scope;
 }
 function validateSyncConfig(resolved, options) {
   if (resolved.config.projectId <= 0) {
@@ -31586,6 +32334,9 @@ ${warnings.map((item) => `- ${item}`).join("\n")}` : "";
     return `\u626B\u63CF\u5B8C\u6210: ${value.scannedFiles} \u4E2A Java \u6587\u4EF6\uFF0C${value.endpointCount} \u4E2A\u63A5\u53E3\uFF0C${value.schemaCount} \u4E2A\u6A21\u578B${warningText}`;
   }
   if (command === "export") {
+    if (value && typeof value === "object" && "summary" in value) {
+      return `${formatDiffText(result)}${warningText}`;
+    }
     return `OpenAPI \u5DF2\u5BFC\u51FA\u5230 ${value.output}\uFF0C\u5171 ${value.endpointCount} \u4E2A\u63A5\u53E3${warningText}`;
   }
   if (command === "sync") {
@@ -31656,7 +32407,7 @@ ${HELP_FLAG}
 
 \u9000\u51FA\u7801:
   0 \u6210\u529F        2 \u53C2\u6570/\u914D\u7F6E/\u786E\u8BA4\u9519\u8BEF   3 \u6CA1\u6709 Java \u6587\u4EF6\u6216\u76EE\u6807\u63A5\u53E3
-  4 \u9274\u6743/\u6743\u9650   5 \u7F51\u7EDC/\u8D85\u65F6/\u670D\u52A1\u9519\u8BEF   6 \u5BFC\u5165\u90E8\u5206\u5931\u8D25
+  4 \u9274\u6743/\u6743\u9650   5 \u7F51\u7EDC/\u8D85\u65F6/\u670D\u52A1\u9519\u8BEF   6 \u5BFC\u5165\u90E8\u5206\u5931\u8D25\u6216\u68C0\u6D4B\u5230\u7834\u574F\u6027 API \u53D8\u66F4
   7 \u672C\u5730 I/O \u6216\u5185\u90E8\u9519\u8BEF              130 \u53D6\u6D88
 
 \u914D\u7F6E\u4F18\u5148\u7EA7: \u547D\u4EE4\u884C\u53C2\u6570 > API2APIFOX_* \u73AF\u5883\u53D8\u91CF > .api2apifox.json > \u9ED8\u8BA4\u503C
@@ -31687,10 +32438,14 @@ ${COMMON_HELP}
   -o, --output <file>       \u8F93\u51FA\u6587\u4EF6\uFF0C\u9ED8\u8BA4\u53D6\u914D\u7F6E exportPath\uFF08openapi.gen.json\uFF09
   --force                   \u76EE\u6807\u6587\u4EF6\u5DF2\u5B58\u5728\u65F6\u8986\u76D6
   --stdout                  \u628A OpenAPI \u76F4\u63A5\u5199\u5230 stdout\uFF08\u4E0D\u80FD\u4E0E --format json \u540C\u65F6\u4F7F\u7528\uFF09
+  --check                   \u57FA\u7EBF\u6BD4\u5BF9\u6A21\u5F0F\uFF1A\u4E0D\u5199\u6587\u4EF6\uFF0C\u6309\u64CD\u4F5C+schema \u68C0\u6D4B\u7834\u574F\u6027\u53D8\u66F4
+  --baseline <file>         \u57FA\u7EBF OpenAPI \u6587\u4EF6\uFF08\u76F8\u5BF9\u9879\u76EE\u6839\u6216\u7EDD\u5BF9\u8DEF\u5F84\uFF09\uFF0C\u5FC5\u987B\u4E0E --check \u540C\u7528
 ${FILTER_HELP}
 ${HELP_FLAG}
 
-${FILTER_NOTE}`;
+${FILTER_NOTE}
+  --check \u68C0\u6D4B\u5230\u7834\u574F\u6027\u53D8\u66F4\u65F6\u9000\u51FA\u7801\u4E3A 6\uFF08BREAKING_CHANGES_DETECTED\uFF09\uFF0C\u53D8\u66F4\u6E05\u5355\u5728 JSON \u4FE1\u5C01\u7684 error.details\u3002
+  --check \u53EA\u6BD4\u5BF9 --file / --endpoint \u9009\u4E2D\u7684\u8303\u56F4\uFF1B--file \u65E0\u6CD5\u68C0\u6D4B\u300C\u6587\u4EF6\u91CC\u6700\u540E\u4E00\u4E2A\u63A5\u53E3\u88AB\u5220\u300D\u3002`;
     case "sync":
       return `api2apifox sync [options]
 
