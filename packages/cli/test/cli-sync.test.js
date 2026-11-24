@@ -101,10 +101,207 @@ test("G1-1 sync --yes 成功后 exit 0，返回 Apifox counters", async () => {
       schemaCreated: 12,
     });
     assert.deepEqual(payload.result.errors, []);
+    // 逐接口索引进入 JSON 信封(即使 Apifox 只回聚合计数,也要给出清单与降级原因)
+    assert.equal(payload.result.endpointLinks.mode, "project");
+    assert.ok(payload.result.endpointLinks.reason, "降级必须给出原因");
+    assert.equal(payload.result.endpoints.length, payload.result.scope.endpointCount);
+    for (const endpoint of payload.result.endpoints) {
+      // 本机 mock 地址推导不出 app.apifox.com,也拿不到接口 ID:绝不能凭空拼链接
+      assert.equal(endpoint.apifoxUrl, undefined, JSON.stringify(endpoint));
+      assert.equal(endpoint.mockUrl, undefined, JSON.stringify(endpoint));
+    }
     // 只发一次导入请求，路由正确
     assert.equal(mock.requests.length, 1);
     assert.equal(mock.requests[0].method, "POST");
     assert.equal(mock.requests[0].url, "/v1/projects/4242/import-openapi");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("G1-1b sync JSON 信封带逐接口索引：Apifox 不回接口 ID 时显式降级并给出原因", async () => {
+  const mock = await startMock({
+    respond: (_req, res) => writeJson(res, 200, { code: 0, data: { counters: { endpointCreated: 25 }, errors: [] } }),
+  });
+  try {
+    const result = await runAsync(syncArgs(), {
+      API2APIFOX_API_BASE_URL: mock.url,
+      API2APIFOX_TOKEN: "mock-token",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = jsonOf(result);
+    assert.equal(payload.result.endpointLinks.mode, "project");
+    assert.ok(payload.result.endpointLinks.reason, "降级必须给出原因");
+    assert.equal(payload.result.endpoints.length, payload.result.scope.endpointCount);
+    for (const endpoint of payload.result.endpoints) {
+      // 本机 mock 地址推导不出 app.apifox.com,也拿不到接口 ID:绝不能凭空拼链接
+      assert.equal(endpoint.apifoxUrl, undefined, JSON.stringify(endpoint));
+      assert.equal(endpoint.apifoxEndpointId, undefined, JSON.stringify(endpoint));
+      assert.equal(endpoint.mockUrl, undefined, JSON.stringify(endpoint));
+    }
+  } finally {
+    await mock.close();
+  }
+});
+
+test("G1-1c sync JSON 信封：Apifox 回传接口 ID 与 Mock 时逐接口带出来", async () => {
+  const mock = await startMock({
+    respond: (_req, res) =>
+      writeJson(res, 200, {
+        code: 0,
+        data: {
+          counters: { endpointCreated: 1 },
+          errors: [],
+          endpoints: [
+            { id: 9001, method: "GET", path: "/api/v1/users", mockUrl: "https://mock.apifox.cn/m2/4242-0-0/9001" },
+          ],
+        },
+      }),
+  });
+  try {
+    const result = await runAsync(syncArgs(), {
+      API2APIFOX_API_BASE_URL: mock.url,
+      API2APIFOX_TOKEN: "mock-token",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = jsonOf(result);
+    const linked = payload.result.endpoints.find((item) => item.apifoxEndpointId === 9001);
+    assert.ok(linked, `未找到接口 ID 映射:${JSON.stringify(payload.result.endpoints)}`);
+    assert.equal(linked.method, "GET");
+    assert.equal(linked.path, "/api/v1/users");
+    assert.equal(linked.mockUrl, "https://mock.apifox.cn/m2/4242-0-0/9001");
+    // 私有化/mock 域名推导不出 Web 文档页,但必须如实说明原因,而不是静默成功
+    assert.equal(payload.result.endpointLinks.mode, "project");
+    assert.match(payload.result.endpointLinks.reason, /私有化部署/);
+    assert.equal(linked.apifoxUrl, undefined);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("G1-1e sync JSON 信封：私有化部署下 Apifox 直传接口文档页仍算逐接口可定位", async () => {
+  const mock = await startMock({
+    respond: (_req, res) =>
+      writeJson(res, 200, {
+        code: 0,
+        data: {
+          counters: { endpointCreated: 25, schemaCreated: 12 },
+          errors: [],
+          // 路由只覆盖其中一个接口，其余接口必须逐行保持降级，不能整批谎报
+          endpoints: [
+            {
+              method: "GET",
+              path: "/api/v1/users",
+              id: 7001,
+              url: "https://apifox.internal.example/project/4242/apis/api-7001",
+              mockUrl: "https://apifox.internal.example/mock/4242/api-7001",
+            },
+          ],
+        },
+      }),
+  });
+  try {
+    const result = await runAsync(syncArgs(), {
+      API2APIFOX_API_BASE_URL: mock.url,
+      API2APIFOX_TOKEN: "mock-token",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = jsonOf(result);
+    const linked = payload.result.endpoints.find((item) => item.method === "GET" && item.path === "/api/v1/users");
+    assert.ok(linked, "未找到被映射的接口");
+    // Apifox 直传的地址优先于按 ID 推导：私有化部署也能给出接口级链接
+    assert.equal(linked.apifoxUrl, "https://apifox.internal.example/project/4242/apis/api-7001");
+    assert.equal(linked.mockUrl, "https://apifox.internal.example/mock/4242/api-7001");
+    assert.equal(linked.apifoxEndpointId, 7001);
+    assert.equal(linked.degraded, undefined);
+    // 只有 1/25 拿到接口级地址 => partial，且其余行显式降级并给出原因
+    assert.equal(payload.result.endpointLinks.mode, "partial");
+    assert.ok(payload.result.endpointLinks.reason, "部分降级必须给出原因");
+    // 已有接口拿到直传地址时，原因不能声称"不提供任何链接"
+    assert.doesNotMatch(payload.result.endpointLinks.reason, /不提供任何/);
+    assert.match(payload.result.endpointLinks.reason, /这些接口|其余/);
+    const others = payload.result.endpoints.filter((item) => !(item.method === "GET" && item.path === "/api/v1/users"));
+    assert.ok(others.length > 0);
+    for (const item of others) {
+      assert.equal(item.apifoxUrl, undefined, JSON.stringify(item));
+      assert.equal(item.mockUrl, undefined, JSON.stringify(item));
+    }
+  } finally {
+    await mock.close();
+  }
+});
+
+test("G1-1f sync --dry-run JSON 信封：给出清单但不给任何链接，原因写明未写入", async () => {
+  const result = await runAsync([
+    "sync",
+    "--project",
+    SAMPLE,
+    "--project-id",
+    "4242",
+    "--dry-run",
+    "--format",
+    "json",
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = jsonOf(result);
+  assert.equal(payload.result.dryRun, true);
+  assert.equal(payload.result.endpointLinks.mode, "project");
+  assert.match(payload.result.endpointLinks.reason, /dry-run/);
+  assert.equal(payload.result.endpoints.length, payload.result.scope.endpointCount);
+  for (const endpoint of payload.result.endpoints) {
+    assert.equal(endpoint.apifoxUrl, undefined, "dry-run 不得指向未写入的接口");
+    assert.equal(endpoint.mockUrl, undefined);
+    assert.equal(endpoint.apifoxEndpointId, undefined);
+  }
+});
+
+test("G1-1g sync JSON 信封：逐接口映射在外层 endpoints 时同样被读取", async () => {
+  const mock = await startMock({
+    // Apifox 部分网关把逐接口映射放在 data 同级，而不是 data.endpoints 里
+    respond: (_req, res) =>
+      writeJson(res, 200, {
+        code: 0,
+        data: { counters: { endpointCreated: 25 }, errors: [] },
+        endpoints: [
+          { method: "GET", path: "/api/v1/users", id: 8001, url: "https://apifox.corp.example/p/4242/apis/api-8001" },
+        ],
+      }),
+  });
+  try {
+    const result = await runAsync(syncArgs(), {
+      API2APIFOX_API_BASE_URL: mock.url,
+      API2APIFOX_TOKEN: "mock-token",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = jsonOf(result);
+    const linked = payload.result.endpoints.find((e) => e.method === "GET" && e.path === "/api/v1/users");
+    assert.ok(linked, "未找到被映射的接口");
+    assert.equal(linked.apifoxUrl, "https://apifox.corp.example/p/4242/apis/api-8001");
+    assert.equal(linked.apifoxEndpointId, 8001);
+    assert.equal(payload.result.endpointLinks.mode, "partial");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("G1-1d sync JSON 信封：部分导入失败时 error.details 仍带逐接口索引", async () => {
+  const mock = await startMock({
+    respond: (_req, res) =>
+      writeJson(res, 200, {
+        code: 0,
+        data: { counters: { endpointCreated: 24, endpointFailed: 1 }, errors: [{ message: "路径冲突:/api/v1/users" }] },
+      }),
+  });
+  try {
+    const result = await runAsync(syncArgs(), {
+      API2APIFOX_API_BASE_URL: mock.url,
+      API2APIFOX_TOKEN: "mock-token",
+    });
+    assert.equal(result.status, 6, result.stderr);
+    const payload = jsonOf(result);
+    assert.equal(payload.error.code, "IMPORT_PARTIAL_FAILURE");
+    assert.equal(payload.error.details.endpoints.length, payload.error.details.scope.endpointCount);
+    assert.ok(payload.error.details.endpointLinks.reason, "失败详情里同样要能判断链接口径");
   } finally {
     await mock.close();
   }
@@ -361,5 +558,383 @@ test("G10 --include 反向斜杠 glob 在 Windows 上仍能匹配", async () => 
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/* ---------------- 报告页逐接口链接(Issue #40) ---------------- */
+
+test("报告页:逐接口链接与降级原因进入自包含 HTML 的数据载荷", () => {
+  const { buildCliSyncReport, renderReportHtml } = require("../dist/cli.js");
+  const analyzed = {
+    endpoints: [
+      {
+        method: "GET",
+        path: "/api/v1/res/0",
+        operationId: "DemoController_get",
+        summary: "接口",
+        tag: "Demo",
+        parameters: [],
+        fsPath: "D:/demo/src/main/java/demo/DemoController.java",
+        controller: "DemoController",
+        flavor: "spring-mvc",
+      },
+    ],
+    warnings: [],
+  };
+  const resolved = {
+    config: {
+      projectRoot: "D:/demo",
+      folderNameSource: "controller",
+      rootFolderName: "",
+      endpointConflictBehavior: "OVERWRITE_EXISTING",
+      schemaConflictBehavior: "OVERWRITE_EXISTING",
+    },
+  };
+  const synced = (endpoints, endpointLinks) => ({
+    dryRun: false,
+    target: { projectId: 4242, apiBaseUrl: "https://api.apifox.com" },
+    scope: { type: "workspace", endpointCount: 1 },
+    counters: { endpointCreated: 1 },
+    errors: [],
+    endpoints,
+    endpointLinks,
+  });
+
+  // 接口级:apifoxUrl + mockUrl 原样进入数据载荷
+  const linked = renderReportHtml(
+    buildCliSyncReport({
+      synced: synced(
+        [
+          {
+            name: "接口",
+            method: "GET",
+            path: "/api/v1/res/0",
+            apifoxUrl: "https://app.apifox.com/project/4242/apis/api-9001",
+            apifoxEndpointId: 9001,
+            mockUrl: "https://mock.apifox.cn/m2/4242-0-0/9001",
+          },
+        ],
+        { mode: "per-endpoint" }
+      ),
+      analyzed,
+      resolved,
+    })
+  );
+  assert.ok(linked.includes('"apifoxUrl":"https://app.apifox.com/project/4242/apis/api-9001"'));
+  assert.ok(linked.includes('"mockUrl":"https://mock.apifox.cn/m2/4242-0-0/9001"'));
+  // 链接仍只走 JSON 载荷,不拼成标签属性
+  assert.equal(linked.includes('href="https://app.apifox.com'), false);
+
+  // 降级:逐行标记 + 页面上的原因容器
+  const degraded = renderReportHtml(
+    buildCliSyncReport({
+      synced: synced(
+        [{ name: "接口", method: "GET", path: "/api/v1/res/0", apifoxUrl: "https://app.apifox.com/project/4242", degraded: true }],
+        { mode: "project", reason: "Apifox 未返回接口 ID" }
+      ),
+      analyzed,
+      resolved,
+    })
+  );
+  assert.ok(degraded.includes('"degraded":true'));
+  assert.ok(degraded.includes('"reason":"Apifox 未返回接口 ID"'));
+  assert.ok(degraded.includes('id="endpointLinkNote"'), "报告页必须有展示降级原因的容器");
+});
+
+/**
+ * 真正执行页面脚本：只查 payload 子串不足以证明“链接被画出来/被复制出去”，
+ * 这里用一个最小 DOM 桩跑通 render()，并从点击复制按钮时发出的文本断言内容。
+ */
+function runReportScript(html) {
+  const vm = require("node:vm");
+  const script = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
+  const nodes = new Map();
+  const made = [];
+  const makeEl = (tag) => {
+    const node = {
+      tagName: tag,
+      children: [],
+      textContent: "",
+      className: "",
+      title: "",
+      href: "",
+      type: "",
+      style: {},
+      dataset: {},
+      listeners: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      setAttribute() {},
+      getAttribute() {
+        return "";
+      },
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      remove() {},
+      select() {},
+      addEventListener(type, cb) {
+        this.listeners[type] = cb;
+      },
+      querySelector(sel) {
+        this.sub = this.sub || {};
+        if (!this.sub[sel]) {
+          this.sub[sel] = makeEl("div");
+        }
+        return this.sub[sel];
+      },
+      querySelectorAll() {
+        return [];
+      },
+      closest() {
+        return undefined;
+      },
+      textOf() {
+        const sub = Object.values(this.sub || {}).map((c) => c.textOf()).join("");
+        return (this.textContent || "") + this.children.map((c) => c.textOf()).join("") + sub;
+      },
+    };
+    made.push(node);
+    return node;
+  };
+  const document = {
+    title: "",
+    createElement: makeEl,
+    createTextNode: (text) => ({ textOf: () => text, children: [] }),
+    getElementById(id) {
+      if (!nodes.has(id)) {
+        nodes.set(id, makeEl("div"));
+      }
+      return nodes.get(id);
+    },
+    querySelector: () => makeEl("div"),
+    querySelectorAll: () => [],
+    body: makeEl("body"),
+    execCommand: () => true,
+  };
+  const copied = [];
+  const posted = [];
+  const window = { open() {}, addEventListener() {} };
+  const context = {
+    document,
+    window,
+    navigator: { clipboard: { writeText: (text) => (copied.push(text), Promise.resolve()) } },
+    setTimeout: () => 0,
+    // 面板脚本首行即取宿主 API；CLI 报告页不使用，存在也无副作用
+    acquireVsCodeApi: () => ({ postMessage: (message) => posted.push(message) }),
+  };
+  context.globalThis = context;
+  // 用同一个 context 执行脚本，面板场景才能在脚本执行后注入 report 并调用它自己的 render()
+  vm.createContext(context);
+  vm.runInContext(script, context);
+  const setReport = (value) => {
+    context.__inject = value;
+    vm.runInContext("report = __inject; render();", context);
+  };
+  return {
+    nodes,
+    copied,
+    posted,
+    setReport,
+    ids: (id) => nodes.get(id),
+    tableText: () => {
+      const tbody = nodes.get("endpointTable");
+      return tbody ? tbody.textOf() : "";
+    },
+  };
+}
+
+test("报告页脚本:逐接口链接真的画进表格，降级原因可见，复制内容带链接", async () => {
+  const { buildCliSyncReport, renderReportHtml } = require("../dist/cli.js");
+  const analyzed = {
+    endpoints: [
+      { method: "GET", path: "/api/v1/a", operationId: "a", summary: "甲", tag: "Demo", parameters: [], fsPath: "D:/d/A.java", controller: "A", flavor: "spring-mvc" },
+      { method: "GET", path: "/api/v1/b", operationId: "b", summary: "乙", tag: "Demo", parameters: [], fsPath: "D:/d/A.java", controller: "A", flavor: "spring-mvc" },
+    ],
+    warnings: [],
+  };
+  const resolved = {
+    config: { projectRoot: "D:/d", folderNameSource: "controller", rootFolderName: "", endpointConflictBehavior: "OVERWRITE_EXISTING", schemaConflictBehavior: "OVERWRITE_EXISTING" },
+  };
+  const html = renderReportHtml(
+    buildCliSyncReport({
+      synced: {
+        dryRun: false,
+        target: { projectId: 4242, apiBaseUrl: "https://api.apifox.com" },
+        scope: { type: "workspace", endpointCount: 2 },
+        counters: { endpointCreated: 2 },
+        errors: [],
+        endpoints: [
+          {
+            name: "甲",
+            method: "GET",
+            path: "/api/v1/a",
+            apifoxUrl: "https://app.apifox.com/project/4242/apis/api-11",
+            apifoxEndpointId: 11,
+            mockUrl: "https://mock.apifox.cn/m2/4242-0-0/11",
+          },
+          { name: "乙", method: "GET", path: "/api/v1/b", apifoxUrl: "https://app.apifox.com/project/4242", degraded: true },
+        ],
+        endpointLinks: { mode: "partial", reason: "无法把接口对应到 Apifox 接口 ID 与文档地址" },
+      },
+      analyzed,
+      resolved,
+    })
+  );
+  const page = runReportScript(html);
+  const table = page.ids("endpointTable").textOf();
+  assert.match(table, /接口文档/, "接口级链接必须有可点入口");
+  assert.match(table, /Mock 地址/, "Mock 地址命中时必须展示");
+  assert.match(table, /项目页（降级）/, "降级行必须显式标注");
+  assert.equal(page.ids("endpointLinkNote").textContent, "无法把接口对应到 Apifox 接口 ID 与文档地址");
+
+  // 复制按钮:降级行要带上说明,否则粘贴出去的项目页会被误当接口文档页
+  page.ids("btnCopyEndpoints").listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(page.copied.length, 1);
+  assert.match(page.copied[0], /https:\/\/app\.apifox\.com\/project\/4242\/apis\/api-11/);
+  assert.match(page.copied[0], /https:\/\/mock\.apifox\.cn\/m2\/4242-0-0\/11/);
+  assert.match(page.copied[0], /项目页，降级/, "TSV 复制内容必须保留降级标记");
+
+  // Markdown 复制同样要带链接、Mock 与全局降级原因
+  page.ids("btnCopyMarkdown").listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(page.copied.length, 2);
+  assert.match(page.copied[1], /链接说明：/, "Markdown 必须带降级原因");
+  assert.match(page.copied[1], /https:\/\/app\.apifox\.com\/project\/4242\/apis\/api-11/);
+  assert.match(page.copied[1], /项目页，降级/);
+});
+
+/* ---------------- 扩展侧链路（Issue #40） ---------------- */
+
+/**
+ * 扩展侧代码不在 CLI 的构建产物里，这里用 esbuild 现场打包源码（vscode 作为 external
+ * 由 Module._load 拦截），从而在不新增测试文件的前提下覆盖 uploader 与 webview 脚本。
+ */
+function bundle(file, Module) {
+  const esbuild = require("esbuild");
+  const result = esbuild.buildSync({
+    entryPoints: [path.join(__dirname, "..", "..", "..", file)],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node20",
+    external: ["vscode"],
+    write: false,
+    logLevel: "silent",
+  });
+  return result.outputFiles[0].text;
+}
+
+function loadWithVscode(code, vscodeMock, Module) {
+  const original = Module._load;
+  Module._load = function (request, ...rest) {
+    return request === "vscode" ? vscodeMock : original.call(this, request, ...rest);
+  };
+  try {
+    const mod = new Module(`/bundle-${Math.random()}.js`);
+    mod.filename = mod.id;
+    mod._compile(code, mod.filename);
+    return mod.exports;
+  } finally {
+    Module._load = original;
+  }
+}
+
+test("扩展:syncToApifox 透出逐接口映射，结果面板渲染并复制链接与降级说明", async () => {
+  const Module = require("node:module");
+  const vscodeMock = {
+    window: {
+      withProgress: async (_opts, cb) => cb({ report() {} }),
+      createWebviewPanel: () => ({ webview: { onDidReceiveMessage() {}, html: "" }, onDidDispose() {}, reveal() {}, dispose() {} }),
+    },
+    ProgressLocation: { Notification: 1 },
+    env: { openExternal: async () => true, clipboard: { writeText: async () => undefined } },
+    Uri: { parse: (s) => s, file: (s) => s },
+    ViewColumn: { Beside: 2 },
+    workspace: { workspaceFolders: [{ uri: { fsPath: "/w" } }], getWorkspaceFolder: () => ({}) },
+  };
+
+  // 1) 生产入口：回传映射必须原样到达报告层（此前用类型断言读取，映射被静默丢弃）
+  const uploader = loadWithVscode(
+    bundle("src/apifox/uploader.ts", Module),
+    vscodeMock,
+    Module
+  );
+  const mapped = [{ id: 9001, method: "GET", path: "/a", mockUrl: "https://mock.apifox.cn/m2/1-0-0/9001" }];
+  const outcome = await uploader.syncToApifox(
+    { importOpenapi: async () => ({ counters: { endpointCreated: 1 }, errors: [], endpoints: mapped }) },
+    { projectId: 1, schemaFolderId: 0, schemaFolderName: "", endpointConflictBehavior: "OVERWRITE_EXISTING", schemaConflictBehavior: "OVERWRITE_EXISTING", updateFolderOfChangedEndpoint: true },
+    { spec: {}, endpoints: [{}], warnings: [] }
+  );
+  assert.deepEqual(outcome.endpoints, mapped);
+
+  const empty = await uploader.syncToApifox(
+    { importOpenapi: async () => ({ counters: {}, errors: [] }) },
+    { projectId: 1, schemaFolderId: 0, schemaFolderName: "", endpointConflictBehavior: "OVERWRITE_EXISTING", schemaConflictBehavior: "OVERWRITE_EXISTING", updateFolderOfChangedEndpoint: true },
+    { spec: {}, endpoints: [{}], warnings: [] }
+  );
+  assert.deepEqual(empty.endpoints, []);
+
+  // 2) Webview 脚本：链接、Mock、降级标注与复制内容
+  const { SyncResultPanel } = loadWithVscode(bundle("src/views/SyncResultPanel.ts", Module), vscodeMock, Module);
+  const html = SyncResultPanel.prototype._getHtmlForWebview({ cspSource: "vscode-webview://t" });
+  const script = Array.from(html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))
+    .map((m) => m[1])
+    .find((code) => code.includes("renderEndpoints"));
+  assert.ok(script, "未找到结果面板脚本");
+  const page = runReportScript(`<script>${script}</script>`);
+  page.setReport({
+    projectId: 42,
+    projectUrl: "https://app.apifox.com/project/42",
+    target: "t",
+    scope: "s",
+    finishedAt: "2026-11-24 10:00:00",
+    conflict: "c",
+    summary: [{ category: "接口", created: 2, updated: 0, ignored: 0, failed: 0, total: 2 }],
+    endpointLinks: { mode: "partial", reason: "无法把接口对应到 Apifox 接口 ID 与文档地址" },
+    endpoints: [
+      { name: "甲", method: "GET", path: "/a", folder: "D", controller: "A", file: "A.java", fsPath: "/w/A.java", apifoxUrl: "https://app.apifox.com/project/42/apis/api-11", apifoxEndpointId: 11, mockUrl: "https://mock.apifox.cn/m2/42-0-0/11" },
+      { name: "乙", method: "GET", path: "/b", folder: "D", controller: "A", file: "A.java", fsPath: "/w/A.java", apifoxUrl: "https://app.apifox.com/project/42", degraded: true },
+    ],
+    errors: [],
+    warnings: [],
+  });
+  const table = page.ids("endpointTable").textOf();
+  assert.match(table, /接口文档/);
+  assert.match(table, /Mock 地址/);
+  assert.match(table, /项目页（降级）/);
+  assert.equal(page.ids("endpointLinkNote").textContent, "无法把接口对应到 Apifox 接口 ID 与文档地址");
+  page.ids("btnCopyEndpoints").listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  // 面板用 vscode.postMessage 交回宿主复制，不是浏览器 clipboard
+  const copyText = page.posted.find((m) => m.command === "copy").text;
+  assert.match(copyText, /项目页，降级/, "TSV 必须保留降级标记");
+  assert.match(copyText, /https:\/\/mock\.apifox\.cn\/m2\/42-0-0\/11/);
+
+  // Markdown 走面板自己的 markdown()，与 CLI 报告页是两套实现，必须单独验证
+  page.ids("btnCopyMarkdown").listeners.click();
+  const md = page.posted.filter((m) => m.command === "copy").map((m) => String(m.text));
+  assert.equal(md.length, 2);
+  assert.match(md[1], /链接说明：无法把接口对应到 Apifox 接口 ID 与文档地址/);
+  assert.match(md[1], /https:\/\/app\.apifox\.com\/project\/42\/apis\/api-11/);
+  assert.match(md[1], /https:\/\/mock\.apifox\.cn\/m2\/42-0-0\/11/);
+  assert.match(md[1], /项目页，降级/);
+});
+
+test("client:带外层 endpoints 的数组响应保持数组形状（listTeams 不回归）", async () => {
+  const http = require("node:http");
+  const Module = require("node:module");
+  const { ApifoxClient } = loadWithVscode(bundle("src/apifox/client.ts", Module), {}, Module);
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: [{ id: 7, name: "team" }], endpoints: [] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new ApifoxClient(`http://127.0.0.1:${server.address().port}`, "t");
+    assert.deepEqual(await client.listTeams(), [{ id: 7, name: "team" }]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });

@@ -468,6 +468,8 @@ export function activate(context: vscode.ExtensionContext): void {
               errors: outcome.errors,
               warnings: analyzed.warnings,
               endpoints: analyzed.endpoints,
+              importedEndpoints: outcome.endpoints,
+              apiBaseUrl: settings.apiBaseUrl,
               target: syncTargetLabel(settings.teamName ?? "", settings.projectName ?? "", settings.projectId),
               projectId: settings.projectId,
               projectUrl: projectWebUrl(settings.apiBaseUrl, settings.projectId),
@@ -478,7 +480,7 @@ export function activate(context: vscode.ExtensionContext): void {
               workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
             })
           );
-          showResult(outcome.message, () => SyncResultPanel.showLast());
+          showResult(outcome.message, () => SyncResultPanel.showLast(), settings.apiBaseUrl, settings.projectId);
         } catch (err) {
           vscode.window.showErrorMessage(`同步失败:${errorMessage(err)}`);
         }
@@ -1234,6 +1236,9 @@ function expandBraces(pattern: string): string[] {
 
 let helperOutputChannel: vscode.OutputChannel | undefined;
 
+/** 同步完成通知里的「打开 Apifox 项目」入口文案 */
+const OPEN_PROJECT_ACTION = "打开 Apifox 项目";
+
 function getHelperOutputChannel(): vscode.OutputChannel {
   if (!helperOutputChannel) {
     helperOutputChannel = vscode.window.createOutputChannel("api2apifox");
@@ -1241,7 +1246,8 @@ function getHelperOutputChannel(): vscode.OutputChannel {
   return helperOutputChannel;
 }
 
-function showResult(message: string, onOpenReport?: () => void): void {
+function showResult(message: string, onOpenReport: (() => void) | undefined, apiBaseUrl: string, projectId: number): void {
+  const projectUrl = projectWebUrl(apiBaseUrl, projectId);
   const lines = message.split("\n").map((s) => s.trim()).filter(Boolean);
   const summary = lines[0] || "同步完成";
   const hasDetails = lines.length > 1;
@@ -1260,6 +1266,10 @@ function showResult(message: string, onOpenReport?: () => void): void {
   if (onOpenReport) {
     buttons.push("查看结果表");
   }
+  // 私有化部署推导不出 app.apifox.com 地址时不放该按钮，避免点了打不开
+  if (projectUrl) {
+    buttons.push(OPEN_PROJECT_ACTION);
+  }
   if (hasDetails) {
     buttons.push("查看日志");
   }
@@ -1273,6 +1283,8 @@ function showResult(message: string, onOpenReport?: () => void): void {
       getHelperOutputChannel().show(true);
     } else if (action === "查看结果表") {
       onOpenReport?.();
+    } else if (action === OPEN_PROJECT_ACTION && projectUrl) {
+      void vscode.env.openExternal(vscode.Uri.parse(projectUrl));
     }
   });
 }
