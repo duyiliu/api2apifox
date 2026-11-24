@@ -435,7 +435,10 @@ function attachExceptionAdvices(
     if (!candidates.length) {
       continue;
     }
-    const existing = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    const methodLevel = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    // builder 无条件产出 200 成功响应:advice 的同码声明不得覆盖它(纯增量解析)
+    const builtin = new Set(["200"]);
+    const existing = new Set([...builtin, ...methodLevel]);
     // 状态码 -> 已占用它的 advice 类型名(用于区分「同一 advice 内重复」与「多个 advice 冲突」)
     const takenBy = new Map<string, string>();
     const appended: ResponseInfo[] = [];
@@ -445,14 +448,27 @@ function attachExceptionAdvices(
         if (existing.has(response.code)) {
           // 方法级声明(或先声明的 advice)优先,后到的同码声明跳过
           const owner = takenBy.get(response.code);
-          const key = `${advice.adviceType}:${response.code}`;
-          if (owner && !reported.has(key)) {
-            reported.add(key);
-            warnings.push(
-              owner === advice.adviceType
-                ? `${advice.adviceType}: @ExceptionHandler 状态码 ${response.code} 重复声明(${response.methodName} ← ${response.exceptionTypes.join(", ")}),已按声明顺序保留首个`
-                : `@ExceptionHandler 状态码 ${response.code} 同时声明于 ${owner} 与 ${advice.adviceType}(${response.exceptionTypes.join(", ")}),已保留先扫描到的 ${owner}`
-            );
+          if (owner) {
+            const key = `${advice.adviceType}:${response.code}`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                owner === advice.adviceType
+                  ? `${advice.adviceType}: @ExceptionHandler 状态码 ${response.code} 重复声明(${response.methodName} ← ${response.exceptionTypes.join(", ")}),已按声明顺序保留首个`
+                  : `@ExceptionHandler 状态码 ${response.code} 同时声明于 ${owner} 与 ${advice.adviceType}(${response.exceptionTypes.join(", ")}),已保留先扫描到的 ${owner}`
+              );
+            }
+          } else {
+            // 与接口自身声明的同码响应冲突:方法级优先,其次 builder 无条件产出的 200
+            const key = `${advice.adviceType}.${response.methodName}:${response.code}:endpoint`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                methodLevel.has(response.code)
+                  ? `@ExceptionHandler 状态码 ${response.code} 与接口方法级声明冲突(${advice.adviceType}.${response.methodName} ← ${response.exceptionTypes.join(", ")}),已保留方法级声明`
+                  : `@ExceptionHandler 状态码 ${response.code} 与接口内置成功响应冲突(${advice.adviceType}.${response.methodName} ← ${response.exceptionTypes.join(", ")}),已保留内置成功响应`
+              );
+            }
           }
           continue;
         }

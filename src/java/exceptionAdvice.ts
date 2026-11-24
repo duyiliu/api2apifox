@@ -24,8 +24,6 @@ export interface ExceptionAdviceResponse extends ResponseInfo {
  */
 export interface ExceptionAdvice {
   adviceType: string;
-  /** advice 自身包名 */
-  packageName?: string;
   basePackages: string[];
   basePackageClasses: string[];
   assignableTypes: string[];
@@ -47,11 +45,6 @@ interface AdviceTypeSite {
   inner: CstNode;
   typeName: string;
   annotations: AnnotationInfo[];
-  packageName?: string;
-}
-
-function packageOf(source: string): string | undefined {
-  return /^\s*package\s+([\w.]+)\s*;/m.exec(source)?.[1];
 }
 
 function adviceTypes(files: ParsedFile[]): AdviceTypeSite[] {
@@ -77,7 +70,7 @@ function adviceTypes(files: ParsedFile[]): AdviceTypeSite[] {
       if (!typeName) {
         continue;
       }
-      out.push({ pf, carrier: typeDecl, inner: normal, typeName, annotations, packageName: packageOf(pf.source) });
+      out.push({ pf, carrier: typeDecl, inner: normal, typeName, annotations });
     }
   }
   return out;
@@ -277,7 +270,6 @@ export function collectExceptionAdvices(
       .filter(Boolean);
     out.push({
       adviceType: site.typeName,
-      packageName: site.packageName,
       basePackages,
       basePackageClasses,
       assignableTypes,

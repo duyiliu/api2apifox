@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { analyze, analyzeSubset } from "../pipeline";
 import { SourceFile } from "../java/model";
+import { collectExceptionAdvices } from "../java/exceptionAdvice";
+import { parseJava } from "../java/typeIndex";
 
 /* ------------------------------------------------------------------ *
  * Issue #38:@RestControllerAdvice/@ControllerAdvice + @ExceptionHandler
@@ -706,4 +708,140 @@ class ConflictException extends RuntimeException {}
 `,
   });
   assert.ok(op(res.spec, "/users/{id}", "get").responses["409"]);
+});
+
+test("advice 声明 200 时不覆盖接口内置成功响应,并告警", () => {
+  const res = analyzeSources({
+    UserController: CONTROLLER,
+    UserVO: USER_VO,
+    ResponseDto: ERROR_DTO,
+    OkAdvice: `
+package com.example.common;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestControllerAdvice
+public class OkAdvice {
+  @ExceptionHandler(FallbackException.class)
+  public ResponseEntity<ResponseDto<Void>> ok(FallbackException e) {
+    return ResponseEntity.ok(null);
+  }
+
+  @ExceptionHandler(AlsoOkException.class)
+  @ResponseStatus(HttpStatus.OK)
+  public ResponseDto<Void> alsoOk(AlsoOkException e) { return null; }
+}
+
+class FallbackException extends RuntimeException {}
+class AlsoOkException extends RuntimeException {}
+`,
+  });
+
+  const get = op(res.spec, "/users/{id}", "get");
+  // 内置 200 保留(returnType 为 UserVO,不是 advice 的 ResponseDto<Void>)
+  assert.deepEqual(Object.keys(get.responses).sort(), ["200"]);
+  assert.equal(get.responses["200"].description, "OK");
+  assert.deepEqual(get.responses["200"].content["*/*"].schema, { $ref: "#/components/schemas/UserVO" });
+  assert.equal(
+    res.spec.components!.schemas["ResponseDto«Void»"],
+    undefined,
+    "冲突的 advice 错误体不应引入组件"
+  );
+
+  // 两条冲突声明各记一条 warning,且指向各自的方法
+  const conflict = res.warnings.filter((w) => w.includes("内置成功响应"));
+  assert.equal(conflict.length, 2, res.warnings.join("\n"));
+  assert.ok(conflict.some((w) => w.includes("OkAdvice.ok") && w.includes("FallbackException")));
+  assert.ok(conflict.some((w) => w.includes("OkAdvice.alsoOk") && w.includes("AlsoOkException")));
+});
+
+test("@ExceptionHandler 多异常数组:全部异常类型被解析,状态码共用", () => {
+  const res = analyzeSources({
+    UserController: CONTROLLER,
+    UserVO: USER_VO,
+    ResponseDto: ERROR_DTO,
+    ArrayAdvice: `
+package com.example.common;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+@RestControllerAdvice
+public class ArrayAdvice {
+  /** 冲突 */
+  @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+  @ResponseStatus(HttpStatus.CONFLICT)
+  public ResponseDto<Void> conflict(RuntimeException e) { return null; }
+}
+`,
+  });
+
+  const get = op(res.spec, "/users/{id}", "get");
+  assert.ok(get.responses["409"], JSON.stringify(Object.keys(get.responses)));
+  assert.equal(get.responses["409"].description, "冲突");
+
+  const advise = collectExceptionAdvices(
+    [parseJava("/mem/ArrayAdvice.java", `
+package com.example.common;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+@RestControllerAdvice
+public class ArrayAdvice {
+  /** 冲突 */
+  @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+  @ResponseStatus(HttpStatus.CONFLICT)
+  public ResponseDto<Void> conflict(RuntimeException e) { return null; }
+}
+`)],
+    undefined,
+    []
+  );
+  assert.equal(advise.length, 1);
+  assert.deepEqual(advise[0].responses[0].exceptionTypes, ["IllegalArgumentException", "IllegalStateException"]);
+  assert.equal(advise[0].responses[0].code, "409");
+});
+
+test("方法级已声明 200 时 advice 的 200 跳过并告警,保留方法级声明", () => {
+  const res = analyzeSources({
+    UserController: `
+package com.example.user;
+
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+  @GetMapping("/{id}")
+  @ApiResponse(responseCode = "200", description = "方法级:已声明成功体")
+  public UserVO get(@PathVariable Long id) { return null; }
+}
+`,
+    UserVO: USER_VO,
+    ResponseDto: ERROR_DTO,
+    OkAdvice: `
+package com.example.common;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestControllerAdvice
+public class OkAdvice {
+  @ExceptionHandler(FallbackException.class)
+  @ResponseStatus(HttpStatus.OK)
+  public ResponseDto<Void> ok(FallbackException e) { return null; }
+}
+
+class FallbackException extends RuntimeException {}
+`,
+  });
+
+  const get = op(res.spec, "/users/{id}", "get");
+  assert.equal(get.responses["200"].description, "方法级:已声明成功体");
+  assert.ok(
+    res.warnings.some((w) => w.includes("OkAdvice.ok") && w.includes("方法级声明冲突")),
+    res.warnings.join("\n")
+  );
 });

@@ -10577,9 +10577,6 @@ function findAnn(annotations, ...names) {
 }
 
 // ../../src/java/exceptionAdvice.ts
-function packageOf(source) {
-  return /^\s*package\s+([\w.]+)\s*;/m.exec(source)?.[1];
-}
 function adviceTypes(files) {
   const out = [];
   for (const pf of files) {
@@ -10603,7 +10600,7 @@ function adviceTypes(files) {
       if (!typeName) {
         continue;
       }
-      out.push({ pf, carrier: typeDecl, inner: normal, typeName, annotations, packageName: packageOf(pf.source) });
+      out.push({ pf, carrier: typeDecl, inner: normal, typeName, annotations });
     }
   }
   return out;
@@ -10767,7 +10764,6 @@ function collectExceptionAdvices(files, index, warnings) {
     const assignableTypes = annArray(args, "assignableTypes").map((raw) => raw.trim().replace(/\.class$/, "")).map((raw) => qualifiedNameOf(raw, index)).filter(Boolean);
     out.push({
       adviceType: site.typeName,
-      packageName: site.packageName,
       basePackages,
       basePackageClasses,
       assignableTypes,
@@ -27771,7 +27767,9 @@ function attachExceptionAdvices(files, index, hierarchies, endpoints, warnings) 
     if (!candidates.length) {
       continue;
     }
-    const existing = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    const methodLevel = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    const builtin = /* @__PURE__ */ new Set(["200"]);
+    const existing = /* @__PURE__ */ new Set([...builtin, ...methodLevel]);
     const takenBy = /* @__PURE__ */ new Map();
     const appended = [];
     for (const advice of candidates) {
@@ -27779,12 +27777,22 @@ function attachExceptionAdvices(files, index, hierarchies, endpoints, warnings) 
       for (const response of advice.responses) {
         if (existing.has(response.code)) {
           const owner2 = takenBy.get(response.code);
-          const key = `${advice.adviceType}:${response.code}`;
-          if (owner2 && !reported.has(key)) {
-            reported.add(key);
-            warnings.push(
-              owner2 === advice.adviceType ? `${advice.adviceType}: @ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u91CD\u590D\u58F0\u660E(${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u6309\u58F0\u660E\u987A\u5E8F\u4FDD\u7559\u9996\u4E2A` : `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u540C\u65F6\u58F0\u660E\u4E8E ${owner2} \u4E0E ${advice.adviceType}(${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u5148\u626B\u63CF\u5230\u7684 ${owner2}`
-            );
+          if (owner2) {
+            const key = `${advice.adviceType}:${response.code}`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                owner2 === advice.adviceType ? `${advice.adviceType}: @ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u91CD\u590D\u58F0\u660E(${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u6309\u58F0\u660E\u987A\u5E8F\u4FDD\u7559\u9996\u4E2A` : `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u540C\u65F6\u58F0\u660E\u4E8E ${owner2} \u4E0E ${advice.adviceType}(${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u5148\u626B\u63CF\u5230\u7684 ${owner2}`
+              );
+            }
+          } else {
+            const key = `${advice.adviceType}.${response.methodName}:${response.code}:endpoint`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                methodLevel.has(response.code) ? `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u4E0E\u63A5\u53E3\u65B9\u6CD5\u7EA7\u58F0\u660E\u51B2\u7A81(${advice.adviceType}.${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u65B9\u6CD5\u7EA7\u58F0\u660E` : `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u4E0E\u63A5\u53E3\u5185\u7F6E\u6210\u529F\u54CD\u5E94\u51B2\u7A81(${advice.adviceType}.${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u5185\u7F6E\u6210\u529F\u54CD\u5E94`
+              );
+            }
           }
           continue;
         }
