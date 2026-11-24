@@ -292,6 +292,50 @@ test("diff:响应数组元素类型收窄同样是破坏性", () => {
   assert.equal(diff.changes[0].field, "responses.200.[]");
 });
 
+test("diff:$ref 指向的组件模型必须展开后比较（请求与响应两侧）", () => {
+  const withSchemas = (body: JsonObject, resp: JsonObject) =>
+    document({
+      paths: {
+        "/users": {
+          post: operation({
+            requestBody: { content: { "application/json": { schema: ref("Body") } } },
+            responses: { "200": { content: { "application/json": { schema: ref("Resp") } } } },
+          }),
+        },
+      },
+      schemas: { Body: body, Resp: resp },
+    });
+  const baseline = withSchemas(
+    { type: "object", required: ["name", "email"], properties: { name: { type: "string" }, email: { type: "string" } } },
+    { type: "object", properties: { id: { type: "integer" }, nickname: { type: "string" } } }
+  );
+  const current = withSchemas(
+    { type: "object", required: ["name"], properties: { name: { type: "string" } } },
+    { type: "object", properties: { id: { type: "integer" } } }
+  );
+  const diff = diffOf(baseline, current);
+  assert.deepEqual(diff.summary, { breaking: 2, compatible: 0, total: 2 });
+  assert.deepEqual(
+    diff.changes.map((change) => change.field),
+    ["requestBody.email", "responses.200.nickname"]
+  );
+  assert.deepEqual(
+    diff.changes.map((change) => change.schema),
+    ["Body", "Resp"]
+  );
+});
+
+test("diff:同名组件在基线与当前文档中结构不同也必须比较内容", () => {
+  const doc = (properties: JsonObject) =>
+    document({
+      paths: { "/users": { get: operation({ responses: { "200": { content: { "application/json": { schema: ref("User") } } } } }) } },
+      schemas: { User: { type: "object", properties } },
+    });
+  const diff = diffOf(doc({ a: { type: "string" }, b: { type: "string" } }), doc({ a: { type: "string" } }));
+  assert.equal(diff.summary.breaking, 1);
+  assert.equal(diff.changes[0].field, "responses.200.b");
+});
+
 test("diff:响应字段由必有变为可选为破坏性，请求字段由必填变为可选为兼容", () => {
   const response = (schema: JsonObject) =>
     document({

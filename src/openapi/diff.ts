@@ -459,6 +459,8 @@ function diffSchema(baselineNode: unknown, currentNode: unknown, parts: string[]
   if (!isObject(baselineNode) || !isObject(currentNode) || context.depth > MAX_DEPTH) {
     return;
   }
+  // $ref 只按名字参与递归判定，比较前展开为真实结构；
+  // 否则自递归模型会无限展开，或在 ref 同构时把差异藏进未被访问的组件。
   const baseline = expandSchema(baselineNode, context.baselineRoot, new Set());
   const current = expandSchema(currentNode, context.currentRoot, new Set());
   const schemaName = baseline.name ?? current.name ?? context.schemaName;
