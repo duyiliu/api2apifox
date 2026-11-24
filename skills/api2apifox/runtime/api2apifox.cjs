@@ -32023,7 +32023,9 @@ async function runCli(argv = process.argv.slice(2)) {
       }
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
-        ensureEndpoints(analyzed, options);
+        if (!options.check || analyzed.scannedFiles === 0) {
+          ensureEndpoints(analyzed, options);
+        }
         if (options.baseline && !options.check) {
           throw new CliError("INVALID_ARGUMENT", "--baseline \u9700\u8981\u4E0E --check \u4E00\u8D77\u4F7F\u7528", 2);
         }

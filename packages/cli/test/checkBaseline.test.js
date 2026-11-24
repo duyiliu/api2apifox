@@ -190,6 +190,58 @@ test("export --check：删除端点后仍以同一 --endpoint 比对 → exit 6�
   }
 });
 
+test("export --check：--endpoint 唯一选中的端点被删 → exit 6，而不是 NO_ENDPOINT_MATCHED", () => {
+  const fx = project({
+    "src/main/java/demo/UserController.java": USER_CONTROLLER,
+    "src/main/java/demo/UserVO.java": USER_VO(["Long id", "String name"]),
+    "src/main/java/demo/UserCreateRequest.java": USER_CREATE_REQUEST,
+  });
+  try {
+    const baseline = writeBaseline(fx.root, baselineOf(fx.root));
+    // 删掉的正是 --endpoint 选中的那个操作：筛选后当前结果为空，但仍必须判为破坏性删除。
+    fx.write(
+      "src/main/java/demo/UserController.java",
+      USER_CONTROLLER.replace("  @GetMapping public UserVO get() { return null; }\n", "")
+    );
+    const result = run([
+      "export",
+      "--project",
+      fx.root,
+      "--endpoint",
+      "GET /api/users",
+      "--baseline",
+      baseline,
+      "--check",
+      "--format",
+      "json",
+    ]);
+    assert.equal(result.status, BREAKING_EXIT, result.stdout);
+    const payload = json(result);
+    assert.equal(payload.error.code, "BREAKING_CHANGES_DETECTED");
+    assert.ok(
+      payload.error.details.changes.some(
+        (change) => change.location === "GET /api/users" && change.kind === "removed-operation"
+      ),
+      JSON.stringify(payload.error.details.changes)
+    );
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test("export（非 --check）：--endpoint 无匹配仍报 NO_ENDPOINT_MATCHED", () => {
+  const result = run([
+    "export",
+    "--project",
+    SAMPLE,
+    "--endpoint",
+    "GET /__no_such_endpoint__",
+    "--stdout",
+  ]);
+  assert.equal(result.status, 3, result.stdout);
+  assert.match(result.stderr, /未发现符合范围的 REST 接口/);
+});
+
 test("export --check：删除必填响应字段 → exit 6，字段路径可定位", () => {
   const fx = project({
     "src/main/java/demo/UserController.java": USER_CONTROLLER,

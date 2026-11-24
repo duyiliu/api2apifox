@@ -57,7 +57,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       }
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
-        ensureEndpoints(analyzed, options);
+        // --check 下「当前接口为空」可能正是「所选接口被删」的结果，必须交给基线比对
+        // 判定为破坏性变更；只有扫描层面没有 Java 文件时才提前失败。其余命令保持原样。
+        if (!options.check || analyzed.scannedFiles === 0) {
+          ensureEndpoints(analyzed, options);
+        }
         if (options.baseline && !options.check) {
           throw new CliError("INVALID_ARGUMENT", "--baseline 需要与 --check 一起使用", 2);
         }
