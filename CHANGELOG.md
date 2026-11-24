@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- 解析 `@RestControllerAdvice`/`@ControllerAdvice` 的 `@ExceptionHandler` 为 OpenAPI 错误响应（#38）：`@ResponseStatus` / `ResponseEntity` 状态码映射、返回类型经 schemaResolver 还原错误体、`basePackages`/`basePackageClasses`/`assignableTypes` 作用域收窄、与方法级 `@ApiResponse`/`@ResponseStatus` 合并去重（方法级优先）
 - 发版流程支持 Open VSX：配置 `OVSX_PAT` secret 后，`v*` tag 会同时发布到 Open VSX（Cursor / Windsurf / VSCodium 市场）；未配置时自动跳过
 - `CHANGELOG.md`；Marketplace 侧栏补全 `homepage` / `bugs` 链接
 
