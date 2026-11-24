@@ -31755,6 +31755,9 @@ function diffObjectProperties(baseline, current, parts, context) {
   const currentRequired = new Set(requiredOf(current));
   const baselineRequired = new Set(requiredOf(baseline));
   for (const [name, baselineProp] of Object.entries(baselineProps)) {
+    if (!isObject2(baselineProp)) {
+      continue;
+    }
     const fieldParts = [...parts, name];
     const currentProp = currentProps[name];
     if (!isObject2(currentProp)) {
@@ -31789,7 +31792,7 @@ function diffObjectProperties(baseline, current, parts, context) {
     diffSchema(baselineProp, currentProp, fieldParts, context);
   }
   for (const name of Object.keys(currentProps)) {
-    if (isObject2(baselineProps[name])) {
+    if (!isObject2(currentProps[name]) || isObject2(baselineProps[name])) {
       continue;
     }
     const field = [...parts, name].join(".");

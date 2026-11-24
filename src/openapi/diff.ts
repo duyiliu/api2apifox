@@ -579,6 +579,9 @@ function diffObjectProperties(baseline: JsonObject, current: JsonObject, parts: 
   const baselineRequired = new Set(requiredOf(baseline));
 
   for (const [name, baselineProp] of Object.entries(baselineProps)) {
+    if (!isObject(baselineProp)) {
+      continue;
+    }
     const fieldParts = [...parts, name];
     const currentProp = currentProps[name];
     if (!isObject(currentProp)) {
@@ -616,7 +619,7 @@ function diffObjectProperties(baseline: JsonObject, current: JsonObject, parts: 
   }
 
   for (const name of Object.keys(currentProps)) {
-    if (isObject(baselineProps[name])) {
+    if (!isObject(currentProps[name]) || isObject(baselineProps[name])) {
       continue;
     }
     const field = [...parts, name].join(".");

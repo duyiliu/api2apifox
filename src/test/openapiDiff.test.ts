@@ -394,6 +394,20 @@ test("diff:自递归 schema 不会无限展开", () => {
   assert.equal(diff.summary.breaking, 0, "循环引用只应结束递归，不应误报类型变更");
 });
 
+test("diff:畸形 schema（属性值不是对象）不会产生误报", () => {
+  const doc = document({
+    paths: {
+      "/users": {
+        get: operation({
+          responses: { "200": { content: { "application/json": { schema: { type: "object", properties: { a: { properties: { b: "bad" } } } } } } } },
+        }),
+      },
+    },
+  });
+  const diff = diffOf(doc, structuredClone(doc));
+  assert.deepEqual(diff.summary, { breaking: 0, compatible: 0, total: 0 });
+});
+
 test("diff:变更按破坏性优先、位置稳定排序", () => {
   const baseline = document({ paths: { "/b": { get: operation() }, "/a": { get: operation() } } });
   const current = document({ paths: { "/a": { get: operation({ summary: "新" }) }, "/c": { get: operation() } } });
