@@ -938,3 +938,337 @@ test("client:带外层 endpoints 的数组响应保持数组形状（listTeams �
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+/**
+ * G1：Issue #40 的逐接口映射与可寻址索引。
+ * 官方 import-openapi 目前只回传 counters/errors，这里的契约是：没有该字段时形状与
+ * 旧响应完全一致；一旦 Apifox 补上该字段，按 method/path 命中接口 ID 即可推导文档页；
+ * 拿不到依据的行逐条降级并显式归因，不猜测拼装。
+ */
+function clientApi() {
+  const Module = require("node:module");
+  return loadWithVscode(bundle("src/apifox/client.ts", Module), {}, Module);
+}
+
+/** 只填链接推导真正会读的字段，避免每个用例重复无关的解析元数据 */
+function endpointStub(overrides) {
+  return {
+    tag: "DemoController",
+    parameters: [],
+    fsPath: "/proj/src/DemoController.java",
+    controller: "DemoController",
+    flavor: "spring-mvc",
+    ...overrides,
+  };
+}
+
+test("client:导入响应无 endpoints 时结果不含该键（保持旧口径）", async () => {
+  const { ApifoxClient } = clientApi();
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ code: 0, data: { counters: { endpointCreated: 1 }, errors: [] } }), { status: 200 })
+    ));
+  try {
+    const result = await new ApifoxClient("https://api.example.com", "t").importOpenapi(1, "{}");
+    assert.deepEqual(result, { counters: { endpointCreated: 1 }, errors: [] });
+    // 消费方靠"键不出现"判断没有逐接口映射，多一个空数组会被误认成已映射
+    assert.equal(Object.prototype.hasOwnProperty.call(result, "endpoints"), false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("client:导入响应回传 endpoints 时解析出接口 ID、方法、路径与 Mock 地址", async () => {
+  const { ApifoxClient } = clientApi();
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          code: 0,
+          data: {
+            counters: { endpointCreated: 1 },
+            errors: [],
+            endpoints: [{ endpointId: 9001, method: "get", path: "/api/ping", mockUrl: "https://mock.apifox.cn/m2/42-0-0/9001" }],
+          },
+        }),
+        { status: 200 }
+      )
+    ));
+  try {
+    const result = await new ApifoxClient("https://api.example.com", "t").importOpenapi(1, "{}");
+    assert.deepEqual(result.endpoints, [
+      {
+        id: 9001,
+        method: "GET",
+        path: "/api/ping",
+        operationId: undefined,
+        url: undefined,
+        mockUrl: "https://mock.apifox.cn/m2/42-0-0/9001",
+      },
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("client:外层 endpoints 合并进对象响应", async () => {
+  const { ApifoxClient } = clientApi();
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          code: 0,
+          endpoints: [{ id: 7, method: "post", path: "/api/orders" }],
+          data: { counters: { endpointCreated: 1 }, errors: [] },
+        }),
+        { status: 200 }
+      )
+    ));
+  try {
+    const imported = await new ApifoxClient("https://api.example.com", "t").importOpenapi(1, "{}");
+    assert.deepEqual(imported.endpoints, [
+      { id: 7, method: "POST", path: "/api/orders", operationId: undefined, url: undefined, mockUrl: undefined },
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("client:extractImportEndpoints 兼容 items 包装、字段别名并丢弃无信息条目", () => {
+  const { extractImportEndpoints } = clientApi();
+  assert.deepEqual(
+    extractImportEndpoints({
+      items: [
+        { endpointId: 12, method: "post", path: " /api/orders/ ", apifoxUrl: "https://app.apifox.com/project/1/apis/api-12" },
+        { id: 13, operationId: "OrderController_list", mockURL: "https://mock.apifox.cn/m2/1-0-0/13" },
+        { id: 0 },
+        { message: "no identifying fields" },
+        "not-an-object",
+      ],
+    }),
+    [
+      {
+        id: 12,
+        method: "POST",
+        path: "/api/orders/",
+        operationId: undefined,
+        url: "https://app.apifox.com/project/1/apis/api-12",
+        mockUrl: undefined,
+      },
+      {
+        id: 13,
+        method: undefined,
+        path: undefined,
+        operationId: "OrderController_list",
+        url: undefined,
+        mockUrl: "https://mock.apifox.cn/m2/1-0-0/13",
+      },
+    ]
+  );
+  assert.deepEqual(extractImportEndpoints(undefined), []);
+  assert.deepEqual(extractImportEndpoints({}), []);
+  assert.deepEqual(extractImportEndpoints("endpoints"), []);
+  assert.deepEqual(extractImportEndpoints([{ id: -1, method: "  ", path: "" }]), []);
+  // 只有 URL 的条目没有 ID 也没有路由，但仍能直传地址，不能当无效条目丢掉
+  assert.deepEqual(extractImportEndpoints([{ url: " https://app.apifox.com/project/1/apis/api-9 " }]), [
+    {
+      id: undefined,
+      method: undefined,
+      path: undefined,
+      operationId: undefined,
+      url: "https://app.apifox.com/project/1/apis/api-9",
+      mockUrl: undefined,
+    },
+  ]);
+});
+
+test("client:projectWebUrl 只对公网 Apifox 域名推导项目页", () => {
+  const { projectWebUrl } = clientApi();
+  assert.equal(projectWebUrl("https://api.apifox.com", 42), "https://app.apifox.com/project/42");
+  assert.equal(projectWebUrl("https://API.Apifox.com/", 42), "https://app.apifox.com/project/42");
+  assert.equal(projectWebUrl("https://www.apifox.com", 7), "https://app.apifox.com/project/7");
+  assert.equal(projectWebUrl("https://apifox.example.com", 42), undefined);
+  assert.equal(projectWebUrl("https://127.0.0.1:8080", 42), undefined);
+  assert.equal(projectWebUrl("not a url", 42), undefined);
+  assert.equal(projectWebUrl("https://api.apifox.com", 0), undefined);
+});
+
+test("client:buildEndpointLinks 按路由命中接口 ID 推导接口文档页，直传 url 优先", () => {
+  const { buildEndpointLinks } = clientApi();
+  const derived = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping", summary: "探活" })],
+    imported: [{ id: 42, method: "get", path: "/api/ping/", mockUrl: "https://mock.apifox.cn/m2/1-0-0/42" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(derived.mode, "per-endpoint");
+  assert.equal(derived.reason, undefined);
+  assert.deepEqual(derived.links, [
+    {
+      name: "探活",
+      method: "GET",
+      path: "/api/ping",
+      apifoxUrl: "https://app.apifox.com/project/1/apis/api-42",
+      apifoxEndpointId: 42,
+      mockUrl: "https://mock.apifox.cn/m2/1-0-0/42",
+    },
+  ]);
+
+  const direct = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping" })],
+    imported: [{ id: 42, method: "GET", path: "/api/ping", url: "https://app.apifox.com/project/1/apis/api-42?x=1" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(direct.links[0].apifoxUrl, "https://app.apifox.com/project/1/apis/api-42?x=1");
+  assert.equal(direct.links[0].degraded, undefined);
+});
+
+test("client:buildEndpointLinks 无映射时退回项目页并逐行标注降级", () => {
+  const { buildEndpointLinks, ENDPOINT_LINK_NO_MAPPING_REASON } = clientApi();
+  const links = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping" })],
+    imported: [],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(links.mode, "project");
+  assert.equal(links.reason, ENDPOINT_LINK_NO_MAPPING_REASON);
+  assert.deepEqual(links.links[0], {
+    name: "DemoController_ping",
+    method: "GET",
+    path: "/api/ping",
+    apifoxUrl: "https://app.apifox.com/project/1",
+    degraded: true,
+  });
+});
+
+test("client:buildEndpointLinks 在私有化部署不拼接口页，并按有无 ID 分别归因", () => {
+  const {
+    buildEndpointLinks,
+    ENDPOINT_LINK_NO_PROJECT_REASON,
+    ENDPOINT_LINK_PRIVATE_DEPLOY_REASON,
+  } = clientApi();
+  const withId = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping" })],
+    imported: [{ id: 42, method: "GET", path: "/api/ping", mockUrl: "https://mock.internal/42" }],
+    apiBaseUrl: "https://apifox.internal:8080",
+    projectId: 1,
+  });
+  assert.equal(withId.mode, "project");
+  assert.equal(withId.reason, ENDPOINT_LINK_PRIVATE_DEPLOY_REASON);
+  assert.equal(withId.links[0].apifoxUrl, undefined);
+  assert.equal(withId.links[0].apifoxEndpointId, 42);
+  assert.equal(withId.links[0].mockUrl, "https://mock.internal/42");
+
+  const withoutId = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping" })],
+    imported: [],
+    apiBaseUrl: "https://apifox.internal:8080",
+    projectId: 1,
+  });
+  assert.equal(withoutId.mode, "project");
+  assert.equal(withoutId.reason, ENDPOINT_LINK_NO_PROJECT_REASON);
+  assert.deepEqual(withoutId.links[0], { name: "DemoController_ping", method: "GET", path: "/api/ping" });
+});
+
+test("client:buildEndpointLinks 对重复路由判歧义，不猜接口 ID", () => {
+  const { buildEndpointLinks, ENDPOINT_LINK_AMBIGUOUS_REASON } = clientApi();
+  const links = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/ping", operationId: "DemoController_ping" })],
+    imported: [
+      { id: 1, method: "GET", path: "/api/ping" },
+      { id: 2, method: "GET", path: "/api/ping" },
+    ],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(links.mode, "project");
+  assert.equal(links.reason, ENDPOINT_LINK_AMBIGUOUS_REASON);
+  assert.deepEqual(links.links[0], {
+    name: "DemoController_ping",
+    method: "GET",
+    path: "/api/ping",
+    apifoxUrl: "https://app.apifox.com/project/1",
+    degraded: true,
+  });
+});
+
+test("client:buildEndpointLinks 的 operationId 兜底仅限条目无路由且本次唯一", () => {
+  const { buildEndpointLinks, ENDPOINT_LINK_NO_MAPPING_REASON } = clientApi();
+  const unique = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "POST", path: "/api/orders", operationId: "OrderController_create" })],
+    imported: [{ id: 9, operationId: "OrderController_create" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(unique.mode, "per-endpoint");
+  assert.equal(unique.links[0].apifoxUrl, "https://app.apifox.com/project/1/apis/api-9");
+
+  // 接口侧 operationId 重复：无法判断链接该归给哪一行，宁可不给也不能串错
+  const duplicate = buildEndpointLinks({
+    endpoints: [
+      endpointStub({ method: "GET", path: "/api/a", operationId: "Same_id" }),
+      endpointStub({ method: "GET", path: "/api/b", operationId: "Same_id" }),
+    ],
+    imported: [{ id: 9, operationId: "Same_id" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(duplicate.mode, "project");
+  assert.equal(duplicate.reason, ENDPOINT_LINK_NO_MAPPING_REASON);
+  assert.deepEqual(
+    duplicate.links.map((l) => [l.apifoxUrl, l.degraded, l.apifoxEndpointId]),
+    [
+      ["https://app.apifox.com/project/1", true, undefined],
+      ["https://app.apifox.com/project/1", true, undefined],
+    ]
+  );
+
+  // 条目自带路由时路由主键优先，operationId 不同也应命中
+  const byRoute = buildEndpointLinks({
+    endpoints: [endpointStub({ method: "GET", path: "/api/c", operationId: "X_c" })],
+    imported: [{ id: 11, method: "GET", path: "/api/c", operationId: "renamed" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(byRoute.links[0].apifoxUrl, "https://app.apifox.com/project/1/apis/api-11");
+});
+
+test("client:buildEndpointLinks 部分可定位时为 partial 并合并降级原因", () => {
+  const { buildEndpointLinks, ENDPOINT_LINK_NO_MAPPING_REASON } = clientApi();
+  const links = buildEndpointLinks({
+    endpoints: [
+      endpointStub({ method: "GET", path: "/api/a", operationId: "A_a" }),
+      endpointStub({ method: "GET", path: "/api/b", operationId: "B_b" }),
+    ],
+    imported: [{ id: 3, method: "GET", path: "/api/a" }],
+    apiBaseUrl: "https://api.apifox.com",
+    projectId: 1,
+  });
+  assert.equal(links.mode, "partial");
+  assert.equal(links.reason, ENDPOINT_LINK_NO_MAPPING_REASON);
+  assert.deepEqual(
+    links.links.map((l) => [l.apifoxUrl, l.degraded]),
+    [
+      ["https://app.apifox.com/project/1/apis/api-3", undefined],
+      ["https://app.apifox.com/project/1", true],
+    ]
+  );
+});
+
+test("client:buildEndpointLinks 空接口清单给空索引", () => {
+  const { buildEndpointLinks } = clientApi();
+  assert.deepEqual(
+    buildEndpointLinks({
+      endpoints: [],
+      imported: [{ id: 1, method: "GET", path: "/api/ping" }],
+      apiBaseUrl: "https://api.apifox.com",
+      projectId: 1,
+    }),
+    { mode: "project", links: [] }
+  );
+});
