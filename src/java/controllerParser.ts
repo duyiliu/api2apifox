@@ -4,6 +4,8 @@ import { parseJavadoc } from "./javadoc";
 import { parseTypeText, simpleName } from "./typeText";
 import { HelperProperties } from "../config/helperProperties";
 import { evalCondition, evalRuleValue, RuleContext } from "./ruleEval";
+import { normalizeStatus } from "./httpStatus";
+import { adviceMatchesController, collectExceptionAdvices, ExceptionAdvice } from "./exceptionAdvice";
 import {
   annArray, annBool, annStr, AnnotationInfo, ClassInfo, EndpointFlavor, EndpointInfo, findAnn,
   ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
@@ -27,15 +29,6 @@ const SPRING_MAPPING_NAMES = [...Object.keys(SPRING_MAPPINGS), "RequestMapping"]
 
 const JAXRS_METHODS: Record<string, string> = {
   GET: "GET", POST: "POST", PUT: "PUT", DELETE: "DELETE", PATCH: "PATCH", HEAD: "HEAD", OPTIONS: "OPTIONS",
-};
-
-const HTTP_STATUS_BY_NAME: Record<string, string> = {
-  OK: "200", CREATED: "201", ACCEPTED: "202", NO_CONTENT: "204",
-  MOVED_PERMANENTLY: "301", FOUND: "302", NOT_MODIFIED: "304",
-  BAD_REQUEST: "400", UNAUTHORIZED: "401", PAYMENT_REQUIRED: "402", FORBIDDEN: "403", NOT_FOUND: "404",
-  METHOD_NOT_ALLOWED: "405", NOT_ACCEPTABLE: "406", CONFLICT: "409", GONE: "410",
-  UNSUPPORTED_MEDIA_TYPE: "415", TOO_MANY_REQUESTS: "429",
-  INTERNAL_SERVER_ERROR: "500", NOT_IMPLEMENTED: "501", BAD_GATEWAY: "502", SERVICE_UNAVAILABLE: "503",
 };
 
 /** Spring MediaType 常量基名 -> mime;同时派生出 *_VALUE 形式(如 MediaType.APPLICATION_XML_VALUE) */
@@ -106,6 +99,8 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
   const endpoints: EndpointInfo[] = [];
   const ruleWarnings: string[] = [];
   const warnings: string[] = [];
+  // Controller 简单名 -> 继承链类型名(自身 + 父类/接口),供 advice 的 assignableTypes 匹配
+  const hierarchies = new Map<string, string[]>();
   // 继承解析需要回到父类型声明处读取方法;无类型索引时不做继承展开。
   // byFile 复用建索引时已算好的站点,避免每个类型重复走 findAll+注解收集
   const sites = index ? buildTypeSites(files) : undefined;
@@ -128,6 +123,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       if (!flavor) {
         continue;
       }
+      hierarchies.set(typeName, [typeName, ...chain.map((s) => s.typeName)]);
 
       // 类级路径前缀:继承链上最近的类级映射(Spring 的 findMergedAnnotation 口径)
       const basePaths = classBasePaths(hierarchy, flavor);
@@ -398,8 +394,104 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       }
     }
   }
+  attachExceptionAdvices(files, index, hierarchies, endpoints, warnings);
   warnings.push(...ruleWarnings);
   return { endpoints, warnings };
+}
+
+/**
+ * 把 @RestControllerAdvice/@ControllerAdvice 里 @ExceptionHandler 声明的错误响应挂到匹配的接口上。
+ * 方法级 @ApiResponse/@ResponseStatus 已声明的状态码优先(advice 不覆盖);
+ * 同一 advice 内重复的状态码按声明顺序首个生效,并上报告警。
+ */
+function attachExceptionAdvices(
+  files: ParsedFile[],
+  index: TypeIndex | undefined,
+  hierarchies: Map<string, string[]>,
+  endpoints: EndpointInfo[],
+  warnings: string[]
+): void {
+  if (!endpoints.length) {
+    // 无接口时挂载无意义;同时保证无 advice 的项目产物零变化
+    return;
+  }
+  const advices = collectExceptionAdvices(files, index, warnings);
+  if (!advices.length) {
+    return;
+  }
+  const matched = new Set<ExceptionAdvice>();
+  // 同一个冲突(跨多个接口重复挂载)只告警一次
+  const reported = new Set<string>();
+  for (const ep of endpoints) {
+    // @ControllerAdvice 只作用于 Spring MVC 的 handler;Feign/JAX-RS/Actuator 不受其影响
+    if (ep.flavor !== "spring-mvc") {
+      continue;
+    }
+    const owner = index?.types.get(ep.controller);
+    const hierarchy = hierarchies.get(ep.controller) ?? [ep.controller];
+    const candidates = advices.filter((advice) =>
+      adviceMatchesController(advice, { qualifiedName: owner?.qualifiedName, hierarchy })
+    );
+    if (!candidates.length) {
+      continue;
+    }
+    const methodLevel = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    // builder 无条件产出 200 成功响应:advice 的同码声明不得覆盖它(纯增量解析)
+    const builtin = new Set(["200"]);
+    const existing = new Set([...builtin, ...methodLevel]);
+    // 状态码 -> 已占用它的 advice 类型名(用于区分「同一 advice 内重复」与「多个 advice 冲突」)
+    const takenBy = new Map<string, string>();
+    const appended: ResponseInfo[] = [];
+    for (const advice of candidates) {
+      matched.add(advice);
+      for (const response of advice.responses) {
+        if (existing.has(response.code)) {
+          // 方法级声明(或先声明的 advice)优先,后到的同码声明跳过
+          const owner = takenBy.get(response.code);
+          if (owner) {
+            const key = `${advice.adviceType}:${response.code}`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                owner === advice.adviceType
+                  ? `${advice.adviceType}: @ExceptionHandler 状态码 ${response.code} 重复声明(${response.methodName} ← ${response.exceptionTypes.join(", ")}),已按声明顺序保留首个`
+                  : `@ExceptionHandler 状态码 ${response.code} 同时声明于 ${owner} 与 ${advice.adviceType}(${response.exceptionTypes.join(", ")}),已保留先扫描到的 ${owner}`
+              );
+            }
+          } else {
+            // 与接口自身声明的同码响应冲突:方法级优先,其次 builder 无条件产出的 200
+            const key = `${advice.adviceType}.${response.methodName}:${response.code}:endpoint`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                methodLevel.has(response.code)
+                  ? `@ExceptionHandler 状态码 ${response.code} 与接口方法级声明冲突(${advice.adviceType}.${response.methodName} ← ${response.exceptionTypes.join(", ")}),已保留方法级声明`
+                  : `@ExceptionHandler 状态码 ${response.code} 与接口内置成功响应冲突(${advice.adviceType}.${response.methodName} ← ${response.exceptionTypes.join(", ")}),已保留内置成功响应`
+              );
+            }
+          }
+          continue;
+        }
+        existing.add(response.code);
+        takenBy.set(response.code, advice.adviceType);
+        appended.push({
+          code: response.code,
+          description: response.description,
+          schemaText: response.schemaText,
+        });
+      }
+    }
+    if (appended.length) {
+      ep.extraResponses = [...(ep.extraResponses ?? []), ...appended];
+    }
+  }
+  for (const advice of advices) {
+    if (advice.narrow && !matched.has(advice)) {
+      warnings.push(
+        `${advice.adviceType}: @ControllerAdvice 的 basePackages/basePackageClasses/assignableTypes 未匹配到任何扫描内接口,错误响应未挂载`
+      );
+    }
+  }
 }
 
 /**
@@ -1198,14 +1290,6 @@ function collectExtraResponses(annotations: AnnotationInfo[]): ResponseInfo[] {
 function implementationOfClass(rawAnn: string): string | undefined {
   const m = /implementation\s*=\s*(\w+(?:\.\w+)*)\.class/.exec(rawAnn);
   return m ? m[1] : undefined;
-}
-
-function normalizeStatus(raw: string): string {
-  if (/^\d{3}$/.test(raw)) {
-    return raw;
-  }
-  const name = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
-  return HTTP_STATUS_BY_NAME[name.trim()] || raw;
 }
 
 function isHiddenParam(annotations: AnnotationInfo[]): boolean {

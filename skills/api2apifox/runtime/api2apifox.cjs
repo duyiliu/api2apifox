@@ -10510,6 +10510,39 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
+// ../../src/java/httpStatus.ts
+var HTTP_STATUS_BY_NAME = {
+  OK: "200",
+  CREATED: "201",
+  ACCEPTED: "202",
+  NO_CONTENT: "204",
+  MOVED_PERMANENTLY: "301",
+  FOUND: "302",
+  NOT_MODIFIED: "304",
+  BAD_REQUEST: "400",
+  UNAUTHORIZED: "401",
+  PAYMENT_REQUIRED: "402",
+  FORBIDDEN: "403",
+  NOT_FOUND: "404",
+  METHOD_NOT_ALLOWED: "405",
+  NOT_ACCEPTABLE: "406",
+  CONFLICT: "409",
+  GONE: "410",
+  UNSUPPORTED_MEDIA_TYPE: "415",
+  TOO_MANY_REQUESTS: "429",
+  INTERNAL_SERVER_ERROR: "500",
+  NOT_IMPLEMENTED: "501",
+  BAD_GATEWAY: "502",
+  SERVICE_UNAVAILABLE: "503"
+};
+function normalizeStatus(raw) {
+  if (/^\d{3}$/.test(raw)) {
+    return raw;
+  }
+  const name = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
+  return HTTP_STATUS_BY_NAME[name.trim()] || raw;
+}
+
 // ../../src/java/model.ts
 function annStr(args, ...keys2) {
   for (const k of keys2) {
@@ -10541,6 +10574,238 @@ function annBool(args, key) {
 }
 function findAnn(annotations, ...names) {
   return annotations.find((a) => names.includes(a.name));
+}
+
+// ../../src/java/exceptionAdvice.ts
+function adviceTypes(files) {
+  const out = [];
+  for (const pf of files) {
+    if (pf.parseError) {
+      continue;
+    }
+    for (const typeDecl of findAll(pf.cst, "typeDeclaration")) {
+      const classDecl = childNode(typeDecl, "classDeclaration");
+      const normal = classDecl ? childNode(classDecl, "normalClassDeclaration") : void 0;
+      if (!normal) {
+        continue;
+      }
+      const annotations = collectAnnotations(
+        [...childAll(classDecl, "classModifier"), ...childAll(normal, "classModifier")].filter(isCstNode),
+        pf.source
+      );
+      if (!findAnn(annotations, "RestControllerAdvice", "ControllerAdvice")) {
+        continue;
+      }
+      const typeName = typeNameOf(normal);
+      if (!typeName) {
+        continue;
+      }
+      out.push({ pf, carrier: typeDecl, inner: normal, typeName, annotations });
+    }
+  }
+  return out;
+}
+function adviceMethodsOf(site) {
+  const out = [];
+  for (const member of childAll(childNode(site.inner, "classBody"), "classBodyDeclaration").filter(isCstNode)) {
+    const memberDecl = childNode(member, "classMemberDeclaration") ?? childNode(member, "memberDeclaration");
+    const method = childNode(memberDecl, "methodDeclaration");
+    if (!method) {
+      continue;
+    }
+    const annotations = collectAnnotations(childAll(method, "methodModifier").filter(isCstNode), site.pf.source);
+    out.push({ method, wrapper: member, annotations });
+  }
+  return out;
+}
+function exceptionTypesOf(ann) {
+  return annArray(ann.args, "value", "exception").map((raw) => raw.trim().replace(/\.class$/, "")).map((raw) => raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw).filter(Boolean);
+}
+var RESPONSE_ENTITY_FACTORIES = {
+  ok: "200",
+  created: "201",
+  accepted: "202",
+  noContent: "204",
+  badRequest: "400",
+  unauthorized: "401",
+  forbidden: "403",
+  notFound: "404",
+  conflict: "409",
+  unprocessableEntity: "422",
+  tooManyRequests: "429",
+  internalServerError: "500",
+  badGateway: "502",
+  serviceUnavailable: "503"
+};
+function statusFromBody(bodyText) {
+  const statusCall = /ResponseEntity\s*\.\s*status\s*\(\s*([\w.]+)\s*\)/.exec(bodyText);
+  if (statusCall) {
+    const code = normalizeStatus(statusCall[1]);
+    return /^\d{3}$/.test(code) ? code : void 0;
+  }
+  const factory = /ResponseEntity\s*\.\s*(\w+)\s*\(/.exec(bodyText);
+  if (factory) {
+    return RESPONSE_ENTITY_FACTORIES[factory[1]];
+  }
+  const ctorStart = bodyText.indexOf("new ResponseEntity");
+  const open = ctorStart >= 0 ? firstParenAfter(bodyText, ctorStart) : -1;
+  const close = open >= 0 ? matchingParen(bodyText, open) : -1;
+  if (open >= 0 && close > open) {
+    const args = splitTopLevel(bodyText.slice(open + 1, close));
+    const candidate = (args.length >= 3 ? args[2] : args[1])?.trim();
+    if (candidate) {
+      const code = normalizeStatus(candidate);
+      if (/^\d{3}$/.test(code)) {
+        return code;
+      }
+    }
+  }
+  return void 0;
+}
+function firstParenAfter(text, from) {
+  for (let i = from; i < text.length; i++) {
+    if (text[i] === "(") {
+      return i;
+    }
+  }
+  return -1;
+}
+function matchingParen(text, open) {
+  let depth = 0;
+  let quote = null;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === "\\") {
+        i++;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+function responseBodyType(returnType) {
+  if (!returnType) {
+    return void 0;
+  }
+  let t = returnType.trim();
+  const generic = /^(?:ResponseEntity|HttpEntity)\s*<(.*)>$/.exec(t);
+  if (generic) {
+    t = generic[1].trim();
+  } else if (/^(?:ResponseEntity|HttpEntity)$/.test(t)) {
+    return void 0;
+  }
+  if (!t || t === "void" || t === "Void") {
+    return void 0;
+  }
+  return t;
+}
+function returnTypeOf(pf, method) {
+  const header = childNode(method, "methodHeader") ?? method;
+  const result = childNode(header, "result");
+  const unannType = result ? childNode(result, "unannType") : void 0;
+  return unannType ? nodeText(pf.source, unannType).trim() : void 0;
+}
+function responsesOf(site, warnings) {
+  const out = [];
+  for (const { method, wrapper, annotations } of adviceMethodsOf(site)) {
+    const handler = findAnn(annotations, "ExceptionHandler");
+    if (!handler) {
+      continue;
+    }
+    const header = childNode(method, "methodHeader") ?? method;
+    const declarator = childNode(header, "methodDeclarator");
+    const methodName = tokenImage(declarator, "Identifier") ?? "";
+    const exceptionTypes = exceptionTypesOf(handler);
+    const javadoc = parseJavadoc(nodeJavadoc(wrapper));
+    const returnType = returnTypeOf(site.pf, method);
+    const returnsResponseEntity = !!returnType && /^(ResponseEntity|HttpEntity)\b/.test(returnType.trim());
+    const statusAnn = findAnn(annotations, "ResponseStatus");
+    const declared = statusAnn ? normalizeStatus(annStr(statusAnn.args, "value", "code") ?? "") : "";
+    const declaredCode = /^\d{3}$/.test(declared) ? declared : void 0;
+    const code = returnsResponseEntity ? statusFromBody(nodeText(site.pf.source, method)) ?? declaredCode : declaredCode;
+    if (!code) {
+      warnings.push(
+        `@ExceptionHandler ${site.typeName}.${methodName}: \u672A\u58F0\u660E\u53EF\u89E3\u6790\u7684\u72B6\u6001\u7801(@ResponseStatus \u6216 ResponseEntity.status),\u5DF2\u8DF3\u8FC7\u8BE5\u9519\u8BEF\u54CD\u5E94`
+      );
+      continue;
+    }
+    const description = (statusAnn ? annStr(statusAnn.args, "reason") : void 0) || javadoc?.returns?.trim() || javadoc?.firstLine || void 0;
+    out.push({
+      code,
+      description,
+      schemaText: responseBodyType(returnType),
+      adviceType: site.typeName,
+      methodName,
+      exceptionTypes
+    });
+  }
+  return out;
+}
+function collectExceptionAdvices(files, index, warnings) {
+  const out = [];
+  for (const site of adviceTypes(files)) {
+    const adviceAnn = findAnn(site.annotations, "RestControllerAdvice", "ControllerAdvice");
+    const args = adviceAnn?.args ?? {};
+    const basePackages = annArray(args, "basePackages", "value").map((p) => p.trim()).filter(Boolean);
+    const basePackageClasses = annArray(args, "basePackageClasses").map((raw) => raw.trim().replace(/\.class$/, "")).map((raw) => qualifiedNameOf(raw, index)).filter(Boolean);
+    const assignableTypes = annArray(args, "assignableTypes").map((raw) => raw.trim().replace(/\.class$/, "")).map((raw) => qualifiedNameOf(raw, index)).filter(Boolean);
+    out.push({
+      adviceType: site.typeName,
+      basePackages,
+      basePackageClasses,
+      assignableTypes,
+      narrow: basePackages.length > 0 || basePackageClasses.length > 0 || assignableTypes.length > 0,
+      responses: responsesOf(site, warnings)
+    });
+  }
+  return out;
+}
+function qualifiedNameOf(name, index) {
+  if (name.includes(".")) {
+    return name;
+  }
+  return index?.types.get(name)?.qualifiedName ?? name;
+}
+function adviceMatchesController(advice, controller) {
+  if (!advice.narrow) {
+    return true;
+  }
+  const pkg = controller.qualifiedName?.includes(".") ? controller.qualifiedName.slice(0, controller.qualifiedName.lastIndexOf(".")) : "";
+  const inPackage = (base) => {
+    const prefix = base.trim();
+    return !!pkg && !!prefix && (pkg === prefix || pkg.startsWith(`${prefix}.`));
+  };
+  if (advice.basePackages.some(inPackage)) {
+    return true;
+  }
+  if (advice.basePackageClasses.some(
+    (qualified) => inPackage(qualified.includes(".") ? qualified.slice(0, qualified.lastIndexOf(".")) : "")
+  )) {
+    return true;
+  }
+  const names = new Set(controller.hierarchy.flatMap((n) => [n, n.slice(n.lastIndexOf(".") + 1)]));
+  if (controller.qualifiedName) {
+    names.add(controller.qualifiedName);
+  }
+  for (const type of advice.assignableTypes) {
+    if (names.has(type) || names.has(type.slice(type.lastIndexOf(".") + 1))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ../../node_modules/lodash-es/_freeGlobal.js
@@ -27173,30 +27438,6 @@ var JAXRS_METHODS = {
   HEAD: "HEAD",
   OPTIONS: "OPTIONS"
 };
-var HTTP_STATUS_BY_NAME = {
-  OK: "200",
-  CREATED: "201",
-  ACCEPTED: "202",
-  NO_CONTENT: "204",
-  MOVED_PERMANENTLY: "301",
-  FOUND: "302",
-  NOT_MODIFIED: "304",
-  BAD_REQUEST: "400",
-  UNAUTHORIZED: "401",
-  PAYMENT_REQUIRED: "402",
-  FORBIDDEN: "403",
-  NOT_FOUND: "404",
-  METHOD_NOT_ALLOWED: "405",
-  NOT_ACCEPTABLE: "406",
-  CONFLICT: "409",
-  GONE: "410",
-  UNSUPPORTED_MEDIA_TYPE: "415",
-  TOO_MANY_REQUESTS: "429",
-  INTERNAL_SERVER_ERROR: "500",
-  NOT_IMPLEMENTED: "501",
-  BAD_GATEWAY: "502",
-  SERVICE_UNAVAILABLE: "503"
-};
 var MEDIA_TYPE_BASE = {
   ALL: "*/*",
   APPLICATION_ATOM_XML: "application/atom+xml",
@@ -27253,6 +27494,7 @@ function parseControllers(files, rules, index) {
   const endpoints = [];
   const ruleWarnings = [];
   const warnings = [];
+  const hierarchies = /* @__PURE__ */ new Map();
   const sites = index ? buildTypeSites(files) : void 0;
   for (const pf of files) {
     const fileSites = sites ? sites.byFile.get(pf) ?? [] : findAll(pf.cst, "typeDeclaration").map((d) => typeSiteOf(pf, d)).filter((s) => !!s);
@@ -27264,6 +27506,7 @@ function parseControllers(files, rules, index) {
       if (!flavor) {
         continue;
       }
+      hierarchies.set(typeName, [typeName, ...chain.map((s) => s.typeName)]);
       const basePaths = classBasePaths(hierarchy, flavor);
       const baseMethods = classBaseMethods(hierarchy, flavor);
       const tagAnn = findAnn(typeAnnotations, "Tag");
@@ -27498,8 +27741,81 @@ function parseControllers(files, rules, index) {
       }
     }
   }
+  attachExceptionAdvices(files, index, hierarchies, endpoints, warnings);
   warnings.push(...ruleWarnings);
   return { endpoints, warnings };
+}
+function attachExceptionAdvices(files, index, hierarchies, endpoints, warnings) {
+  if (!endpoints.length) {
+    return;
+  }
+  const advices = collectExceptionAdvices(files, index, warnings);
+  if (!advices.length) {
+    return;
+  }
+  const matched = /* @__PURE__ */ new Set();
+  const reported = /* @__PURE__ */ new Set();
+  for (const ep of endpoints) {
+    if (ep.flavor !== "spring-mvc") {
+      continue;
+    }
+    const owner = index?.types.get(ep.controller);
+    const hierarchy = hierarchies.get(ep.controller) ?? [ep.controller];
+    const candidates = advices.filter(
+      (advice) => adviceMatchesController(advice, { qualifiedName: owner?.qualifiedName, hierarchy })
+    );
+    if (!candidates.length) {
+      continue;
+    }
+    const methodLevel = new Set((ep.extraResponses ?? []).map((r) => r.code));
+    const builtin = /* @__PURE__ */ new Set(["200"]);
+    const existing = /* @__PURE__ */ new Set([...builtin, ...methodLevel]);
+    const takenBy = /* @__PURE__ */ new Map();
+    const appended = [];
+    for (const advice of candidates) {
+      matched.add(advice);
+      for (const response of advice.responses) {
+        if (existing.has(response.code)) {
+          const owner2 = takenBy.get(response.code);
+          if (owner2) {
+            const key = `${advice.adviceType}:${response.code}`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                owner2 === advice.adviceType ? `${advice.adviceType}: @ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u91CD\u590D\u58F0\u660E(${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u6309\u58F0\u660E\u987A\u5E8F\u4FDD\u7559\u9996\u4E2A` : `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u540C\u65F6\u58F0\u660E\u4E8E ${owner2} \u4E0E ${advice.adviceType}(${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u5148\u626B\u63CF\u5230\u7684 ${owner2}`
+              );
+            }
+          } else {
+            const key = `${advice.adviceType}.${response.methodName}:${response.code}:endpoint`;
+            if (!reported.has(key)) {
+              reported.add(key);
+              warnings.push(
+                methodLevel.has(response.code) ? `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u4E0E\u63A5\u53E3\u65B9\u6CD5\u7EA7\u58F0\u660E\u51B2\u7A81(${advice.adviceType}.${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u65B9\u6CD5\u7EA7\u58F0\u660E` : `@ExceptionHandler \u72B6\u6001\u7801 ${response.code} \u4E0E\u63A5\u53E3\u5185\u7F6E\u6210\u529F\u54CD\u5E94\u51B2\u7A81(${advice.adviceType}.${response.methodName} \u2190 ${response.exceptionTypes.join(", ")}),\u5DF2\u4FDD\u7559\u5185\u7F6E\u6210\u529F\u54CD\u5E94`
+              );
+            }
+          }
+          continue;
+        }
+        existing.add(response.code);
+        takenBy.set(response.code, advice.adviceType);
+        appended.push({
+          code: response.code,
+          description: response.description,
+          schemaText: response.schemaText
+        });
+      }
+    }
+    if (appended.length) {
+      ep.extraResponses = [...ep.extraResponses ?? [], ...appended];
+    }
+  }
+  for (const advice of advices) {
+    if (advice.narrow && !matched.has(advice)) {
+      warnings.push(
+        `${advice.adviceType}: @ControllerAdvice \u7684 basePackages/basePackageClasses/assignableTypes \u672A\u5339\u914D\u5230\u4EFB\u4F55\u626B\u63CF\u5185\u63A5\u53E3,\u9519\u8BEF\u54CD\u5E94\u672A\u6302\u8F7D`
+      );
+    }
+  }
 }
 function typeSiteOf(pf, typeDecl) {
   const classDecl = childNode(typeDecl, "classDeclaration");
@@ -28132,13 +28448,6 @@ function collectExtraResponses(annotations) {
 function implementationOfClass(rawAnn) {
   const m = /implementation\s*=\s*(\w+(?:\.\w+)*)\.class/.exec(rawAnn);
   return m ? m[1] : void 0;
-}
-function normalizeStatus(raw) {
-  if (/^\d{3}$/.test(raw)) {
-    return raw;
-  }
-  const name = raw.includes(".") ? raw.slice(raw.lastIndexOf(".") + 1) : raw;
-  return HTTP_STATUS_BY_NAME[name.trim()] || raw;
 }
 function isHiddenParam(annotations) {
   const p = findAnn(annotations, "Parameter");

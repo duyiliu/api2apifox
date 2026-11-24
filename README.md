@@ -165,6 +165,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 - **Bean Validation**:`@NotNull/@NotBlank/@NotEmpty` → required,`@Size` → minLength/maxLength/minItems/maxItems,`@Min/@Max/@DecimalMin/@DecimalMax`(含 inclusive=false)→ minimum/maximum,`@Pattern` → pattern,`@Email` → format,`@Positive/@Negative` 等
 - **序列化注解**:Jackson `@JsonProperty/@JsonIgnore`、FASTJSON `@JSONField(name/serialize)`、GSON `@SerializedName`
 - **响应声明**:`@ApiResponses/@ApiResponse`(含 `@Schema(implementation=X.class)` 响应体)、`@ResponseStatus` → 额外状态码;`@Deprecated` → deprecated
+- **统一异常响应**:`@RestControllerAdvice/@ControllerAdvice` 中的 `@ExceptionHandler` 按 `@ResponseStatus`(或 `ResponseEntity.status(...)`/工厂方法/构造器)映射错误状态码,返回类型(含 `ResponseDto<Void>` 这类统一包装)走模型解析;无 `basePackages`/`basePackageClasses`/`assignableTypes` 的全局 advice 作用于全部 Spring MVC 接口,收窄声明按包名前缀与父类/接口链匹配,挂不上会告警;方法级 `@ApiResponse/@ResponseStatus` 同码优先,advice 声明的 200 不覆盖接口内置成功响应(冲突记 warning)
 
 </details>
 
