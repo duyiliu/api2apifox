@@ -95,6 +95,7 @@ node "<skill-dir>/scripts/api2apifox.mjs" export --project . --baseline openapi.
 - 兼容（退出码 `0`，清单在 `result`）：新增路径/操作、新增可选字段/参数、删可选请求字段、删请求体、描述变化、类型放宽。
 - 基线缺失/非法 JSON/非 OpenAPI：退出码 `2`、`BASELINE_NOT_FOUND` / `BASELINE_INVALID`，不会静默通过。
 - `--file` / `--endpoint` 只比对所选范围；`--file` 的局限是无法检测「文件里最后一个接口被删」。
+- 用 `--endpoint` 选中一个已被删除的接口时，退出码是 `6`（而不是 `3` `NO_ENDPOINT_MATCHED`）：这正是「选中接口被删」的 CI 用法。
 
 ## 配置与凭据
 

@@ -82,6 +82,7 @@ api2apifox export --project . --baseline openapi.old.json --check --format json
 - 退出码：有破坏性变更时 `6`（`BREAKING_CHANGES_DETECTED`），变更清单在 JSON 信封 `error.details`；无破坏性变更时 `0`，清单在 `result`
 - 基线缺失/非法 JSON/不是 OpenAPI 文档时快速失败（`BASELINE_NOT_FOUND` / `BASELINE_INVALID`，退出码 2），不会静默通过
 - 基线路径相对项目根；`--file` / `--endpoint` 只比对所选范围，但 `--file` 无法检测「文件里最后一个接口被删」
+- `--endpoint` 选中的接口已被删除时，退出码为 `6`（`BREAKING_CHANGES_DETECTED`），而不是 `3` `NO_ENDPOINT_MATCHED`
 - 与 `--stdout` / `--output` 互斥，`--check` 不产生文件
 
 ## 配置文件

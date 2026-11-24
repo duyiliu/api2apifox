@@ -57,9 +57,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       }
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
-        // --check 下「当前接口为空」可能正是「所选接口被删」的结果，必须交给基线比对
-        // 判定为破坏性变更；只有扫描层面没有 Java 文件时才提前失败。其余命令保持原样。
-        if (!options.check || analyzed.scannedFiles === 0) {
+        // --check 且显式用 --endpoint 选择时，「当前接口为空」可能正是「所选接口被删」的
+        // 结果，必须交给基线比对判定为破坏性变更，不能提前抛 NO_ENDPOINT_MATCHED。
+        // 其余情况（无筛选、--file、扫描层面无 Java 文件）保持原有守卫，避免把配置/扫描
+        // 出错导致的空结果误报成破坏性变更。
+        const selectedByEndpoint = options.check && options.endpoints.length > 0;
+        if (!selectedByEndpoint || analyzed.scannedFiles === 0) {
           ensureEndpoints(analyzed, options);
         }
         if (options.baseline && !options.check) {
@@ -544,7 +547,8 @@ ${HELP_FLAG}
 
 ${FILTER_NOTE}
   --check 检测到破坏性变更时退出码为 6（BREAKING_CHANGES_DETECTED），变更清单在 JSON 信封的 error.details。
-  --check 只比对 --file / --endpoint 选中的范围；--file 无法检测「文件里最后一个接口被删」。`;
+  --check 只比对 --file / --endpoint 选中的范围；--file 无法检测「文件里最后一个接口被删」。
+  --endpoint 选中的接口已被删除时按破坏性变更处理（退出码 6），而不是 NO_ENDPOINT_MATCHED（3）。`;
     case "sync":
       return `api2apifox sync [options]
 

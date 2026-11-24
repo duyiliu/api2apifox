@@ -229,6 +229,34 @@ test("export --check：--endpoint 唯一选中的端点被删 → exit 6，而�
   }
 });
 
+test("export --check：--file 选中项为空时维持 NO_ENDPOINT_MATCHED（文档已声明的局限）", () => {
+  const fx = project({
+    "src/main/java/demo/UserController.java": USER_CONTROLLER,
+    "src/main/java/demo/UserVO.java": USER_VO(["Long id", "String name"]),
+    "src/main/java/demo/UserCreateRequest.java": USER_CREATE_REQUEST,
+  });
+  try {
+    const baseline = writeBaseline(fx.root, baselineOf(fx.root));
+    fx.write("src/main/java/demo/UserController.java", "package demo;\n");
+    const result = run([
+      "export",
+      "--project",
+      fx.root,
+      "--file",
+      "src/main/java/demo/UserController.java",
+      "--baseline",
+      baseline,
+      "--check",
+      "--format",
+      "json",
+    ]);
+    assert.equal(result.status, 3, result.stdout);
+    assert.equal(json(result).error.code, "NO_ENDPOINT_MATCHED");
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test("export（非 --check）：--endpoint 无匹配仍报 NO_ENDPOINT_MATCHED", () => {
   const result = run([
     "export",

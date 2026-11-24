@@ -32023,7 +32023,8 @@ async function runCli(argv = process.argv.slice(2)) {
       }
       case "export": {
         const analyzed = await analyzeSelected(resolved, options, controller.signal);
-        if (!options.check || analyzed.scannedFiles === 0) {
+        const selectedByEndpoint = options.check && options.endpoints.length > 0;
+        if (!selectedByEndpoint || analyzed.scannedFiles === 0) {
           ensureEndpoints(analyzed, options);
         }
         if (options.baseline && !options.check) {
@@ -32450,7 +32451,8 @@ ${HELP_FLAG}
 
 ${FILTER_NOTE}
   --check \u68C0\u6D4B\u5230\u7834\u574F\u6027\u53D8\u66F4\u65F6\u9000\u51FA\u7801\u4E3A 6\uFF08BREAKING_CHANGES_DETECTED\uFF09\uFF0C\u53D8\u66F4\u6E05\u5355\u5728 JSON \u4FE1\u5C01\u7684 error.details\u3002
-  --check \u53EA\u6BD4\u5BF9 --file / --endpoint \u9009\u4E2D\u7684\u8303\u56F4\uFF1B--file \u65E0\u6CD5\u68C0\u6D4B\u300C\u6587\u4EF6\u91CC\u6700\u540E\u4E00\u4E2A\u63A5\u53E3\u88AB\u5220\u300D\u3002`;
+  --check \u53EA\u6BD4\u5BF9 --file / --endpoint \u9009\u4E2D\u7684\u8303\u56F4\uFF1B--file \u65E0\u6CD5\u68C0\u6D4B\u300C\u6587\u4EF6\u91CC\u6700\u540E\u4E00\u4E2A\u63A5\u53E3\u88AB\u5220\u300D\u3002
+  --endpoint \u9009\u4E2D\u7684\u63A5\u53E3\u5DF2\u88AB\u5220\u9664\u65F6\u6309\u7834\u574F\u6027\u53D8\u66F4\u5904\u7406\uFF08\u9000\u51FA\u7801 6\uFF09\uFF0C\u800C\u4E0D\u662F NO_ENDPOINT_MATCHED\uFF083\uFF09\u3002`;
     case "sync":
       return `api2apifox sync [options]
 

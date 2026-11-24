@@ -75,6 +75,7 @@ api2apifox export --project . --baseline openapi.old.json --check --format json
 - 有破坏性变更时退出码 `6`、`error.code = BREAKING_CHANGES_DETECTED`，清单在 `error.details`；否则退出码 `0`，清单在 `result`
 - 基线缺失/非法时退出码 `2`（`BASELINE_NOT_FOUND` / `BASELINE_INVALID`），不会静默通过
 - 与 `--stdout` / `--output` 互斥；`--file` / `--endpoint` 只比对所选范围
+- `--endpoint` 选中已被删除的接口时退出码为 `6`（`BREAKING_CHANGES_DETECTED`），不是 `3` `NO_ENDPOINT_MATCHED`
 
 ### sync
 
