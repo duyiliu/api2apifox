@@ -9288,6 +9288,9 @@ function toClassInfo(pc) {
     fields,
     recordComponents: [],
     enumConstants: pc.enumConstants,
+    // jar 枚举没有源码,保持只输出常量名
+    enumValues: [...pc.enumConstants],
+    enumDocs: pc.enumConstants.map(() => void 0),
     annotations: pc.annotations.map(toAnnotationInfo),
     superClass: pc.superClass
   };
@@ -26304,9 +26307,133 @@ function typeParamsOf(decl) {
   const list = childNode(tp, "typeParameterList") ?? tp;
   return childNodes(list, "typeParameter").map((n) => typeNameOf(n)).filter((s) => s.length > 0);
 }
-function enumConstantsOf(decl) {
+function enumConstantsOf(decl, source) {
   const list = childNode(childNode(decl, "enumBody"), "enumConstantList");
-  return childNodes(list, "enumConstant").map((c) => tokenImage(c, "Identifier") ?? "").filter((s) => s.length > 0);
+  const listJavadoc = nodeJavadoc(list);
+  const out = [];
+  childNodes(list, "enumConstant").forEach((c, index) => {
+    const name = tokenImage(c, "Identifier");
+    if (!name) {
+      return;
+    }
+    const args = childNodes(childNode(c, "argumentList"), "expression").map((e) => nodeText(source, e).trim());
+    const javadocRaw = nodeJavadoc(c) ?? (index === 0 ? listJavadoc : void 0);
+    const jd = parseJavadoc(javadocRaw);
+    out.push({
+      name,
+      annotations: collectAnnotations(childNodes(c, "enumConstantModifier"), source),
+      args,
+      javadoc: jd?.description || jd?.firstLine || void 0
+    });
+  });
+  return out;
+}
+function enumConstructorsOf(decl) {
+  const decls = childNode(childNode(decl, "enumBody"), "enumBodyDeclarations");
+  const out = [];
+  for (const bd of childNodes(decls, "classBodyDeclaration")) {
+    const ctor = childNode(bd, "constructorDeclaration");
+    if (!ctor) {
+      continue;
+    }
+    const list = childNode(childNode(ctor, "constructorDeclarator"), "formalParameterList");
+    const params = childNodes(list, "formalParameter").map((p) => {
+      const vd = findAll(p, "variableDeclaratorId")[0];
+      return tokenImage(vd, "Identifier") ?? "";
+    });
+    out.push({ node: ctor, params });
+  }
+  return out;
+}
+function jsonValueFieldOf(decl, source) {
+  const decls = childNode(childNode(decl, "enumBody"), "enumBodyDeclarations");
+  for (const bd of childNodes(decls, "classBodyDeclaration")) {
+    const member = childNode(bd, "classMemberDeclaration") ?? childNode(bd, "memberDeclaration") ?? bd;
+    const method = childNode(member, "methodDeclaration");
+    if (!method) {
+      continue;
+    }
+    if (!findAnn(collectAnnotations(childNodes(method, "methodModifier"), source), "JsonValue")) {
+      continue;
+    }
+    const expression = childNode(findAll(method, "returnStatement")[0], "expression");
+    const text = expression ? nodeText(source, expression).trim() : "";
+    const m = /^(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)$/.exec(text);
+    return m ? { found: true, field: m[1] } : { found: true };
+  }
+  return { found: false };
+}
+function constructorParamIndexFor(field, ctors, source) {
+  for (const ctor of ctors) {
+    const index = ctor.params.indexOf(field);
+    if (index >= 0) {
+      return index;
+    }
+  }
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const ctor of ctors) {
+    const body = childNode(ctor.node, "constructorBody");
+    if (!body) {
+      continue;
+    }
+    const m = new RegExp(`this\\s*\\.\\s*${escaped}\\s*=\\s*([A-Za-z_$][\\w$]*)\\s*;`).exec(nodeText(source, body));
+    const param = m?.[1];
+    const index = param ? ctor.params.indexOf(param) : -1;
+    if (index >= 0) {
+      return index;
+    }
+  }
+  return void 0;
+}
+function enumArgumentValue(text) {
+  const t = text.trim();
+  if (!t) {
+    return void 0;
+  }
+  if (t === "null" || t === "true" || t === "false") {
+    return t;
+  }
+  if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[fFdDlL]?$/.test(t)) {
+    return t.replace(/[fFdDlL]$/, "");
+  }
+  if (t.startsWith('"') && t.endsWith('"') || t.startsWith("'") && t.endsWith("'")) {
+    const value = parseArgsText(t).value;
+    return typeof value === "string" ? value : void 0;
+  }
+  return void 0;
+}
+function enumDetailsOf(decl, source, displayName) {
+  const details = enumConstantsOf(decl, source);
+  const constants = details.map((d) => d.name);
+  const docs = details.map((d) => d.javadoc);
+  const jsonValue = jsonValueFieldOf(decl, source);
+  const ctors = enumConstructorsOf(decl);
+  const paramIndex = jsonValue.field ? constructorParamIndexFor(jsonValue.field, ctors, source) : void 0;
+  let unresolved = false;
+  const values2 = details.map((d) => {
+    const prop = findAnn(d.annotations, "JsonProperty");
+    const propValue = prop ? annStr(prop.args, "value", "name") : void 0;
+    if (propValue !== void 0) {
+      return propValue;
+    }
+    if (!jsonValue.found) {
+      return d.name;
+    }
+    if (paramIndex !== void 0 && paramIndex < d.args.length) {
+      const value = enumArgumentValue(d.args[paramIndex]);
+      if (value !== void 0) {
+        return value;
+      }
+    }
+    unresolved = true;
+    return d.name;
+  });
+  return {
+    constants,
+    values: values2,
+    docs,
+    ...unresolved ? { warning: `\u679A\u4E3E ${displayName} \u7684 @JsonValue \u65E0\u6CD5\u89E3\u6790,\u5DF2\u56DE\u9000\u5E38\u91CF\u540D` } : {}
+  };
 }
 function recordComponentsOf(decl, source) {
   const list = childNode(childNode(decl, "recordHeader"), "recordComponentList");
@@ -26383,17 +26510,23 @@ function classInfoOf(decl, source, enclosing = [], ...javadocCarriers) {
       fields: collectFields(childNode(normal, "classBody"), source),
       recordComponents: [],
       enumConstants: [],
+      enumValues: [],
+      enumDocs: [],
       superClass: superClassOf(normal, source)
     };
   }
   if (enumDecl) {
+    const details = enumDetailsOf(enumDecl, source, base.qualifiedName);
     return {
       ...base,
       kind: "enum",
       typeParams: [],
       fields: [],
       recordComponents: [],
-      enumConstants: enumConstantsOf(enumDecl)
+      enumConstants: details.constants,
+      enumValues: details.values,
+      enumDocs: details.docs,
+      ...details.warning ? { enumValueWarning: details.warning } : {}
     };
   }
   if (recordDecl) {
@@ -26403,7 +26536,9 @@ function classInfoOf(decl, source, enclosing = [], ...javadocCarriers) {
       typeParams: typeParamsOf(recordDecl),
       fields: [],
       recordComponents: recordComponentsOf(recordDecl, source),
-      enumConstants: []
+      enumConstants: [],
+      enumValues: [],
+      enumDocs: []
     };
   }
   return {
@@ -26412,7 +26547,9 @@ function classInfoOf(decl, source, enclosing = [], ...javadocCarriers) {
     typeParams: typeParamsOf(normalItf),
     fields: [],
     recordComponents: [],
-    enumConstants: []
+    enumConstants: [],
+    enumValues: [],
+    enumDocs: []
   };
 }
 function directMemberTypeDecls(body) {
@@ -26679,7 +26816,7 @@ function resolveType(t, ctx) {
     return { type: "object", description: `\u672A\u8BC6\u522B\u7684\u7C7B\u578B: ${t.name}` };
   }
   if (info.kind === "enum") {
-    return enumSchema(info);
+    return enumSchema(info, ctx);
   }
   const instance = { ...t, args: t.args.map((arg) => bindTypeArgument(arg, ctx)) };
   const bindings = /* @__PURE__ */ new Map();
@@ -26730,10 +26867,14 @@ function classDescription(annotations, javadoc) {
   const text = javadoc?.description || javadoc?.firstLine;
   return text && text.trim() ? text : void 0;
 }
-function enumSchema(info) {
+function enumSchema(info, ctx) {
+  if (info.enumValueWarning) {
+    ctx.fieldWarnings?.push(info.enumValueWarning);
+  }
   const schema = { type: "string", title: info.simpleName };
-  if (info.enumConstants.length) {
-    schema.enum = [...info.enumConstants];
+  const values2 = info.enumValues?.length ? info.enumValues : info.enumConstants;
+  if (values2.length) {
+    schema.enum = [...values2];
   }
   const desc = classDescription(info.annotations, info.javadoc);
   if (desc) {
