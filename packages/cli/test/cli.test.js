@@ -237,3 +237,76 @@ test("buildCliSyncReport 汇总 Apifox 计数并推导项目链接", () => {
   assert.equal(report.endpoints[0].file, "src/main/java/demo/UserController.java");
   assert.deepEqual(report.errors, ["导入失败示例"]);
 });
+
+test("export --stdout:未配置且无 pom 时 info.version 为 1.0.0", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-ver-default-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "A.java"),
+      'import org.springframework.web.bind.annotation.*; @RestController public class A { @GetMapping("/x") public String x() {return null;} }'
+    );
+    const result = run(["export", "--project", dir, "--include", "**/*.java", "--stdout"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).info.version, "1.0.0");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("export --stdout:项目根 pom.xml 版本生效并剔除 -SNAPSHOT", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-ver-pom-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "A.java"),
+      'import org.springframework.web.bind.annotation.*; @RestController public class A { @GetMapping("/x") public String x() {return null;} }'
+    );
+    fs.writeFileSync(path.join(dir, "pom.xml"), "<project><artifactId>a</artifactId><version>2.3.0-SNAPSHOT</version></project>");
+    const result = run(["export", "--project", dir, "--include", "**/*.java", "--stdout"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).info.version, "2.3.0");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("export --stdout:--openapi-version 覆盖 pom.xml 与配置文件", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-ver-cli-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "A.java"),
+      'import org.springframework.web.bind.annotation.*; @RestController public class A { @GetMapping("/x") public String x() {return null;} }'
+    );
+    fs.writeFileSync(path.join(dir, "pom.xml"), "<project><version>2.3.0</version></project>");
+    fs.writeFileSync(path.join(dir, ".api2apifox.json"), JSON.stringify({ openapiInfoVersion: "3.0.0" }));
+    const fileResult = run(["export", "--project", dir, "--include", "**/*.java", "--stdout"]);
+    assert.equal(fileResult.status, 0, fileResult.stderr);
+    assert.equal(JSON.parse(fileResult.stdout).info.version, "3.0.0");
+    const cliResult = run(["export", "--project", dir, "--include", "**/*.java", "--stdout", "--openapi-version", "4.1.0"]);
+    assert.equal(cliResult.status, 0, cliResult.stderr);
+    assert.equal(JSON.parse(cliResult.stdout).info.version, "4.1.0");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--openapi-version 空值时报参数错误(exit 2)", () => {
+  const result = run(["export", "--project", SAMPLE, "--stdout", "--openapi-version", "  "]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--openapi-version 不能为空/);
+});
+
+test("export:pom.xml 畸形时静默回退 1.0.0", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api2apifox-ver-badpom-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "A.java"),
+      'import org.springframework.web.bind.annotation.*; @RestController public class A { @GetMapping("/x") public String x() {return null;} }'
+    );
+    fs.writeFileSync(path.join(dir, "pom.xml"), "<project><version>${revision}</version></project>");
+    const result = run(["export", "--project", dir, "--include", "**/*.java", "--stdout"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).info.version, "1.0.0");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
