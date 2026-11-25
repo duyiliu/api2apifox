@@ -71,6 +71,17 @@ export class SyncResultPanel {
               await vscode.env.openExternal(vscode.Uri.parse(this._pending.projectUrl));
             }
             break;
+          case "openUrl": {
+            // 只放行报告里真实出现过的 http(s) 链接,避免 webview 侧构造任意地址
+            const url = typeof message.url === "string" ? message.url : "";
+            const known = (this._pending?.endpoints ?? []).some(
+              (row) => row.apifoxUrl === url || row.mockUrl === url
+            );
+            if (known && /^https?:\/\//i.test(url)) {
+              await vscode.env.openExternal(vscode.Uri.parse(url));
+            }
+            break;
+          }
           case "openSource": {
             const fsPath = typeof message.fsPath === "string" ? message.fsPath : "";
             if (!fsPath) {
@@ -356,12 +367,14 @@ export class SyncResultPanel {
           <th class="sortable" data-key="path" tabindex="0" role="button">路径</th>
           <th class="sortable" data-key="folder" tabindex="0" role="button">目录</th>
           <th class="sortable" data-key="file" tabindex="0" role="button">源文件</th>
+          <th>Apifox 接口</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table></div>
     <div class="empty hidden" id="endpointEmpty">没有接口。</div>
     <div class="empty hidden" id="endpointFilteredEmpty">没有匹配的接口。</div>
+    <p class="empty hidden" id="endpointLinkNote"></p>
   </div>
 
   <script nonce="${nonce}">
@@ -493,6 +506,24 @@ export class SyncResultPanel {
         file.appendChild(source);
         tr.appendChild(file);
 
+        const apifox = document.createElement("td");
+        const addLink = (text, url) => {
+          const link = document.createElement("button");
+          link.type = "button";
+          link.className = "source-link";
+          link.textContent = text;
+          link.title = url;
+          link.addEventListener("click", () => vscode.postMessage({ command: "openUrl", url: url }));
+          apifox.appendChild(link);
+        };
+        if (row.apifoxUrl) { addLink(row.degraded ? "项目页（降级）" : "接口文档", row.apifoxUrl); }
+        if (row.mockUrl) {
+          if (row.apifoxUrl) { apifox.appendChild(document.createTextNode(" · ")); }
+          addLink("Mock 地址", row.mockUrl);
+        }
+        if (!row.apifoxUrl && !row.mockUrl) { apifox.textContent = "—"; apifox.className = "muted"; }
+        tr.appendChild(apifox);
+
         tbody.appendChild(tr);
       }
 
@@ -534,6 +565,11 @@ export class SyncResultPanel {
       setText("metaTime", report.finishedAt);
       setText("metaConflict", report.conflict);
       el("btnOpenProject").classList.toggle("hidden", !report.projectUrl);
+      // 降级原因显式展示:否则整表只是项目页,会被误以为逐条可点
+      const linkInfo = report.endpointLinks || {};
+      const note = el("endpointLinkNote");
+      note.textContent = linkInfo.reason || "";
+      note.classList.toggle("hidden", !linkInfo.reason);
       renderResultBanner();
       renderSummary();
       renderEndpoints();
@@ -549,11 +585,16 @@ export class SyncResultPanel {
     }
 
     function endpointTsv() {
-      const lines = ["接口名称\t方法\t路径\t目录\t源文件"];
+      const lines = ["接口名称\t方法\t路径\t目录\t源文件\tApifox 接口\tMock 地址"];
       for (const row of visibleEndpoints()) {
-        lines.push([row.name, row.method, row.path, row.folder, row.file].join("\t"));
+        lines.push([row.name, row.method, row.path, row.folder, row.file, linkText(row), row.mockUrl || ""].join("\t"));
       }
       return lines.join("\\n");
+    }
+
+    // 降级行必须带标注,否则复制出去的项目页会被当成接口文档页
+    function linkText(row) {
+      return row.apifoxUrl ? row.apifoxUrl + (row.degraded ? "（项目页，降级）" : "") : "";
     }
 
     // 表格单元格转义:接口名/路径含 | 或换行会破坏 Markdown 表结构
@@ -569,9 +610,14 @@ export class SyncResultPanel {
       for (const row of report.summary) {
         lines.push("| " + mdCell(row.category) + " | " + row.created + " | " + row.updated + " | " + row.ignored + " | " + row.failed + " | " + row.total + " |");
       }
-      lines.push("", "| 接口名称 | 方法 | 路径 | 目录 |", "| --- | --- | --- | --- |");
+      const reason = (report.endpointLinks || {}).reason;
+      if (reason) { lines.push("", "> 链接说明：" + reason); }
+      lines.push("", "| 接口名称 | 方法 | 路径 | 目录 | Apifox 接口 | Mock 地址 |", "| --- | --- | --- | --- | --- | --- |");
       for (const row of visibleEndpoints()) {
-        lines.push("| " + mdCell(row.name) + " | " + mdCell(row.method) + " | " + mdCell(row.path) + " | " + mdCell(row.folder) + " |");
+        lines.push(
+          "| " + mdCell(row.name) + " | " + mdCell(row.method) + " | " + mdCell(row.path) + " | " +
+            mdCell(row.folder) + " | " + mdCell(linkText(row)) + " | " + mdCell(row.mockUrl) + " |"
+        );
       }
       if ((report.errors || []).length) {
         lines.push("", "**错误**");

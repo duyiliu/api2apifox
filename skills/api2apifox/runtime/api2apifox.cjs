@@ -30171,15 +30171,16 @@ var ApifoxClient = class {
    * 文档:https://apifox-openapi.apifox.cn 「导入 OpenAPI/Swagger 格式数据」
    */
   async importOpenapi(projectId, openapiJson, options = {}) {
-    const body = await this.request(
-      "POST",
-      `/v1/projects/${projectId}/import-openapi`,
-      { input: openapiJson, options }
-    );
-    return {
+    const body = await this.request("POST", `/v1/projects/${projectId}/import-openapi`, { input: openapiJson, options });
+    const result = {
       counters: body?.counters ?? {},
       errors: body?.errors ?? []
     };
+    const endpoints = extractImportEndpoints(body?.endpoints);
+    if (endpoints.length) {
+      result.endpoints = endpoints;
+    }
+    return result;
   }
   async request(method, path8, json) {
     const url = this.baseUrl.replace(/\/+$/, "") + path8;
@@ -30227,7 +30228,11 @@ var ApifoxClient = class {
     if (payload && typeof payload.code === "number" && payload.code !== 0) {
       throw new ApifoxApiError(humanizeError(res.status, payload), res.status);
     }
-    return payload?.data ?? payload;
+    const unwrapped = payload?.data ?? payload;
+    const outer = payload?.endpoints;
+    const obj = typeof unwrapped === "object" && unwrapped !== null && !Array.isArray(unwrapped);
+    if (!outer || !obj || unwrapped.endpoints !== void 0) return unwrapped;
+    return { ...unwrapped, endpoints: outer };
   }
 };
 function combineAbortSignals(signals) {
@@ -30278,6 +30283,89 @@ function humanizeError(status, payload) {
 function extractList(body, valid) {
   const arr = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : [];
   return arr.filter(valid);
+}
+function readString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function readId(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : void 0;
+}
+function extractImportEndpoints(body) {
+  const holder = body;
+  const arr = (Array.isArray(body) ? body : void 0) ?? (Array.isArray(holder?.items) ? holder?.items : void 0) ?? (Array.isArray(holder?.endpoints) ? holder?.endpoints : void 0) ?? [];
+  const items = [];
+  for (const raw of arr) {
+    if (!isRecord2(raw)) continue;
+    const id = readId(raw.id) ?? readId(raw.endpointId);
+    const method = readString(raw.method)?.toUpperCase();
+    const path8 = readString(raw.path);
+    const operationId = readString(raw.operationId) ?? readString(raw.operationID);
+    const url = readString(raw.url) ?? readString(raw.apifoxUrl);
+    const mockUrl = readString(raw.mockUrl) ?? readString(raw.mockURL);
+    if (id === void 0 && !method && !path8 && !operationId && !url) continue;
+    items.push({ id, method, path: path8, operationId, url, mockUrl });
+  }
+  return items;
+}
+var ENDPOINT_LINK_NO_MAPPING_REASON = "\u65E0\u6CD5\u628A\u63A5\u53E3\u5BF9\u5E94\u5230 Apifox \u63A5\u53E3 ID \u4E0E\u6587\u6863\u5730\u5740\uFF0C\u4E0D\u80FD\u9010\u6761\u751F\u6210\u63A5\u53E3\u94FE\u63A5";
+var ENDPOINT_LINK_NO_PROJECT_REASON = "\u79C1\u6709\u5316\u90E8\u7F72\u65E0\u6CD5\u63A8\u5BFC\u9879\u76EE\u9875\uFF1A\u8FD9\u4E9B\u63A5\u53E3\u6CA1\u6709\u53EF\u7528\u7684\u63A5\u53E3\u6587\u6863\u9875\u94FE\u63A5\uFF1B\u5DF2\u53D6\u5F97\u7684\u63A5\u53E3\u5730\u5740\u4E0E Mock \u5730\u5740\u4ECD\u4F1A\u4FDD\u7559";
+var ENDPOINT_LINK_PRIVATE_DEPLOY_REASON = "apiBaseUrl \u4E0D\u662F\u516C\u7F51 Apifox \u57DF\u540D\uFF08\u79C1\u6709\u5316\u90E8\u7F72\uFF09\uFF0C\u65E0\u6CD5\u63A8\u5BFC\u63A5\u53E3\u6587\u6863\u9875\u5730\u5740";
+var ENDPOINT_LINK_AMBIGUOUS_REASON = "Apifox \u56DE\u4F20\u7684\u63A5\u53E3\u8DEF\u7531\u6620\u5C04\u5B58\u5728\u91CD\u590D\u6216\u6B67\u4E49\uFF0C\u5DF2\u8DF3\u8FC7\u8FD9\u4E9B\u63A5\u53E3\u7684\u63A5\u53E3\u7EA7\u6587\u6863\u94FE\u63A5";
+var ENDPOINT_LINK_DRY_RUN_REASON = "dry-run \u9884\u68C0\u672A\u5199\u5165 Apifox\uFF0C\u4E0D\u751F\u6210\u63A5\u53E3\u94FE\u63A5";
+function projectWebUrl(apiBaseUrl, projectId) {
+  if (!(projectId > 0)) return void 0;
+  try {
+    const host = new URL(apiBaseUrl).hostname.toLowerCase();
+    return ["api.apifox.com", "apifox.com", "www.apifox.com"].includes(host) ? `https://app.apifox.com/project/${projectId}` : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function routeKey(method, path8) {
+  const trimmed = path8.trim();
+  return `${method.trim().toUpperCase()} ${trimmed.length > 1 ? trimmed.replace(/\/+$/, "") : trimmed}`;
+}
+function matchImported(endpoint, imported, duplicateOperationIds) {
+  const key = routeKey(endpoint.method, endpoint.path);
+  const byRoute = imported.filter((item) => item.method && item.path && routeKey(item.method, item.path) === key);
+  if (byRoute.length) return byRoute.length > 1 ? "ambiguous" : byRoute[0];
+  if (duplicateOperationIds.has(endpoint.operationId)) return void 0;
+  const byOperationId = imported.filter((item) => !item.method && !item.path && item.operationId === endpoint.operationId);
+  return byOperationId.length > 1 ? "ambiguous" : byOperationId[0];
+}
+function buildEndpointLinks(input) {
+  const baseUrl = (input.apiBaseUrl ?? "").trim();
+  const projectUrl = projectWebUrl(baseUrl, input.projectId);
+  const imported = input.imported ?? [];
+  const counts = /* @__PURE__ */ new Map();
+  for (const endpoint of input.endpoints) {
+    counts.set(endpoint.operationId, (counts.get(endpoint.operationId) ?? 0) + 1);
+  }
+  const duplicateOperationIds = new Set([...counts].filter(([, n]) => n > 1).map(([id]) => id));
+  const causes = [];
+  let resolved = 0;
+  const links = input.endpoints.map((endpoint) => {
+    const match = imported.length ? matchImported(endpoint, imported, duplicateOperationIds) : void 0;
+    const entry = match === "ambiguous" ? void 0 : match;
+    const endpointId = entry?.id && entry.id > 0 ? entry.id : void 0;
+    const url = entry?.url ?? (endpointId && projectUrl ? `${projectUrl}/apis/api-${endpointId}` : void 0);
+    if (url) resolved++;
+    const link = {
+      name: endpoint.summary?.trim() || endpoint.operationId,
+      method: endpoint.method,
+      path: endpoint.path,
+      ...url ? { apifoxUrl: url } : projectUrl ? { apifoxUrl: projectUrl, degraded: true } : {},
+      ...endpointId ? { apifoxEndpointId: endpointId } : {},
+      ...entry?.mockUrl ? { mockUrl: entry.mockUrl } : {}
+    };
+    const cause = url ? void 0 : match === "ambiguous" ? ENDPOINT_LINK_AMBIGUOUS_REASON : endpointId ? ENDPOINT_LINK_PRIVATE_DEPLOY_REASON : projectUrl ? ENDPOINT_LINK_NO_MAPPING_REASON : ENDPOINT_LINK_NO_PROJECT_REASON;
+    if (cause && !causes.includes(cause)) causes.push(cause);
+    return link;
+  });
+  if (!links.length) {
+    return { mode: "project", links };
+  }
+  return resolved === links.length ? { mode: "per-endpoint", links } : { mode: resolved ? "partial" : "project", reason: causes.join("\uFF1B"), links };
 }
 var MAX_ERROR_DEPTH = 6;
 function isRecord2(value) {
@@ -30356,10 +30444,12 @@ async function syncProject(request) {
     target: { projectId: config.projectId, apiBaseUrl: config.apiBaseUrl },
     scope: { type: request.scopeType ?? "workspace", endpointCount: analyzed.endpoints.length },
     counters: {},
-    errors: []
+    errors: [],
+    endpoints: [],
+    endpointLinks: { mode: "project" }
   };
   if (request.dryRun || !analyzed.endpoints.length) {
-    return base;
+    return { ...base, ...endpointIndex(config, analyzed, [], base.dryRun) };
   }
   const client = new ApifoxClient(config.apiBaseUrl, request.token, void 0, config.timeoutMs, request.signal);
   const imported = await client.importOpenapi(config.projectId, JSON.stringify(analyzed.spec), {
@@ -30369,7 +30459,32 @@ async function syncProject(request) {
     deleteUnmatchedResources: false,
     updateFolderOfChangedEndpoint: config.updateFolderOfChangedEndpoint
   });
-  return { ...base, counters: imported.counters, errors: imported.errors };
+  return {
+    ...base,
+    counters: imported.counters,
+    errors: imported.errors,
+    ...endpointIndex(config, analyzed, imported.endpoints ?? [], base.dryRun)
+  };
+}
+function endpointIndex(config, analyzed, imported, dryRun) {
+  if (dryRun) {
+    return {
+      endpoints: analyzed.endpoints.map((endpoint) => ({
+        name: endpoint.summary?.trim() || endpoint.operationId,
+        method: endpoint.method,
+        path: endpoint.path
+      })),
+      endpointLinks: { mode: "project", reason: ENDPOINT_LINK_DRY_RUN_REASON }
+    };
+  }
+  const links = buildEndpointLinks({
+    endpoints: analyzed.endpoints,
+    imported,
+    apiBaseUrl: config.apiBaseUrl,
+    projectId: config.projectId
+  });
+  const { mode, reason } = links;
+  return { endpoints: links.links, endpointLinks: reason ? { mode, reason } : { mode } };
 }
 function hasImportFailures(result) {
   if (result.errors.length > 0) {
@@ -30616,31 +30731,31 @@ function relativePath(file, root2) {
   }
   return normalized.startsWith(root2 + "/") ? normalized.slice(root2.length + 1) : normalized;
 }
-function projectWebUrl(apiBaseUrl, projectId) {
-  if (!(projectId > 0)) {
-    return void 0;
-  }
-  try {
-    const host = new URL(apiBaseUrl).hostname.toLowerCase();
-    if (host === "api.apifox.com" || host === "apifox.com" || host === "www.apifox.com") {
-      return `https://app.apifox.com/project/${projectId}`;
-    }
-  } catch {
-  }
-  return void 0;
-}
 function buildSyncReport(input) {
   const root2 = (input.workspaceRoot ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
-  const endpoints = input.endpoints.map((ep) => ({
-    name: ep.summary?.trim() || ep.operationId,
-    method: ep.method,
-    path: ep.path,
-    folder: input.folderOf(ep),
-    controller: ep.controller,
-    file: relativePath(ep.fsPath, root2),
-    fsPath: ep.fsPath,
-    startOffset: ep.methodRange?.startOffset
-  }));
+  const endpointLinks = input.resolvedLinks ?? buildEndpointLinks({
+    endpoints: input.endpoints,
+    imported: input.importedEndpoints,
+    apiBaseUrl: input.apiBaseUrl ?? "",
+    projectId: input.projectId
+  });
+  const endpoints = input.endpoints.map((ep, index) => {
+    const link = endpointLinks.links[index];
+    return {
+      name: ep.summary?.trim() || ep.operationId,
+      method: ep.method,
+      path: ep.path,
+      folder: input.folderOf(ep),
+      controller: ep.controller,
+      file: relativePath(ep.fsPath, root2),
+      fsPath: ep.fsPath,
+      startOffset: ep.methodRange?.startOffset,
+      ...link?.apifoxUrl ? { apifoxUrl: link.apifoxUrl } : {},
+      ...link?.degraded ? { degraded: true } : {},
+      ...link?.apifoxEndpointId ? { apifoxEndpointId: link.apifoxEndpointId } : {},
+      ...link?.mockUrl ? { mockUrl: link.mockUrl } : {}
+    };
+  });
   return {
     projectId: input.projectId,
     projectUrl: input.projectUrl,
@@ -30651,6 +30766,7 @@ function buildSyncReport(input) {
       input.schemaConflictBehavior
     )}`,
     summary: toSummaryRows(input.counters),
+    endpointLinks: { mode: endpointLinks.mode, ...endpointLinks.reason ? { reason: endpointLinks.reason } : {} },
     endpoints,
     errors: input.errors.map((e) => e.message || e.code || "\u672A\u77E5\u9519\u8BEF"),
     warnings: [...input.warnings]
@@ -30681,6 +30797,14 @@ function buildCliSyncReport(input) {
     errors: synced.errors,
     warnings: analyzed.warnings,
     endpoints: analyzed.endpoints,
+    // 逐接口索引已在 syncProject 里算好（含降级标记与原因），这里原样交给报告模型，
+    // 不重算也不过滤：过滤掉降级行再重算会把"部分降级"误报成"全部逐条可用"。
+    resolvedLinks: {
+      mode: synced.endpointLinks?.mode ?? "project",
+      ...synced.endpointLinks?.reason ? { reason: synced.endpointLinks.reason } : {},
+      links: synced.endpoints ?? []
+    },
+    apiBaseUrl: synced.target.apiBaseUrl,
     target: `Apifox \u9879\u76EE\uFF08ID: ${synced.target.projectId}\uFF09`,
     projectId: synced.target.projectId,
     projectUrl: projectWebUrl(synced.target.apiBaseUrl, synced.target.projectId),
@@ -30843,12 +30967,14 @@ function renderReportHtml(report) {
           <th class="sortable" data-key="path" tabindex="0">\u8DEF\u5F84</th>
           <th class="sortable" data-key="folder" tabindex="0">\u76EE\u5F55</th>
           <th class="sortable" data-key="file" tabindex="0">\u6E90\u6587\u4EF6</th>
+          <th>Apifox \u63A5\u53E3</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table></div>
     <div class="empty hidden" id="endpointEmpty">\u6CA1\u6709\u63A5\u53E3\u3002</div>
     <div class="empty hidden" id="endpointFilteredEmpty">\u6CA1\u6709\u5339\u914D\u7684\u63A5\u53E3\u3002</div>
+    <p class="empty hidden" id="endpointLinkNote"></p>
   </div>
 
   <footer class="footer">\u7531 api2apifox CLI \u751F\u6210 \xB7 \u8BA1\u6570\u6765\u81EA Apifox \u5BFC\u5165\u7ED3\u679C\uFF0C\u9010\u63A5\u53E3\u72B6\u6001 Apifox \u4E0D\u8FD4\u56DE</footer>
@@ -30973,7 +31099,31 @@ function renderReportHtml(report) {
       file.textContent = row.file;
       tr.appendChild(file);
 
+      tr.appendChild(linkCell(row));
       tbody.appendChild(tr);
+    }
+
+    // \u9010\u63A5\u53E3\u94FE\u63A5:\u53EA\u6709 http(s) \u624D\u6210\u4E3A\u53EF\u70B9\u94FE\u63A5(\u6570\u636E\u6765\u81EA JSON \u8F7D\u8377,\u4E0D\u62FC\u6807\u7B7E)
+    function linkCell(row) {
+      var td = document.createElement("td");
+      function addLink(text, url) {
+        var a = document.createElement("a");
+        a.textContent = text;
+        a.title = String(url);
+        if (/^https?:\\/\\//i.test(String(url))) {
+          a.href = String(url);
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+        }
+        td.appendChild(a);
+      }
+      if (row.apifoxUrl) { addLink(row.degraded ? "\u9879\u76EE\u9875\uFF08\u964D\u7EA7\uFF09" : "\u63A5\u53E3\u6587\u6863", row.apifoxUrl); }
+      if (row.mockUrl) {
+        if (row.apifoxUrl) { td.appendChild(document.createTextNode(" \xB7 ")); }
+        addLink("Mock \u5730\u5740", row.mockUrl);
+      }
+      if (!row.apifoxUrl && !row.mockUrl) { td.textContent = "\u2014"; td.className = "muted"; }
+      return td;
     }
 
     var headers = document.querySelectorAll("#endpointTable th.sortable");
@@ -31016,6 +31166,11 @@ function renderReportHtml(report) {
     setText("metaScope", REPORT.scope);
     setText("metaTime", REPORT.finishedAt);
     setText("metaConflict", REPORT.conflict);
+    // \u964D\u7EA7\u539F\u56E0\u5FC5\u987B\u663E\u5F0F\u53EF\u89C1:\u5426\u5219\u9879\u76EE\u9875\u4F1A\u88AB\u8BEF\u5F53\u6210\u9010\u63A5\u53E3\u6587\u6863\u9875
+    var linkInfo = REPORT.endpointLinks || {};
+    var note = el("endpointLinkNote");
+    note.textContent = linkInfo.reason || "";
+    note.classList.toggle("hidden", !linkInfo.reason);
     renderResultBanner();
     renderSummary();
     renderEndpoints();
@@ -31033,12 +31188,18 @@ function renderReportHtml(report) {
   }
 
   function endpointTsv() {
-    var lines = ["\u63A5\u53E3\u540D\u79F0\\t\u65B9\u6CD5\\t\u8DEF\u5F84\\t\u76EE\u5F55\\t\u6E90\u6587\u4EF6"];
+    var lines = ["\u63A5\u53E3\u540D\u79F0\\t\u65B9\u6CD5\\t\u8DEF\u5F84\\t\u76EE\u5F55\\t\u6E90\u6587\u4EF6\\tApifox \u63A5\u53E3\\tMock \u5730\u5740"];
     var rows = visibleEndpoints();
     for (var i = 0; i < rows.length; i++) {
-      lines.push([rows[i].name, rows[i].method, rows[i].path, rows[i].folder, rows[i].file].join("\\t"));
+      lines.push([rows[i].name, rows[i].method, rows[i].path, rows[i].folder, rows[i].file, linkText(rows[i]), rows[i].mockUrl || ""].join("\\t"));
     }
     return lines.join("\\n");
+  }
+
+  // \u964D\u7EA7\u884C\u5FC5\u987B\u5E26\u8BF4\u660E:\u5426\u5219\u590D\u5236\u51FA\u53BB\u7684\u9879\u76EE\u9875\u4F1A\u88AB\u5F53\u6210\u63A5\u53E3\u6587\u6863\u9875
+  function linkText(row) {
+    if (!row.apifoxUrl) { return ""; }
+    return row.degraded ? row.apifoxUrl + "\uFF08\u9879\u76EE\u9875\uFF0C\u964D\u7EA7\uFF09" : row.apifoxUrl;
   }
 
   // \u8868\u683C\u5355\u5143\u683C\u8F6C\u4E49:\u63A5\u53E3\u540D/\u8DEF\u5F84\u542B | \u6216\u6362\u884C\u4F1A\u7834\u574F Markdown \u8868\u7ED3\u6784
@@ -31054,10 +31215,13 @@ function renderReportHtml(report) {
     for (var i = 0; i < rows.length; i++) {
       lines.push("| " + mdCell(rows[i].category) + " | " + rows[i].created + " | " + rows[i].updated + " | " + rows[i].ignored + " | " + rows[i].failed + " | " + rows[i].total + " |");
     }
-    lines.push("", "| \u63A5\u53E3\u540D\u79F0 | \u65B9\u6CD5 | \u8DEF\u5F84 | \u76EE\u5F55 |", "| --- | --- | --- | --- |");
+    if ((REPORT.endpointLinks || {}).reason) {
+      lines.push("", "> \u94FE\u63A5\u8BF4\u660E\uFF1A" + REPORT.endpointLinks.reason);
+    }
+    lines.push("", "| \u63A5\u53E3\u540D\u79F0 | \u65B9\u6CD5 | \u8DEF\u5F84 | \u76EE\u5F55 | Apifox \u63A5\u53E3 | Mock \u5730\u5740 |", "| --- | --- | --- | --- | --- | --- |");
     var endpoints = visibleEndpoints();
     for (var j = 0; j < endpoints.length; j++) {
-      lines.push("| " + mdCell(endpoints[j].name) + " | " + mdCell(endpoints[j].method) + " | " + mdCell(endpoints[j].path) + " | " + mdCell(endpoints[j].folder) + " |");
+      lines.push("| " + mdCell(endpoints[j].name) + " | " + mdCell(endpoints[j].method) + " | " + mdCell(endpoints[j].path) + " | " + mdCell(endpoints[j].folder) + " | " + mdCell(linkText(endpoints[j])) + " | " + mdCell(endpoints[j].mockUrl) + " |");
     }
     var errors = REPORT.errors || [];
     if (errors.length) {

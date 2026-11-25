@@ -1,3 +1,4 @@
+import { buildEndpointLinks, EndpointLinks, ImportEndpointResult, projectWebUrl } from "../apifox/client";
 import { EndpointInfo } from "../java/model";
 import { conflictBehaviorLabel } from "./syncPreflight";
 
@@ -34,6 +35,18 @@ export interface SyncEndpointRow {
   fsPath: string;
   /** 方法起始偏移，缺失时打开文件但不定位。 */
   startOffset?: number;
+  /** 接口文档页；无接口级依据时为项目页（degraded=true），都推导不出时不出现 */
+  apifoxUrl?: string;
+  degraded?: boolean;
+  apifoxEndpointId?: number;
+  /** Apifox 回传的 Mock 地址；未回传时不出现（不猜测拼装） */
+  mockUrl?: string;
+}
+
+/** 链接口径；reason 在 partial 时也可能出现 */
+export interface SyncEndpointLinkSummary {
+  mode: EndpointLinks["mode"];
+  reason?: string;
 }
 
 /** 一次同步的结果快照，用于结果面板/通知展示 */
@@ -51,6 +64,7 @@ export interface SyncReport {
   /** 冲突策略说明，用于解释“忽略”计数从何而来 */
   conflict: string;
   summary: SyncSummaryRow[];
+  endpointLinks: SyncEndpointLinkSummary;
   endpoints: SyncEndpointRow[];
   errors: string[];
   warnings: string[];
@@ -65,6 +79,12 @@ export interface BuildSyncReportInput {
   projectId: number;
   /** 项目 Web 跳转地址(由调用方按 apiBaseUrl 推导,见 projectWebUrl) */
   projectUrl?: string;
+  /** 项目 API 地址(推导接口级链接用) */
+  apiBaseUrl?: string;
+  /** Apifox 导入响应回传的逐接口映射（官方当前不返回，缺省即降级） */
+  importedEndpoints?: ImportEndpointResult[];
+  /** 已算好的逐接口索引（CLI 的 syncProject 结果）；传了就直接用 */
+  resolvedLinks?: EndpointLinks;
   scope: string;
   endpointConflictBehavior: string;
   schemaConflictBehavior: string;
@@ -125,37 +145,36 @@ function relativePath(file: string, root: string): string {
   return normalized.startsWith(root + "/") ? normalized.slice(root.length + 1) : normalized;
 }
 
-/**
- * 公网 Apifox 的项目 Web 控制台地址。
- * 私有化部署(apiBaseUrl 非官方域名)无法推导,返回 undefined,面板据此隐藏跳转按钮。
- */
-export function projectWebUrl(apiBaseUrl: string, projectId: number): string | undefined {
-  if (!(projectId > 0)) {
-    return undefined;
-  }
-  try {
-    const host = new URL(apiBaseUrl).hostname.toLowerCase();
-    if (host === "api.apifox.com" || host === "apifox.com" || host === "www.apifox.com") {
-      return `https://app.apifox.com/project/${projectId}`;
-    }
-  } catch {
-    // 非法 URL 由上游配置校验拦截,这里按无法推导处理
-  }
-  return undefined;
-}
+/** 公网 Apifox 项目页地址；实现与接口级链接同源于 apifox/client */
+export { projectWebUrl };
 
 export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
   const root = (input.workspaceRoot ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
-  const endpoints: SyncEndpointRow[] = input.endpoints.map((ep) => ({
-    name: ep.summary?.trim() || ep.operationId,
-    method: ep.method,
-    path: ep.path,
-    folder: input.folderOf(ep),
-    controller: ep.controller,
-    file: relativePath(ep.fsPath, root),
-    fsPath: ep.fsPath,
-    startOffset: ep.methodRange?.startOffset,
-  }));
+  const endpointLinks =
+    input.resolvedLinks ??
+    buildEndpointLinks({
+      endpoints: input.endpoints,
+      imported: input.importedEndpoints,
+      apiBaseUrl: input.apiBaseUrl ?? "",
+      projectId: input.projectId,
+    });
+  const endpoints: SyncEndpointRow[] = input.endpoints.map((ep, index) => {
+    const link = endpointLinks.links[index];
+    return {
+      name: ep.summary?.trim() || ep.operationId,
+      method: ep.method,
+      path: ep.path,
+      folder: input.folderOf(ep),
+      controller: ep.controller,
+      file: relativePath(ep.fsPath, root),
+      fsPath: ep.fsPath,
+      startOffset: ep.methodRange?.startOffset,
+      ...(link?.apifoxUrl ? { apifoxUrl: link.apifoxUrl } : {}),
+      ...(link?.degraded ? { degraded: true } : {}),
+      ...(link?.apifoxEndpointId ? { apifoxEndpointId: link.apifoxEndpointId } : {}),
+      ...(link?.mockUrl ? { mockUrl: link.mockUrl } : {}),
+    };
+  });
 
   return {
     projectId: input.projectId,
@@ -167,6 +186,7 @@ export function buildSyncReport(input: BuildSyncReportInput): SyncReport {
       input.schemaConflictBehavior
     )}`,
     summary: toSummaryRows(input.counters),
+    endpointLinks: { mode: endpointLinks.mode, ...(endpointLinks.reason ? { reason: endpointLinks.reason } : {}) },
     endpoints,
     errors: input.errors.map((e) => e.message || e.code || "未知错误"),
     warnings: [...input.warnings],

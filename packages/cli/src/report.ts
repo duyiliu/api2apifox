@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ResolvedConfigResult } from "../../../src/core/types";
-import { ProjectAnalysisResult, SyncResult } from "../../../src/core/types";
+import { ProjectAnalysisResult } from "../../../src/core/types";
+import { SyncProjectResult } from "../../../src/core/syncService";
 import { EndpointInfo } from "../../../src/java/model";
 import { buildSyncReport, projectWebUrl, SyncReport } from "../../../src/ui/syncResult";
 
@@ -19,7 +20,7 @@ export function folderOfEndpoint(endpoint: EndpointInfo, resolved: ResolvedConfi
   return resolved.config.rootFolderName.trim() ? `${resolved.config.rootFolderName.trim()}/${key}` : key;
 }
 
-function scopeLabel(type: SyncResult["scope"]["type"]): string {
+function scopeLabel(type: SyncProjectResult["scope"]["type"]): string {
   switch (type) {
     case "workspace":
       return "整个项目";
@@ -34,7 +35,7 @@ function scopeLabel(type: SyncResult["scope"]["type"]): string {
 
 /** 一次 CLI 同步 → 结果报告(计数来自 Apifox 导入返回,不做逐接口状态推断)。 */
 export function buildCliSyncReport(input: {
-  synced: SyncResult;
+  synced: SyncProjectResult;
   analyzed: ProjectAnalysisResult;
   resolved: ResolvedConfigResult;
 }): SyncReport {
@@ -44,6 +45,14 @@ export function buildCliSyncReport(input: {
     errors: synced.errors,
     warnings: analyzed.warnings,
     endpoints: analyzed.endpoints,
+    // 逐接口索引已在 syncProject 里算好（含降级标记与原因），这里原样交给报告模型，
+    // 不重算也不过滤：过滤掉降级行再重算会把"部分降级"误报成"全部逐条可用"。
+    resolvedLinks: {
+      mode: synced.endpointLinks?.mode ?? "project",
+      ...(synced.endpointLinks?.reason ? { reason: synced.endpointLinks.reason } : {}),
+      links: synced.endpoints ?? [],
+    },
+    apiBaseUrl: synced.target.apiBaseUrl,
     target: `Apifox 项目（ID: ${synced.target.projectId}）`,
     projectId: synced.target.projectId,
     projectUrl: projectWebUrl(synced.target.apiBaseUrl, synced.target.projectId),
@@ -211,12 +220,14 @@ export function renderReportHtml(report: SyncReport): string {
           <th class="sortable" data-key="path" tabindex="0">路径</th>
           <th class="sortable" data-key="folder" tabindex="0">目录</th>
           <th class="sortable" data-key="file" tabindex="0">源文件</th>
+          <th>Apifox 接口</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table></div>
     <div class="empty hidden" id="endpointEmpty">没有接口。</div>
     <div class="empty hidden" id="endpointFilteredEmpty">没有匹配的接口。</div>
+    <p class="empty hidden" id="endpointLinkNote"></p>
   </div>
 
   <footer class="footer">由 api2apifox CLI 生成 · 计数来自 Apifox 导入结果，逐接口状态 Apifox 不返回</footer>
@@ -341,7 +352,31 @@ export function renderReportHtml(report: SyncReport): string {
       file.textContent = row.file;
       tr.appendChild(file);
 
+      tr.appendChild(linkCell(row));
       tbody.appendChild(tr);
+    }
+
+    // 逐接口链接:只有 http(s) 才成为可点链接(数据来自 JSON 载荷,不拼标签)
+    function linkCell(row) {
+      var td = document.createElement("td");
+      function addLink(text, url) {
+        var a = document.createElement("a");
+        a.textContent = text;
+        a.title = String(url);
+        if (/^https?:\\/\\//i.test(String(url))) {
+          a.href = String(url);
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+        }
+        td.appendChild(a);
+      }
+      if (row.apifoxUrl) { addLink(row.degraded ? "项目页（降级）" : "接口文档", row.apifoxUrl); }
+      if (row.mockUrl) {
+        if (row.apifoxUrl) { td.appendChild(document.createTextNode(" · ")); }
+        addLink("Mock 地址", row.mockUrl);
+      }
+      if (!row.apifoxUrl && !row.mockUrl) { td.textContent = "—"; td.className = "muted"; }
+      return td;
     }
 
     var headers = document.querySelectorAll("#endpointTable th.sortable");
@@ -384,6 +419,11 @@ export function renderReportHtml(report: SyncReport): string {
     setText("metaScope", REPORT.scope);
     setText("metaTime", REPORT.finishedAt);
     setText("metaConflict", REPORT.conflict);
+    // 降级原因必须显式可见:否则项目页会被误当成逐接口文档页
+    var linkInfo = REPORT.endpointLinks || {};
+    var note = el("endpointLinkNote");
+    note.textContent = linkInfo.reason || "";
+    note.classList.toggle("hidden", !linkInfo.reason);
     renderResultBanner();
     renderSummary();
     renderEndpoints();
@@ -401,12 +441,18 @@ export function renderReportHtml(report: SyncReport): string {
   }
 
   function endpointTsv() {
-    var lines = ["接口名称\\t方法\\t路径\\t目录\\t源文件"];
+    var lines = ["接口名称\\t方法\\t路径\\t目录\\t源文件\\tApifox 接口\\tMock 地址"];
     var rows = visibleEndpoints();
     for (var i = 0; i < rows.length; i++) {
-      lines.push([rows[i].name, rows[i].method, rows[i].path, rows[i].folder, rows[i].file].join("\\t"));
+      lines.push([rows[i].name, rows[i].method, rows[i].path, rows[i].folder, rows[i].file, linkText(rows[i]), rows[i].mockUrl || ""].join("\\t"));
     }
     return lines.join("\\n");
+  }
+
+  // 降级行必须带说明:否则复制出去的项目页会被当成接口文档页
+  function linkText(row) {
+    if (!row.apifoxUrl) { return ""; }
+    return row.degraded ? row.apifoxUrl + "（项目页，降级）" : row.apifoxUrl;
   }
 
   // 表格单元格转义:接口名/路径含 | 或换行会破坏 Markdown 表结构
@@ -422,10 +468,13 @@ export function renderReportHtml(report: SyncReport): string {
     for (var i = 0; i < rows.length; i++) {
       lines.push("| " + mdCell(rows[i].category) + " | " + rows[i].created + " | " + rows[i].updated + " | " + rows[i].ignored + " | " + rows[i].failed + " | " + rows[i].total + " |");
     }
-    lines.push("", "| 接口名称 | 方法 | 路径 | 目录 |", "| --- | --- | --- | --- |");
+    if ((REPORT.endpointLinks || {}).reason) {
+      lines.push("", "> 链接说明：" + REPORT.endpointLinks.reason);
+    }
+    lines.push("", "| 接口名称 | 方法 | 路径 | 目录 | Apifox 接口 | Mock 地址 |", "| --- | --- | --- | --- | --- | --- |");
     var endpoints = visibleEndpoints();
     for (var j = 0; j < endpoints.length; j++) {
-      lines.push("| " + mdCell(endpoints[j].name) + " | " + mdCell(endpoints[j].method) + " | " + mdCell(endpoints[j].path) + " | " + mdCell(endpoints[j].folder) + " |");
+      lines.push("| " + mdCell(endpoints[j].name) + " | " + mdCell(endpoints[j].method) + " | " + mdCell(endpoints[j].path) + " | " + mdCell(endpoints[j].folder) + " | " + mdCell(linkText(endpoints[j])) + " | " + mdCell(endpoints[j].mockUrl) + " |");
     }
     var errors = REPORT.errors || [];
     if (errors.length) {

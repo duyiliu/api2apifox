@@ -1,5 +1,13 @@
 import * as vscode from "vscode";
-import { ApifoxApiError, ApifoxClient, ApifoxProject, ApifoxTeam, describeErrorChain, ImportResult } from "./client";
+import {
+  ApifoxApiError,
+  ApifoxClient,
+  ApifoxProject,
+  ApifoxTeam,
+  describeErrorChain,
+  ImportEndpointResult,
+  ImportResult,
+} from "./client";
 import { getToken, setToken } from "../config/secret";
 import { saveProjectId, ApifoxSettings } from "../config/settings";
 import { AnalyzeOutput } from "../pipeline";
@@ -241,6 +249,8 @@ export interface SyncOutcome {
   counters: Record<string, number>;
   /** Apifox 返回的导入错误 */
   errors: { message?: string; code?: string }[];
+  /** Apifox 回传的逐接口映射；官方接口不返回时为空数组（报告据此降级） */
+  endpoints: ImportEndpointResult[];
 }
 
 /**
@@ -259,7 +269,7 @@ export async function syncToApifox(
 ): Promise<SyncOutcome> {
   const { spec, endpoints, warnings } = analyzed;
   if (!endpoints.length) {
-    return { ok: true, message: "未发现任何 REST 接口,未同步任何内容", counters: {}, errors: [] };
+    return { ok: true, message: "未发现任何 REST 接口,未同步任何内容", counters: {}, errors: [], endpoints: [] };
   }
 
   const result = await vscode.window.withProgress(
@@ -291,7 +301,13 @@ export async function syncToApifox(
     }
   );
 
-  return { ok: true, message: formatResult(result, warnings), counters: result.counters, errors: result.errors };
+  return {
+    ok: true,
+    message: formatResult(result, warnings),
+    counters: result.counters,
+    errors: result.errors,
+    endpoints: result.endpoints ?? [],
+  };
 }
 
 export function formatResult(result: ImportResult, warnings: string[]): string {

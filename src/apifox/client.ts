@@ -1,3 +1,5 @@
+import { EndpointInfo } from "../java/model";
+
 /** Apifox 开放 API 客户端(纯 HTTP,不依赖 vscode) */
 export interface ApifoxTeam {
   id: number;
@@ -21,9 +23,28 @@ export interface ImportOptions {
   updateFolderOfChangedEndpoint?: boolean;
 }
 
+/**
+ * 导入结果里的单条接口映射。
+ * 官方 import-openapi 目前只回传 counters/errors，不返回接口 ID 与 Mock 地址；
+ * 这里按宽松口径解析，Apifox 一旦补上该字段即可直接产出接口级链接。
+ */
+export interface ImportEndpointResult {
+  /** Apifox 接口 ID（用于拼接口文档页链接） */
+  id?: number;
+  method?: string;
+  path?: string;
+  operationId?: string;
+  /** Apifox 直接给出的接口文档页地址（优先于按 ID 推导） */
+  url?: string;
+  /** Apifox 直接给出的 Mock 地址 */
+  mockUrl?: string;
+}
+
 export interface ImportResult {
   counters: Record<string, number>;
   errors: { message?: string; code?: string }[];
+  /** 逐接口映射；Apifox 未返回时不出现该键（保持与旧响应一致的形状） */
+  endpoints?: ImportEndpointResult[];
 }
 
 export class ApifoxApiError extends Error {
@@ -97,15 +118,20 @@ export class ApifoxClient {
    * 文档:https://apifox-openapi.apifox.cn 「导入 OpenAPI/Swagger 格式数据」
    */
   async importOpenapi(projectId: number, openapiJson: string, options: ImportOptions = {}): Promise<ImportResult> {
-    const body = await this.request<{ counters?: Record<string, number>; errors?: { message?: string; code?: string }[] }>(
-      "POST",
-      `/v1/projects/${projectId}/import-openapi`,
-      { input: openapiJson, options }
-    );
-    return {
+    const body = await this.request<{
+      counters?: Record<string, number>;
+      errors?: { message?: string; code?: string }[];
+      endpoints?: unknown;
+    }>("POST", `/v1/projects/${projectId}/import-openapi`, { input: openapiJson, options });
+    const result: ImportResult = {
       counters: body?.counters ?? {},
       errors: body?.errors ?? [],
     };
+    const endpoints = extractImportEndpoints(body?.endpoints);
+    if (endpoints.length) {
+      result.endpoints = endpoints;
+    }
+    return result;
   }
 
   private async request<T>(method: string, path: string, json?: unknown): Promise<T> {
@@ -162,7 +188,12 @@ export class ApifoxClient {
     if (payload && typeof payload.code === "number" && payload.code !== 0) {
       throw new ApifoxApiError(humanizeError(res.status, payload), res.status);
     }
-    return (payload?.data ?? payload) as T;
+    // 部分网关把逐接口映射放在 data 同级；数组响应（如 listTeams）必须保持原形状
+    const unwrapped = (payload?.data ?? payload) as T;
+    const outer = (payload as { endpoints?: unknown } | undefined)?.endpoints;
+    const obj = typeof unwrapped === "object" && unwrapped !== null && !Array.isArray(unwrapped);
+    if (!outer || !obj || (unwrapped as { endpoints?: unknown }).endpoints !== undefined) return unwrapped;
+    return { ...(unwrapped as object), endpoints: outer } as T;
   }
 }
 
@@ -220,6 +251,168 @@ function humanizeError(status: number, payload?: { message?: string; code?: numb
 function extractList<T>(body: unknown, valid: (item: any) => boolean): T[] {
   const arr = Array.isArray(body) ? body : Array.isArray((body as { items?: unknown[] })?.items) ? (body as { items: unknown[] }).items : [];
   return arr.filter(valid) as T[];
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readId(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** 逐接口映射的宽松解析：字段别名依次尝试，完全无信息的条目丢弃（仅按 ID 也能给链接）。 */
+export function extractImportEndpoints(body: unknown): ImportEndpointResult[] {
+  const holder = body as { items?: unknown[]; endpoints?: unknown[] } | undefined;
+  const arr =
+    (Array.isArray(body) ? body : undefined) ??
+    (Array.isArray(holder?.items) ? holder?.items : undefined) ??
+    (Array.isArray(holder?.endpoints) ? holder?.endpoints : undefined) ??
+    [];
+  const items: ImportEndpointResult[] = [];
+  for (const raw of arr) {
+    if (!isRecord(raw)) continue;
+    const id = readId(raw.id) ?? readId(raw.endpointId);
+    const method = readString(raw.method)?.toUpperCase();
+    const path = readString(raw.path);
+    const operationId = readString(raw.operationId) ?? readString(raw.operationID);
+    const url = readString(raw.url) ?? readString(raw.apifoxUrl);
+    const mockUrl = readString(raw.mockUrl) ?? readString(raw.mockURL);
+    if (id === undefined && !method && !path && !operationId && !url) continue;
+    items.push({ id, method, path, operationId, url, mockUrl });
+  }
+  return items;
+}
+
+/* ---------------- 同步报告用的逐接口可寻址索引 ---------------- */
+
+/**
+ * 逐接口可寻址信息。官方 import-openapi 只回传 counters/errors；拿不到接口级依据时
+ * 按允许的降级口径退回项目页并逐行标注，不做猜测拼装。
+ */
+export interface SyncEndpointLink {
+  name: string;
+  method: string;
+  path: string;
+  /** 接口文档页；只有项目页可用时为项目页（degraded=true），都没有时不出现 */
+  apifoxUrl?: string;
+  degraded?: boolean;
+  apifoxEndpointId?: number;
+  mockUrl?: string;
+}
+
+export interface EndpointLinks {
+  /** per-endpoint 全可定位 / partial 部分可定位 / project 至多项目页 */
+  mode: "per-endpoint" | "partial" | "project";
+  reason?: string;
+  links: SyncEndpointLink[];
+}
+
+/** 降级原因文案（JSON 信封、报告页共用），按每行实际结果归因 */
+export const ENDPOINT_LINK_NO_MAPPING_REASON = "无法把接口对应到 Apifox 接口 ID 与文档地址，不能逐条生成接口链接";
+export const ENDPOINT_LINK_NO_PROJECT_REASON =
+  "私有化部署无法推导项目页：这些接口没有可用的接口文档页链接；已取得的接口地址与 Mock 地址仍会保留";
+export const ENDPOINT_LINK_PRIVATE_DEPLOY_REASON =
+  "apiBaseUrl 不是公网 Apifox 域名（私有化部署），无法推导接口文档页地址";
+export const ENDPOINT_LINK_AMBIGUOUS_REASON =
+  "Apifox 回传的接口路由映射存在重复或歧义，已跳过这些接口的接口级文档链接";
+export const ENDPOINT_LINK_DRY_RUN_REASON = "dry-run 预检未写入 Apifox，不生成接口链接";
+
+/** 公网 Apifox 项目页地址；私有化部署与非法地址返回 undefined。 */
+export function projectWebUrl(apiBaseUrl: string, projectId: number): string | undefined {
+  if (!(projectId > 0)) return undefined;
+  try {
+    const host = new URL(apiBaseUrl).hostname.toLowerCase();
+    return ["api.apifox.com", "apifox.com", "www.apifox.com"].includes(host)
+      ? `https://app.apifox.com/project/${projectId}`
+      : undefined;
+  } catch {
+    // 非法 URL 由上游配置校验拦截,这里按无法推导处理
+    return undefined;
+  }
+}
+
+function routeKey(method: string, path: string): string {
+  const trimmed = path.trim();
+  return `${method.trim().toUpperCase()} ${trimmed.length > 1 ? trimmed.replace(/\/+$/, "") : trimmed}`;
+}
+
+/**
+ * 接口 → 导入条目。路由是唯一可信主键，命中多条按歧义处理；operationId 只在条目
+ * 自身无路由信息、且本次唯一时兜底，避免同名 operationId 把链接串到别的接口。
+ */
+function matchImported(
+  endpoint: EndpointInfo,
+  imported: ImportEndpointResult[],
+  duplicateOperationIds: Set<string>
+): ImportEndpointResult | "ambiguous" | undefined {
+  const key = routeKey(endpoint.method, endpoint.path);
+  const byRoute = imported.filter((item) => item.method && item.path && routeKey(item.method, item.path) === key);
+  if (byRoute.length) return byRoute.length > 1 ? "ambiguous" : byRoute[0];
+  if (duplicateOperationIds.has(endpoint.operationId)) return undefined;
+  const byOperationId = imported.filter((item) => !item.method && !item.path && item.operationId === endpoint.operationId);
+  return byOperationId.length > 1 ? "ambiguous" : byOperationId[0];
+}
+
+export interface BuildEndpointLinksInput {
+  endpoints: EndpointInfo[];
+  /** Apifox 导入响应回传的逐接口映射（当前官方接口不返回，为空即降级） */
+  imported?: ImportEndpointResult[];
+  apiBaseUrl: string;
+  projectId: number;
+}
+
+/**
+ * 接口清单 → 可寻址索引：直传地址优先、其次按接口 ID 推导；其余行退回项目页并标
+ * degraded。mode/reason 按“真正拿到地址的行”统计，缺项目页、歧义、私有化分别归因。
+ */
+export function buildEndpointLinks(input: BuildEndpointLinksInput): EndpointLinks {
+  const baseUrl = (input.apiBaseUrl ?? "").trim();
+  const projectUrl = projectWebUrl(baseUrl, input.projectId);
+  const imported = input.imported ?? [];
+
+  const counts = new Map<string, number>();
+  for (const endpoint of input.endpoints) {
+    counts.set(endpoint.operationId, (counts.get(endpoint.operationId) ?? 0) + 1);
+  }
+  const duplicateOperationIds = new Set([...counts].filter(([, n]) => n > 1).map(([id]) => id));
+
+  const causes: string[] = [];
+  let resolved = 0;
+  const links: SyncEndpointLink[] = input.endpoints.map((endpoint) => {
+    const match = imported.length ? matchImported(endpoint, imported, duplicateOperationIds) : undefined;
+    const entry = match === "ambiguous" ? undefined : match;
+    const endpointId = entry?.id && entry.id > 0 ? entry.id : undefined;
+    const url = entry?.url ?? (endpointId && projectUrl ? `${projectUrl}/apis/api-${endpointId}` : undefined);
+    if (url) resolved++;
+    const link: SyncEndpointLink = {
+      name: endpoint.summary?.trim() || endpoint.operationId,
+      method: endpoint.method,
+      path: endpoint.path,
+      ...(url ? { apifoxUrl: url } : projectUrl ? { apifoxUrl: projectUrl, degraded: true } : {}),
+      ...(endpointId ? { apifoxEndpointId: endpointId } : {}),
+      ...(entry?.mockUrl ? { mockUrl: entry.mockUrl } : {}),
+    };
+    // 每行只归一个主因:歧义 / 有 ID 但缺公网域名 / 已退回项目页 / 无项目页可用
+    const cause = url
+      ? undefined
+      : match === "ambiguous"
+        ? ENDPOINT_LINK_AMBIGUOUS_REASON
+        : endpointId
+          ? ENDPOINT_LINK_PRIVATE_DEPLOY_REASON
+          : projectUrl
+            ? ENDPOINT_LINK_NO_MAPPING_REASON
+            : ENDPOINT_LINK_NO_PROJECT_REASON;
+    if (cause && !causes.includes(cause)) causes.push(cause);
+    return link;
+  });
+
+  if (!links.length) {
+    return { mode: "project", links };
+  }
+  return resolved === links.length
+    ? { mode: "per-endpoint", links }
+    : { mode: resolved ? "partial" : "project", reason: causes.join("；"), links };
 }
 
 /** 错误链上的单个节点:文本描述、错误名,以及命中本机地址时的端点(用于识别代理) */
