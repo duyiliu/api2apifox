@@ -28203,6 +28203,7 @@ ${a.ruleDescAppend}` : a.ruleDescAppend;
   const parameters = [];
   const formFields = [];
   let requestBody;
+  let matrixVarWarned = false;
   const paramDocs = { ...a.classJavadoc?.params, ...javadoc?.params };
   for (const fp of childAll(paramList, "formalParameter").filter(isCstNode)) {
     const regular = childNode(fp, "variableParaRegularParameter") ?? childNode(fp, "variableArityParameter");
@@ -28219,6 +28220,9 @@ ${a.ruleDescAppend}` : a.ruleDescAppend;
     if (isHiddenParam(annotations)) {
       continue;
     }
+    if (isServerInjectedParam(annotations, typeText)) {
+      continue;
+    }
     const docDesc = paramDocs[paramName]?.trim() || void 0;
     const paramAnn = findAnn(annotations, "Parameter");
     const apiParam = findAnn(annotations, "ApiParam");
@@ -28228,6 +28232,8 @@ ${a.ruleDescAppend}` : a.ruleDescAppend;
     const selector = findAnn(annotations, "Selector");
     const reqParam = findAnn(annotations, "RequestParam", "QueryParam");
     const reqHeader = findAnn(annotations, "RequestHeader", "HeaderParam");
+    const reqCookie = findAnn(annotations, "CookieValue", "CookieParam");
+    const matrixVar = findAnn(annotations, "MatrixVariable", "MatrixParam");
     const reqBody = findAnn(annotations, "RequestBody");
     const reqPart = findAnn(annotations, "RequestPart");
     const defaultValueAnn = findAnn(annotations, "DefaultValue");
@@ -28281,6 +28287,25 @@ ${a.ruleDescAppend}` : a.ruleDescAppend;
         defaultValue: dv,
         annotations
       });
+    } else if (reqCookie) {
+      const dv = annStr(reqCookie.args, "defaultValue") ?? (defaultValueAnn ? annStr(defaultValueAnn.args, "value") : void 0);
+      parameters.push({
+        name: annStr(reqCookie.args, "value", "name") ?? paramName,
+        in: "cookie",
+        typeText,
+        required: dv !== void 0 ? false : annBool(reqCookie.args, "required") ?? a.flavor !== "jaxrs",
+        description: description2,
+        example: example ?? dv,
+        defaultValue: dv,
+        annotations
+      });
+    } else if (matrixVar) {
+      if (!matrixVarWarned) {
+        matrixVarWarned = true;
+        warnings.push(
+          `${a.controller}.${a.methodName}: \u53C2\u6570 ${paramName} \u4E3A @MatrixVariable(\u77E9\u9635\u53D8\u91CF),OpenAPI 3.0 \u65E0\u5BF9\u5E94\u8868\u8FBE,\u5DF2\u8DF3\u8FC7`
+        );
+      }
     } else if (isPageableType(typeText)) {
       parameters.push(
         { name: "page", in: "query", typeText: "int", required: false, description: "\u9875\u7801(0 \u57FA)", annotations: [] },
@@ -28490,6 +28515,72 @@ function isHiddenParam(annotations) {
   }
   const ap = findAnn(annotations, "ApiParam");
   return !!ap && annBool(ap.args, "hidden") === true;
+}
+var SERVER_INJECTED_PARAM_ANNOTATIONS = [
+  "SessionAttribute",
+  "RequestAttribute",
+  "Value",
+  "Autowired",
+  "Resource",
+  "Context",
+  "AuthenticationPrincipal"
+];
+var SERVER_INJECTED_PARAM_TYPES = /* @__PURE__ */ new Set([
+  "HttpServletRequest",
+  "HttpServletResponse",
+  "ServletRequest",
+  "ServletResponse",
+  "HttpSession",
+  "SessionStatus",
+  "WebRequest",
+  "NativeWebRequest",
+  "ServletWebRequest",
+  "Principal",
+  "Authentication",
+  "SecurityContext",
+  "HttpHeaders",
+  "UriInfo",
+  "Locale",
+  "TimeZone",
+  "ZoneId",
+  "HttpMethod",
+  "PushBuilder",
+  "InputStream",
+  "OutputStream",
+  "Reader",
+  "Writer",
+  "Model",
+  "ModelMap",
+  "ModelAndView",
+  "BindingResult",
+  "Errors",
+  "RedirectAttributes",
+  "UriComponentsBuilder"
+]);
+function isServerInjectedParam(annotations, typeText) {
+  if (findAnn(annotations, ...SERVER_INJECTED_PARAM_ANNOTATIONS)) {
+    return true;
+  }
+  if (findAnn(
+    annotations,
+    "RequestBody",
+    "RequestParam",
+    "QueryParam",
+    "PathVariable",
+    "PathParam",
+    "RequestHeader",
+    "HeaderParam",
+    "CookieValue",
+    "CookieParam",
+    "MatrixVariable",
+    "MatrixParam",
+    "Selector",
+    "RequestPart",
+    "ModelAttribute"
+  )) {
+    return false;
+  }
+  return SERVER_INJECTED_PARAM_TYPES.has(typeTextName(typeText));
 }
 function isPageableType(typeText) {
   const t = typeText.trim();
