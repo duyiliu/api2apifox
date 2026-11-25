@@ -38,17 +38,23 @@ function assetUrls(version, sha) {
   const override = process.env.API2APIFOX_RUNTIME_URL?.trim();
   if (override) return [override];
   const name = `api2apifox-runtime-${sha}.cjs`;
+  const ghPath = `github.com/duyiliu/api2apifox/releases/download/runtime/${name}`;
+  const ghTagPath = `github.com/duyiliu/api2apifox/releases/download/v${version}/${name}`;
   return [
-    // 滚动 prerelease：main 每次推进由 automation 上传，覆盖 main/任意 commit 安装
-    `https://github.com/duyiliu/api2apifox/releases/download/runtime/${name}`,
-    // tag 正式 release：永久保留，滚动资产被 GC 后的兜底
-    `https://github.com/duyiliu/api2apifox/releases/download/v${version}/${name}`,
+    // 直连滚动 prerelease：main 每次推进由 automation 上传，覆盖 main/任意 commit 安装
+    `https://${ghPath}`,
+    // 直连 tag 正式 release：永久保留，滚动资产被 GC 后的兜底
+    `https://${ghTagPath}`,
+    // 国内镜像:GitHub 直连在部分网络被限速到十几 KB/s,镜像做竞速兜底。
+    // 下载字节一律经 sha256 校验后才写入,镜像不可信也不会引入污染,只影响可用性
+    `https://gh-proxy.com/https://${ghPath}`,
+    `https://ghfast.top/https://${ghPath}`,
   ];
 }
 
 async function download(url) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   try {
     const resp = await fetch(url, { redirect: "follow", signal: controller.signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -56,6 +62,16 @@ async function download(url) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** 下载并按期望哈希校验;校验失败视为本次尝试失败(不写入) */
+async function downloadVerified(url, expected) {
+  const bytes = await download(url);
+  const actual = crypto.createHash("sha256").update(bytes).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`哈希不一致（期望 ${expected.slice(0, 12)}… 实得 ${actual.slice(0, 12)}…）`);
+  }
+  return bytes;
 }
 
 /**
@@ -67,28 +83,25 @@ export async function ensureRuntime() {
   const target = path.join(runtimeDir, ENTRY);
   if (runtimeIsCurrent(expected)) return target;
 
-  const errors = [];
-  for (const url of assetUrls(version, expected)) {
-    try {
-      const bytes = await download(url);
-      const actual = crypto.createHash("sha256").update(bytes).digest("hex");
-      if (actual !== expected) {
-        errors.push(`${url} 哈希不一致（期望 ${expected.slice(0, 12)}… 实得 ${actual.slice(0, 12)}…），已拒绝写入`);
-        continue;
-      }
-      const tmp = `${target}.download-${process.pid}`;
-      fs.writeFileSync(tmp, bytes);
-      fs.renameSync(tmp, target);
-      return target;
-    } catch (error) {
-      errors.push(`${url} ${error.message}`);
-    }
+  // 多源竞速:直连与镜像同时发起,第一个通过 sha256 校验的胜出。
+  // 串行回退在被限速网络(十几 KB/s)下要把时间浪费在注定很慢的直连上;
+  // 内容寻址保证镜像只影响可达性、不影响完整性,竞速是安全的
+  const urls = assetUrls(version, expected);
+  let bytes;
+  try {
+    bytes = await Promise.any(urls.map((url) => downloadVerified(url, expected)));
+  } catch (aggregate) {
+    const errors = aggregate.errors?.map((e, i) => `${urls[i]} ${e.message}`) ?? [aggregate.message];
+    throw new Error(
+      `运行时下载失败：\n  - ${errors.join("\n  - ")}\n` +
+        `可选解决路径：\n` +
+        `  1. 检查网络后重试（资产托管在 GitHub Releases，部分网络需要代理）；\n` +
+        `  2. 离线/内网：下载 api2apifox-skill-${version}.zip 解压覆盖安装（内含完整运行时）；\n` +
+        `  3. 设置环境变量 API2APIFOX_RUNTIME_URL 为可达的镜像/内网直链后重试。`
+    );
   }
-  throw new Error(
-    `运行时下载失败：\n  - ${errors.join("\n  - ")}\n` +
-      `可选解决路径：\n` +
-      `  1. 检查网络后重试（资产托管在 GitHub Releases，部分网络需要代理）；\n` +
-      `  2. 离线/内网：下载 api2apifox-skill-${version}.zip 解压覆盖安装（内含完整运行时）；\n` +
-      `  3. 设置环境变量 API2APIFOX_RUNTIME_URL 为可达的镜像/内网直链后重试。`
-  );
+  const tmp = `${target}.download-${process.pid}`;
+  fs.writeFileSync(tmp, bytes);
+  fs.renameSync(tmp, target);
+  return target;
 }

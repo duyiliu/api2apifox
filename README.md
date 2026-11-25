@@ -40,7 +40,7 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 
 - `-g` 安装到用户级 Skill 目录（通常 `~/.agents/skills/api2apifox`），其他 Agent 客户端按各自规则同步/链接。
 - 固定版本：`npx skills add duyiliu/api2apifox#v0.5.0 --skill api2apifox -g`（扩展与 Skill 共用同一个 `vX.Y.Z` tag）。
-- 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
+- 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。运行时下载自带 gh-proxy/ghfast 镜像竞速（字节经 sha256 校验后才写入，镜像只影响可达性），直连被限速也能秒级完成。
 - 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`（会自动完成首次下载并校验）；失败按报错提示处理（网络代理 / 离线 zip 覆盖 / `API2APIFOX_RUNTIME_URL` 镜像直链），不要改用其它工具顶替。
 - 升级：`npx skills update api2apifox -g`（装指定版本重新执行带 `#vX.Y.Z` 的 add 命令）；卸载：`npx skills remove api2apifox -g`。
 - 离线/内网：从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载 `api2apifox-skill-<版本>.zip`，解压为 `~/.agents/skills/api2apifox/`（目录内含 `SKILL.md`、`scripts/`、`runtime/`），再执行自检命令。
