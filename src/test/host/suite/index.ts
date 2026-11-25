@@ -378,7 +378,7 @@ export async function run(): Promise<void> {
       w.createQuickPick = () => ({items: [], value: "", selectedItems: [], onDidChangeValue() {}, onDidAccept() {}, onDidHide() {}, show() {}, dispose() {}});
       w.showQuickPick = async () => undefined;
       w.showInputBox = async () => undefined;
-      for (const command of ["exportOpenapi", "filterApi", "searchApi", "checkAllApis", "uncheckAllApis", "copyEndpointPath", "copyEndpointFull", "showStatusBarMenu"]) {
+      for (const command of ["exportOpenapi", "filterApi", "searchApi", "checkAllApis", "uncheckAllApis", "copyEndpointPath", "copyEndpointFull", "copyEndpointCurl", "showStatusBarMenu"]) {
         await vscode.commands.executeCommand(`apifoxHelper.${command}`);
         console.log(`G13 PASS: ${command}`);
       }
@@ -393,6 +393,11 @@ export async function run(): Promise<void> {
       await vscode.commands.executeCommand("apifoxHelper.copyEndpointFull", copyNode);
       assert.equal(await vscode.env.clipboard.readText(), "POST /host/copy");
       console.log("G13 PASS: copy full content");
+      await vscode.commands.executeCommand("apifoxHelper.copyEndpointCurl", copyNode);
+      const curlText = await vscode.env.clipboard.readText();
+      assert.ok(curlText.startsWith("curl -X POST "), `curl 应以 curl -X POST 开头:${curlText}`);
+      assert.ok(curlText.includes("http://localhost:8080/host/copy"), `curl 应使用默认 baseUrl:${curlText}`);
+      console.log("G13 PASS: copy curl content");
     } finally { await vscode.env.clipboard.writeText(clipboardBefore); }
 
     // 6) 设置面板 Webview 消息流:ready/testConnection/fetchProjects/save 成功与失败

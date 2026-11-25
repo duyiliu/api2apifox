@@ -202,6 +202,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `同步光标处接口到 Apifox` | 光标停在接口方法内执行,或点方法上方 CodeLens「▲ 同步此接口」 |
 | `查看上次同步结果` | 重新打开「同步结果」面板(导入计数表 + 接口清单) |
 | `导出 OpenAPI 预览文件` | 生成 `openapi.gen.json` 本地验证 |
+| `复制为 cURL` | 接口树右键或命令面板生成可执行 cURL:path 参数填占位值,query 参数按类型给示例值,必填 `@RequestHeader` 生成 `-H` 占位;POST/PUT/PATCH 携带 `-X`、`Content-Type`(复用 `consumes` 口径)与 JSON body 骨架(取前 3 个代表字段,hidden/规则过滤已生效);multipart 走 `-F` 占位,主机由 `apifoxHelper.baseUrl` 配置 |
 
 ## ⚙️ 扩展设置
 
@@ -225,6 +226,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.rootFolderName` | 空 | 可选,所有接口目录放到该父目录下(自动创建);目录名可含 `/` 表示多级 |
 | `apifoxHelper.updateFolderOfChangedEndpoint` | `true` | 覆盖已存在接口时同步更新其目录(对应 Apifox 导入的「更新接口所在目录」);关闭后改 `@Tag`/`rootFolderName` 不会迁移已同步接口 |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
+| `apifoxHelper.baseUrl` | `http://localhost:8080` | 「复制为 cURL」生成命令时使用的基础 URL(协议 + 主机 + 端口,不含路径) |
 
 > 设置中心保存的项目绑定(`projectId`/`projectName`/`teamName`/`apiBaseUrl` 等)写入**工作区** `.vscode/settings.json`,会随仓库提交共享给团队(便于成员共用同一目标项目);访问令牌始终存在系统 SecretStorage,不落任何文件。
 

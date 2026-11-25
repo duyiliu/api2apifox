@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- 接口树右键与命令面板新增「复制为 cURL」（#50）：一键生成可执行 cURL——path 参数填占位值、query 参数按类型给示例值（如 `?page=1&size=10`）、必填 `@RequestHeader` 生成 `-H` 占位；POST/PUT/PATCH 携带 `-X` 与 `Content-Type`（复用 `consumes` 口径），JSON body 骨架复用同步链路的 schema（hidden/JsonIgnore/规则过滤同步生效）取前 3 个代表字段；multipart/form-data 走 `-F` 占位。请求主机由新设置 `apifoxHelper.baseUrl` 配置（默认 `http://localhost:8080`）；body 超过 4KB 自动截断并提示改用 OpenAPI 导出
 - 解析 `@RestControllerAdvice`/`@ControllerAdvice` 的 `@ExceptionHandler` 为 OpenAPI 错误响应（#38）：`@ResponseStatus` / `ResponseEntity` 状态码映射、返回类型经 schemaResolver 还原错误体、`basePackages`/`basePackageClasses`/`assignableTypes` 作用域收窄、与方法级 `@ApiResponse`/`@ResponseStatus` 合并去重（方法级优先，advice 的 200 不覆盖内置成功响应，冲突告警）
 - 发版流程支持 Open VSX：配置 `OVSX_PAT` secret 后，`v*` tag 会同时发布到 Open VSX（Cursor / Windsurf / VSCodium 市场）；未配置时自动跳过
 - `CHANGELOG.md`；Marketplace 侧栏补全 `homepage` / `bugs` 链接
