@@ -37,6 +37,11 @@ export interface ResolvedConfig {
   enumFieldDoc: boolean;
   /** 鉴权注解输出方式:description(默认) 写进接口描述尾部;extension 写入 x-permission/x-roles */
   securityDocMode: "description" | "extension";
+  /**
+   * 是否读取 application 配置并把 server.servlet.context-path / spring.mvc.servlet.path /
+   * spring.webflux.base-path 拼到接口路径前。缺省视为开启;false 回到不读取配置的旧行为。
+   */
+  applySpringPathPrefix?: boolean;
   dependencyRepos: string[];
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */

@@ -1,0 +1,11 @@
+# 夹具:spring 路径前缀(server.servlet.context-path + spring.mvc.servlet.path + profile 覆盖)
+# 放在 sample 的 src/test 下:默认 exclude 含 **/src/test/**,不会改变 sample 现有扫描结果。
+server:
+  servlet:
+    context-path: /api-xxx
+spring:
+  mvc:
+    servlet:
+      path: /dispatch
+  profiles:
+    active: dev

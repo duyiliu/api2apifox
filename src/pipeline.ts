@@ -38,6 +38,10 @@ export interface AnalyzeOptions {
   enumFieldDoc?: boolean;
   /** 鉴权注解的输出方式:description(默认) 追加到接口描述尾部;extension 写入 x-permission/x-roles */
   securityDocMode?: "description" | "extension";
+  /** 接口路径前缀(按 Controller 源文件取所属模块);未命中或为空时不拼接(与旧行为一致) */
+  pathPrefixOf?: (fsPath: string) => string;
+  /** 前缀来源与解析失败(如 `已应用 context-path=/api-xxx（application.yml）`),并入 warnings 让用户可见 */
+  pathPrefixWarnings?: string[];
   /** 接口目录:x-apifox-folder(优先于 tags 用于 Apifox 建目录) */
   folderOf?: (ep: EndpointInfo) => string;
   /** 源码未覆盖的类型,从依赖 jar 的 .class 按需解析(框架类识别) */
@@ -53,6 +57,29 @@ export interface AnalyzeOutput {
   spec: OpenApiSpec;
   endpoints: EndpointInfo[];
   warnings: string[];
+}
+
+/** 给接口路径拼接真实前缀(空前缀直接返回原路径,保证零差异) */
+export function withPathPrefix(path: string, prefix: string | undefined): string {
+  const trimmed = (prefix ?? "").trim();
+  const normalized = trimmed && trimmed !== "/" ? `/${trimmed.replace(/^\/+|\/+$/g, "")}`.replace(/\/{2,}/g, "/") : "";
+  if (!normalized) {
+    return path;
+  }
+  const joined = `${normalized}${path.startsWith("/") ? path : `/${path}`}`.replace(/\/{2,}/g, "/");
+  return joined === "" ? "/" : joined;
+}
+
+/** 按 Controller 源文件(继承接口时为 Controller 自身文件)补齐前缀 */
+function applyPathPrefix(endpoints: EndpointInfo[], pathPrefixOf?: (fsPath: string) => string): EndpointInfo[] {
+  if (!pathPrefixOf) {
+    return endpoints;
+  }
+  return endpoints.map((ep) => {
+    const prefix = pathPrefixOf(ep.ownerFsPath ?? ep.fsPath);
+    const path = withPathPrefix(ep.path, prefix);
+    return path === ep.path ? ep : { ...ep, path };
+  });
 }
 
 export function filterWarningsForEndpoints(warnings: string[], kept: EndpointInfo[]): string[] {
@@ -116,7 +143,7 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
   const index = buildIndex(parsed);
   index.jarLookup = options.jarLookup;
   const parseResult = parseControllers(parsed, options.rules, index);
-  const all = dedupeEndpoints(parseResult.endpoints);
+  const all = applyPathPrefix(dedupeEndpoints(parseResult.endpoints), options.pathPrefixOf);
   const kept = endpointFilter ? all.filter(endpointFilter) : all;
   const filtered = { ...parseResult, endpoints: kept };
   const { spec } = buildOpenApi(filtered, index, {
@@ -129,7 +156,13 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
     folderOf: options.folderOf,
   });
   const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
-  return { spec, endpoints: kept, warnings };
+  return { spec, endpoints: kept, warnings: mergePrefixWarnings(warnings, options) };
+}
+
+/** 前缀诊断是项目级事实(不归属任何接口),子集模式下也必须保留 */
+function mergePrefixWarnings(warnings: string[], options: AnalyzeOptions): string[] {
+  const extra = options.pathPrefixWarnings ?? [];
+  return extra.length ? [...new Set([...extra, ...warnings])] : warnings;
 }
 
 /** 解析 -> 索引 -> 提取接口 -> 生成 OpenAPI(纯逻辑,便于测试) */
@@ -151,6 +184,7 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
     opts.pageStyle ?? "",
     opts.enumFieldDoc ?? false,
     opts.securityDocMode ?? "",
+    (opts.pathPrefixWarnings ?? []).join("\u0000"),
     opts.cacheKey ?? "",
     opts.rules
       ? {
@@ -243,7 +277,7 @@ export class AnalyzeCache {
     const index = buildIndex(parsed);
     index.jarLookup = opts.jarLookup;
     const parseResult = parseControllers(parsed, opts.rules, index);
-    const all = dedupeEndpoints(parseResult.endpoints);
+    const all = applyPathPrefix(dedupeEndpoints(parseResult.endpoints), opts.pathPrefixOf);
     const kept = endpointFilter ? all.filter(endpointFilter) : all;
     const deduped = { ...parseResult, endpoints: kept };
     const { spec } = buildOpenApi(deduped, index, {
@@ -256,7 +290,7 @@ export class AnalyzeCache {
       folderOf: opts.folderOf,
     });
     const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
-    const output = { spec, endpoints: kept, warnings };
+    const output = { spec, endpoints: kept, warnings: mergePrefixWarnings(warnings, opts) };
     // 缓存存副本:调用方(如 syncToApifox)会原地 push warnings,不能污染缓存
     this.lastResult = { key, output: { ...output, warnings: [...output.warnings] } };
     return output;

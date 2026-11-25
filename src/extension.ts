@@ -13,8 +13,9 @@ import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { buildCurlCommand, CURL_BODY_TRUNCATE_BYTES, OperationLike } from "./providers/curlBuilder";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
-import { AnalyzeCache, endpointAt } from "./pipeline";
+import { AnalyzeCache, endpointAt, withPathPrefix } from "./pipeline";
 import { createSingleFlight } from "./core/singleFlight";
+import { loadSpringPathPrefixes, resetSpringPathPrefixCache, SpringPathPrefixes } from "./core/projectScanner";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "./java/jarIndex";
 import { createGitEntryProbe, findNestedCheckoutRoot, isInHiddenDirectory, isSkippedCheckout } from "./java/scanScope";
 import { buildSyncPreflightDetail, syncTargetLabel } from "./ui/syncPreflight";
@@ -92,6 +93,16 @@ function invalidatePomFilesCache(): void {
  * 文件一并纳入指纹,引用文件变化或缺失文件重新出现时同样失效。
  */
 let helperPropertiesCache: { key: string; props: HelperProperties } | undefined;
+
+/** application 配置(spring 路径前缀);开关关闭时不读配置,产物与旧行为一致 */
+async function springPrefixes(): Promise<SpringPathPrefixes | undefined> {
+  if (!vscode.workspace.getConfiguration("apifoxHelper").get<boolean>("applySpringPathPrefix", true)) {
+    resetSpringPathPrefixCache();
+    return undefined;
+  }
+  const folders = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  return folders.length ? loadSpringPathPrefixes(folders) : undefined;
+}
 
 function jarIndexCacheKey(configSignature: string, jars: string[]): string {
   const parts: string[] = [configSignature];
@@ -268,6 +279,7 @@ export function activate(context: vscode.ExtensionContext): void {
       mavenReposCache = undefined;
       pomFilesCache = undefined;
       helperPropertiesCache = undefined;
+      resetSpringPathPrefixCache();
     },
   });
 
@@ -354,6 +366,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const jarIndex = await buildJarClassIndex();
     // OpenAPI info.version:显式设置 > 工作区根 pom.xml <version>(剔除 -SNAPSHOT) > 默认 1.0.0
     const openapiInfoVersion = await resolveOpenapiInfoVersion(settings.openapiInfoVersion);
+    const springPrefix = await springPrefixes();
     return {
       title: vscode.workspace.name ?? "API",
       openapiInfoVersion,
@@ -361,8 +374,11 @@ export function activate(context: vscode.ExtensionContext): void {
       rules: await loadHelperProperties(),
       enumFieldDoc: settings.enumFieldDoc,
       securityDocMode: settings.securityDocMode,
-      // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
-      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, settings.securityDocMode, activeJarIndexKey, openapiInfoVersion].join("\u0000"),
+      // 目录命名、依赖 jar 索引与 application 路径前缀无法从 Java 源码派生,纳入结果缓存键,避免设置变化后复用旧结果
+      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, settings.securityDocMode, activeJarIndexKey, openapiInfoVersion, springPrefix?.key ?? ""].join("\u0000"),
+      // 接口路径前缀:按 Controller 源文件所属模块取 application 配置里的 context-path / servlet.path / base-path
+      pathPrefixOf: springPrefix ? (file: string) => springPrefix.prefixFor(file) : undefined,
+      pathPrefixWarnings: springPrefix ? [...springPrefix.warnings, ...springPrefix.messages] : undefined,
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
       folderOf: (ep: { tag: string; controller: string }) => {
         const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
@@ -1102,17 +1118,20 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("光标附近未发现 REST 接口方法");
         return;
       }
+      // CodeLens 的单文件解析不经过 analyzeOptions,路径无前缀;按本次同步的前缀映射成真实路径再匹配
+      const options = await analyzeOptions();
+      const endpointPath = withPathPrefix(endpoint.path, options.pathPrefixOf?.(endpoint.fsPath) ?? "");
       // 用全量上下文解析类型,只输出该接口
       await doSync("未发现可同步的接口", async (token) => {
         const allFiles = await collectFiles(undefined, token, target);
         const source = allFiles ?? files;
         return cache.analyzeSubset(
           source,
-          await analyzeOptions(),
-          (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpoint.path,
-          `ep:${endpoint.fsPath}:${endpoint.method} ${endpoint.path}`
+          options,
+          (ep) => ep.fsPath === endpoint.fsPath && ep.method === endpoint.method && ep.path === endpointPath,
+          `ep:${endpoint.fsPath}:${endpoint.method} ${endpointPath}`
         );
-      }, { scopeLabel: `${endpoint.method} ${endpoint.path}` });
+      }, { scopeLabel: `${endpoint.method} ${endpointPath}` });
     })
   );
 

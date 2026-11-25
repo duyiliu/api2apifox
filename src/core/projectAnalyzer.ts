@@ -6,7 +6,7 @@ import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDepende
 import { EndpointInfo } from "../java/model";
 import { analyze, analyzeSubset } from "../pipeline";
 import { Diagnostic, ProjectAnalysisResult, ResolvedConfig } from "./types";
-import { findProjectFiles, scanProject, throwIfAborted } from "./projectScanner";
+import { discoverSpringPathPrefixes, findProjectFiles, scanProject, throwIfAborted } from "./projectScanner";
 
 export interface AnalyzeProjectRequest {
   config: ResolvedConfig;
@@ -37,6 +37,9 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
   throwIfAborted(signal);
   const helperProperties = await loadProjectHelperProperties(config, signal);
   const dependency = await buildProjectJarIndex(config, signal);
+  // application 配置里的接口路径前缀(开关关闭时不读配置,产物与旧行为零差异)
+  const springPrefix =
+    config.applySpringPathPrefix === false ? undefined : await discoverSpringPathPrefixes([config.projectRoot], signal);
   const fileSelectors = normalizeFiles(request.files ?? [], config.projectRoot);
   const endpointSelectors = new Set((request.endpoints ?? []).map(normalizeEndpointSelector));
   const hasFilter = fileSelectors.size > 0 || endpointSelectors.size > 0;
@@ -52,6 +55,8 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
     enumFieldDoc: config.enumFieldDoc,
     securityDocMode: config.securityDocMode,
     folderOf,
+    pathPrefixOf: springPrefix ? (file: string) => springPrefix.prefixFor(file) : undefined,
+    pathPrefixWarnings: springPrefix ? [...springPrefix.warnings, ...springPrefix.messages] : undefined,
     jarLookup: dependency.index ? (name: string) => dependency.index!.lookup(name) : undefined,
   };
   try {
