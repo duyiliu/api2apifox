@@ -61,6 +61,7 @@ function buildDemoClassExplicit(): Buffer {
   const iValue = utf8Idx("value");
   const iNameZh = utf8Idx("姓名");
   const iClassSig = utf8Idx("<T:Ljava/lang/Object;>Ljava/lang/Object;");
+  const iDeprecatedAttr = utf8Idx("Deprecated");
 
   const be2 = (v: number) => [(v >> 8) & 0xff, v & 0xff];
   const be4 = (v: number) => [(v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
@@ -89,8 +90,10 @@ function buildDemoClassExplicit(): Buffer {
     0x73, // tag 's'
     ...be2(iNameZh), // utf8 index
   ];
-  out.push(...be2(0x0002), ...be2(iName), ...be2(iNameDesc), ...be2(1));
+  // name 字段带 2 个属性:RuntimeVisibleAnnotations(@Label) + Deprecated(无体)
+  out.push(...be2(0x0002), ...be2(iName), ...be2(iNameDesc), ...be2(2));
   out.push(...be2(iRva), ...be4(annBody.length), ...annBody);
+  out.push(...be2(iDeprecatedAttr), ...be4(0));
 
   // methods:0
   out.push(...be2(0));
@@ -113,6 +116,9 @@ test("classFile:解析手拼 Demo.class(泛型/字段/注解值)", () => {
   assert.equal(name.annotations.length, 1);
   assert.equal(name.annotations[0].name, "Label");
   assert.equal(name.annotations[0].args.value, "姓名");
+  // Deprecated 属性(JVM Spec §4.7.16)→ deprecated 标记位
+  assert.equal(name.deprecated, true);
+  assert.equal(data.deprecated, false, "无 Deprecated 属性的字段不标记");
 });
 
 /* ---------------- 手拼 zip(STORED) ---------------- */
@@ -175,6 +181,8 @@ test("JarClassIndex:按需解析 zip 内 .class", () => {
     assert.deepEqual(info.typeParams, ["T"]);
     const nameField = info.fields.find((f) => f.name === "name")!;
     assert.equal(nameField.annotations[0].args.value, "姓名");
+    // 字节码 Deprecated 属性透传到 FieldInfo.deprecated
+    assert.equal(nameField.deprecated, true);
     assert.equal(idx.lookup("不存在"), undefined);
   } finally {
     // 索引持有 jar fd,Windows 上未关闭会阻塞 unlink

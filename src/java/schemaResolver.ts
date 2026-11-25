@@ -31,6 +31,8 @@ export interface JsonSchema {
   exclusiveMinimum?: boolean;
   exclusiveMaximum?: boolean;
   pattern?: string;
+  /** OpenAPI 3.0 Schema Object 标准字段:标记 schema(含 properties 子 schema)已弃用 */
+  deprecated?: boolean;
 }
 
 /** 稳定的 JSON 序列化(对象键排序),用于判定两份 schema 结构是否一致 */
@@ -407,9 +409,18 @@ function classSchema(info: ClassInfo, ctx: ResolveContext): JsonSchema {
       schema = overridden;
     }
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
-    const finalDesc = rule.appendDesc(desc, field, ctx);
+    let finalDesc = rule.appendDesc(desc, field, ctx);
+    // 字段级 @Deprecated:javadoc 的 @deprecated 文本原文拼进 description(与注解/规则描述共存)
+    if (field.deprecated) {
+      const depNote = field.javadoc?.deprecated?.trim();
+      const suffix = depNote ? `@deprecated ${depNote}` : "@deprecated";
+      finalDesc = finalDesc ? `${finalDesc}\n${suffix}` : suffix;
+    }
     if (finalDesc) {
       schema = withRefSiblings(schema, { description: finalDesc });
+    }
+    if (field.deprecated) {
+      schema = withRefSiblings(schema, { deprecated: true });
     }
     const example = schemaExample(field.annotations);
     if (example) {

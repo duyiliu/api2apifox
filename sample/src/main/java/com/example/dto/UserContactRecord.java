@@ -7,5 +7,11 @@ public record UserContactRecord(
         /** 手机号 */
         String phone,
         @io.swagger.v3.oas.annotations.media.Schema(description = "电子邮箱")
-        String email) {
+        String email,
+        /**
+         * 旧传真号
+         * @deprecated 已不采集传真
+         */
+        @Deprecated
+        String fax) {
 }

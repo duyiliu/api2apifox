@@ -186,6 +186,7 @@ function toClassInfo(pc: ParsedClassFile): ClassInfo {
     typeText: f.typeText,
     annotations: f.annotations.map(toAnnotationInfo),
     javadoc: undefined,
+    ...(f.deprecated ? { deprecated: true } : {}),
   }));
   const kind: TypeKind = pc.kind === "enum" ? "enum" : pc.kind === "interface" ? "interface" : "class";
   return {

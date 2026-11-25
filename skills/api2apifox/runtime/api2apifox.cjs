@@ -8956,6 +8956,7 @@ function parseClassFile(buf) {
     const descriptor = utf8(fDescIdx);
     const anns = [];
     let signature;
+    let deprecated = false;
     const attrCount = r.u2();
     for (let a = 0; a < attrCount; a++) {
       const attrName = utf8(r.u2());
@@ -8968,6 +8969,8 @@ function parseClassFile(buf) {
           anns.push(...readAnnotations(new ByteReader(attrBody), cp, utf8));
         } catch {
         }
+      } else if (attrName === "Deprecated") {
+        deprecated = true;
       }
     }
     const synthetic = (fAccess & ACC_SYNTHETIC) !== 0;
@@ -8982,13 +8985,17 @@ function parseClassFile(buf) {
     }
     const sig = signature ?? descriptor;
     const parsed = parseFieldSignature(sig);
+    if (!deprecated) {
+      deprecated = anns.some((ann) => ann.name === "Deprecated");
+    }
     fields.push({
       name,
       typeText: parsed ? sigToText(parsed) : "Object",
       annotations: anns,
       static: isStatic,
       synthetic,
-      enumConstant: false
+      enumConstant: false,
+      deprecated
     });
   }
   const methodsCount = r.u2();
@@ -9269,7 +9276,8 @@ function toClassInfo(pc) {
     name: f.name,
     typeText: f.typeText,
     annotations: f.annotations.map(toAnnotationInfo),
-    javadoc: void 0
+    javadoc: void 0,
+    ...f.deprecated ? { deprecated: true } : {}
   }));
   const kind = pc.kind === "enum" ? "enum" : pc.kind === "interface" ? "interface" : "class";
   return {
@@ -9859,6 +9867,7 @@ function parseJavadoc(raw) {
   const lines = cleaned.split("\n");
   const params = {};
   let returns;
+  let deprecated;
   const descLines = [];
   let currentTag = null;
   let currentParamName = null;
@@ -9876,6 +9885,10 @@ function parseJavadoc(raw) {
         currentTag = tag;
       } else if (tag === "return") {
         returns = rest;
+        currentParamName = null;
+        currentTag = tag;
+      } else if (tag === "deprecated") {
+        deprecated = rest;
         currentParamName = null;
         currentTag = tag;
       } else {
@@ -9898,6 +9911,13 @@ ${line.trim()}`;
       }
       continue;
     }
+    if (currentTag === "deprecated") {
+      if (line.trim()) {
+        deprecated = deprecated ? `${deprecated}
+${line.trim()}` : line.trim();
+      }
+      continue;
+    }
     if (currentTag) {
       continue;
     }
@@ -9905,7 +9925,7 @@ ${line.trim()}`;
   }
   const description = descLines.join("\n").trim();
   const firstLine = descLines.find((l) => l.trim().length > 0)?.trim() ?? "";
-  return { firstLine, description, params, returns };
+  return { firstLine, description, params, returns, deprecated };
 }
 function cleanJavadoc(raw) {
   let text = raw.trim();
@@ -26269,7 +26289,9 @@ function collectFields(classBody, source) {
       if (!name) {
         continue;
       }
-      fields.push({ name, typeText, annotations: collectAnnotations(mods, source), javadoc, javadocRaw });
+      const annotations = collectAnnotations(mods, source);
+      const deprecated = annotations.some((a) => a.name === "Deprecated") || void 0;
+      fields.push({ name, typeText, annotations, javadoc, javadocRaw, ...deprecated ? { deprecated } : {} });
     }
   }
   return fields;
@@ -26292,12 +26314,15 @@ function recordComponentsOf(decl, source) {
   return childNodes(list, "recordComponent").map((rc, index) => {
     const typeNode = childNode(rc, "unannType");
     const javadocRaw = nodeJavadoc(rc) ?? (index === 0 ? listJavadoc : void 0);
+    const annotations = collectAnnotations(childNodes(rc, "recordComponentModifier"), source);
+    const deprecated = annotations.some((a) => a.name === "Deprecated") || void 0;
     return {
       name: tokenImage(rc, "Identifier") ?? "",
       typeText: typeNode ? nodeText(source, typeNode).trim() : "Object",
-      annotations: collectAnnotations(childNodes(rc, "recordComponentModifier"), source),
+      annotations,
       javadoc: parseJavadoc(javadocRaw),
-      javadocRaw
+      javadocRaw,
+      ...deprecated ? { deprecated } : {}
     };
   });
 }
@@ -26770,9 +26795,18 @@ function classSchema(info, ctx) {
       schema2 = overridden;
     }
     const desc = schemaDescription(field.annotations, field.javadoc?.description);
-    const finalDesc = rule.appendDesc(desc, field, ctx);
+    let finalDesc = rule.appendDesc(desc, field, ctx);
+    if (field.deprecated) {
+      const depNote = field.javadoc?.deprecated?.trim();
+      const suffix = depNote ? `@deprecated ${depNote}` : "@deprecated";
+      finalDesc = finalDesc ? `${finalDesc}
+${suffix}` : suffix;
+    }
     if (finalDesc) {
       schema2 = withRefSiblings(schema2, { description: finalDesc });
+    }
+    if (field.deprecated) {
+      schema2 = withRefSiblings(schema2, { deprecated: true });
     }
     const example = schemaExample(field.annotations);
     if (example) {

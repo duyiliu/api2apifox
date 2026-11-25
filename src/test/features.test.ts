@@ -190,6 +190,35 @@ test("@Deprecated 与 operationId 去重", () => {
   assert.notEqual(opIds[0], opIds[1]);
 });
 
+test("字段级 @Deprecated 透传 schema property(deprecated:true + description 携带弃用说明)", () => {
+  const userVO = spec.components!.schemas["UserVO"];
+  const nickname = userVO.properties!.nickname;
+  assert.equal(nickname.deprecated, true);
+  assert.ok(nickname.description!.includes("旧昵称"), "保留原 javadoc 描述: " + nickname.description);
+  assert.ok(nickname.description!.includes("@deprecated 新接口请用 username 字段"), "拼接 @deprecated 原文: " + nickname.description);
+  // 未弃用字段不写 deprecated 键
+  assert.equal("deprecated" in userVO.properties!.username, false);
+});
+
+test("字段级 @Deprecated:引用类型经 allOf 承载 deprecated($ref 兄弟字段不丢)", () => {
+  const detail = spec.components!.schemas["UserDetailVO"];
+  const legacy = detail.properties!.legacyProfile;
+  // OpenAPI 3.0.3 会忽略 $ref 兄弟字段:引用类型改为 allOf 包装,deprecated/description 提升为兄弟
+  assert.deepEqual(legacy.allOf, [{ $ref: "#/components/schemas/Profile" }]);
+  assert.equal(legacy.deprecated, true);
+  assert.ok(legacy.description!.includes("@deprecated 请改用 profile 字段"), "拼接弃用说明: " + legacy.description);
+  assert.equal("deprecated" in detail.properties!.profile, false, "未弃用的同类型字段不受影响");
+});
+
+test("record 组件级 @Deprecated 透传 schema property", () => {
+  const contact = spec.components!.schemas["UserContactRecord"];
+  const fax = contact.properties!.fax;
+  assert.equal(fax.deprecated, true);
+  assert.ok(fax.description!.includes("旧传真号"));
+  assert.ok(fax.description!.includes("@deprecated 已不采集传真"));
+  assert.equal("deprecated" in contact.properties!.phone, false);
+});
+
 test("analyzeSubset 只输出一个接口", () => {
   const sub = analyzeSubset(files, { title: "demo" }, (ep) => ep.path === "/api/v1/orders/v2");
   assert.equal(Object.keys(sub.spec.paths).length, 1);

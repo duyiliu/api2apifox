@@ -111,3 +111,16 @@ test("parseJavadoc:@param 多行续文归入参数描述(对齐 IDEA/easy-yapi)"
   assert.ok(!jd?.description.includes("支持模糊匹配"), jd?.description);
   assert.ok(jd?.description.includes("分页查询用户列表"));
 });
+
+test("parseJavadoc 提取 @deprecated 文本(含多行续文),不计入正文描述", () => {
+  const jd = parseJavadoc(
+    ["/**", " * 旧昵称", " * @deprecated 新接口请用 username 字段,", " * 老字段只读", " */"].join("\n")
+  );
+  assert.equal(jd?.deprecated, "新接口请用 username 字段,\n老字段只读");
+  assert.equal(jd?.description, "旧昵称");
+  assert.ok(!jd?.description.includes("@deprecated"));
+
+  // 无 @deprecated tag 时为 undefined
+  const plain = parseJavadoc("/** 普通字段 */");
+  assert.equal(plain?.deprecated, undefined);
+});
