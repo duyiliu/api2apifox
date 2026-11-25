@@ -9,6 +9,7 @@ import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties
 import { fileSetFingerprint } from "./config/fileFingerprint";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
+import { buildCurlCommand, CURL_BODY_TRUNCATE_BYTES, OperationLike } from "./providers/curlBuilder";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { SyncResultPanel } from "./views/SyncResultPanel";
 import { AnalyzeCache, endpointAt } from "./pipeline";
@@ -856,6 +857,45 @@ export function activate(context: vscode.ExtensionContext): void {
       const text = `${node.endpoint.method} ${node.endpoint.path}`;
       await vscode.env.clipboard.writeText(text);
       vscode.window.showInformationMessage(`已复制: ${text}`);
+    }),
+    vscode.commands.registerCommand("apifoxHelper.copyEndpointCurl", async (node?: ApiTreeNode) => {
+      if (!node || node.kind !== "endpoint") {
+        return;
+      }
+      const ep = node.endpoint;
+      // 通过分析子集拿到该接口在 OpenAPI spec 中的 operation,
+      // body 骨架复用同步口径的 schema(hidden/JsonIgnore/规则过滤已生效)。
+      // 解析失败/取消时退化为不带 body 骨架的 cURL,保证命令始终可用。
+      let operation: OperationLike | undefined;
+      try {
+        const allFiles = await collectFiles(undefined, undefined);
+        if (allFiles) {
+          const analyzed = cache.analyzeSubset(
+            allFiles,
+            await analyzeOptions(),
+            (e) => e.fsPath === ep.fsPath && e.method === ep.method && e.path === ep.path,
+            `ep:${ep.fsPath}:${ep.method} ${ep.path}`
+          );
+          const verb = ep.method.toLowerCase();
+          const op = analyzed.spec.paths[ep.path]?.[verb];
+          if (op && typeof op === "object") {
+            operation = op as OperationLike;
+          }
+        }
+      } catch {
+        // 解析失败不阻断复制:退化为无 body 骨架版本
+      }
+      const settings = getSettings();
+      const baseUrl = settings.baseUrl?.trim() || "http://localhost:8080";
+      const { command, truncated } = buildCurlCommand(ep, operation, baseUrl);
+      await vscode.env.clipboard.writeText(command);
+      if (truncated) {
+        vscode.window.showWarningMessage(
+          `已复制 cURL(body 超过 ${CURL_BODY_TRUNCATE_BYTES / 1024}KB 已截断;完整报文请用「导出 OpenAPI 预览」)`
+        );
+      } else {
+        vscode.window.showInformationMessage(`已复制 cURL: ${ep.method} ${ep.path}`);
+      }
     }),
     vscode.commands.registerCommand("apifoxHelper.showStatusBarMenu", async () => {
       const settings = getSettings();
