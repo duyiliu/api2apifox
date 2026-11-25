@@ -53,6 +53,8 @@ export interface ClassFileField {
   static: boolean;
   synthetic: boolean;
   enumConstant: boolean;
+  /** 带 Deprecated 属性或 @Deprecated 注解(JVM Spec §4.7.16;javac 两者都会写) */
+  deprecated: boolean;
 }
 
 export interface ParsedClassFile {
@@ -159,6 +161,7 @@ export function parseClassFile(buf: Buffer): ParsedClassFile {
     const descriptor = utf8(fDescIdx);
     const anns: ClassFileAnnotation[] = [];
     let signature: string | undefined;
+    let deprecated = false;
     const attrCount = r.u2();
     for (let a = 0; a < attrCount; a++) {
       const attrName = utf8(r.u2());
@@ -172,6 +175,8 @@ export function parseClassFile(buf: Buffer): ParsedClassFile {
         } catch {
           // 注解解析失败不阻断字段解析
         }
+      } else if (attrName === "Deprecated") {
+        deprecated = true;
       }
     }
     const synthetic = (fAccess & ACC_SYNTHETIC) !== 0;
@@ -186,6 +191,9 @@ export function parseClassFile(buf: Buffer): ParsedClassFile {
     }
     const sig = signature ?? descriptor;
     const parsed = parseFieldSignature(sig);
+    if (!deprecated) {
+      deprecated = anns.some((ann) => ann.name === "Deprecated");
+    }
     fields.push({
       name,
       typeText: parsed ? sigToText(parsed) : "Object",
@@ -193,6 +201,7 @@ export function parseClassFile(buf: Buffer): ParsedClassFile {
       static: isStatic,
       synthetic,
       enumConstant: false,
+      deprecated,
     });
   }
 

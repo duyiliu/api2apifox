@@ -8,6 +8,8 @@ export interface JavadocInfo {
   params: Record<string, string>;
   /** @return 说明 */
   returns?: string;
+  /** @deprecated 说明文本(字段/方法弃用原因;无该 tag 时为 undefined) */
+  deprecated?: string;
 }
 
 /**
@@ -25,6 +27,7 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
   const lines = cleaned.split("\n");
   const params: Record<string, string> = {};
   let returns: string | undefined;
+  let deprecated: string | undefined;
   const descLines: string[] = [];
   let currentTag: string | null = null;
   let currentParamName: string | null = null;
@@ -43,6 +46,10 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
         currentTag = tag;
       } else if (tag === "return") {
         returns = rest;
+        currentParamName = null;
+        currentTag = tag;
+      } else if (tag === "deprecated") {
+        deprecated = rest;
         currentParamName = null;
         currentTag = tag;
       } else {
@@ -65,6 +72,12 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
       }
       continue;
     }
+    if (currentTag === "deprecated") {
+      if (line.trim()) {
+        deprecated = deprecated ? `${deprecated}\n${line.trim()}` : line.trim();
+      }
+      continue;
+    }
     if (currentTag) {
       // 其他 @tag 的多行续文,丢弃
       continue;
@@ -74,7 +87,7 @@ export function parseJavadoc(raw: string | undefined): JavadocInfo | undefined {
 
   const description = descLines.join("\n").trim();
   const firstLine = descLines.find((l) => l.trim().length > 0)?.trim() ?? "";
-  return { firstLine, description, params, returns };
+  return { firstLine, description, params, returns, deprecated };
 }
 
 /** 去掉 /** 与 *\/,以及每行前导的 * */

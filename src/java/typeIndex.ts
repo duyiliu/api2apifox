@@ -86,7 +86,9 @@ function collectFields(classBody: CstNode | undefined, source: string): FieldInf
       if (!name) {
         continue;
       }
-      fields.push({ name, typeText, annotations: collectAnnotations(mods, source), javadoc, javadocRaw });
+      const annotations = collectAnnotations(mods, source);
+      const deprecated = annotations.some((a) => a.name === "Deprecated") || undefined;
+      fields.push({ name, typeText, annotations, javadoc, javadocRaw, ...(deprecated ? { deprecated } : {}) });
     }
   }
   return fields;
@@ -118,12 +120,15 @@ function recordComponentsOf(decl: CstNode, source: string): FieldInfo[] {
     const typeNode = childNode(rc, "unannType");
     // record 组件的注解挂在 recordComponentModifier(非字段的 variableModifier)
     const javadocRaw = nodeJavadoc(rc) ?? (index === 0 ? listJavadoc : undefined);
+    const annotations = collectAnnotations(childNodes(rc, "recordComponentModifier"), source);
+    const deprecated = annotations.some((a) => a.name === "Deprecated") || undefined;
     return {
       name: tokenImage(rc, "Identifier") ?? "",
       typeText: typeNode ? nodeText(source, typeNode).trim() : "Object",
-      annotations: collectAnnotations(childNodes(rc, "recordComponentModifier"), source),
+      annotations,
       javadoc: parseJavadoc(javadocRaw),
       javadocRaw,
+      ...(deprecated ? { deprecated } : {}),
     };
   });
 }

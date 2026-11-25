@@ -17,6 +17,13 @@ public class UserVO {
     /** 邮箱 */
     private String email;
 
+    /**
+     * 旧昵称
+     * @deprecated 新接口请用 username 字段
+     */
+    @Deprecated
+    private String nickname;
+
     /** 账号状态 */
     private Status status;
 

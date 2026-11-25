@@ -20,6 +20,8 @@ export interface FieldInfo {
   javadoc?: JavadocInfo;
   /** javadoc 原文(供 .apifox-helper.properties #tag 规则使用) */
   javadocRaw?: string;
+  /** 字段已 @Deprecated(源码注解或字节码 Deprecated 属性) */
+  deprecated?: boolean;
 }
 
 export interface ClassInfo {
