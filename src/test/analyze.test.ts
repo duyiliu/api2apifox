@@ -130,6 +130,56 @@ test("PUT 状态接口:枚举 query 参数与 header 参数", () => {
   assert.equal(operator.required, false);
 });
 
+test("Spring 路径变量正则 {id:\\d+} 被剥离,产出合法 OpenAPI 路径模板", () => {
+  // 回归:{name:regex} 原样进入 paths key 非法且无法与 path 参数关联(GitHub issue #24)
+  const sources: SourceFile[] = [
+    {
+      fsPath: "/mem/RegexPathController.java",
+      content: `
+package com.example.regex;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/users")
+public class RegexPathController {
+  @GetMapping("/{id:\\\\d+}")
+  public String digit(@PathVariable("id") Long id) { return null; }
+
+  @GetMapping("/names/{name:[a-z]+}")
+  public String alpha(@PathVariable("name") String name) { return null; }
+
+  @GetMapping("/files/{name:[a-z]+}/{version:\\\\d{1,3}}")
+  public String multi(@PathVariable("name") String name, @PathVariable("version") Integer version) { return null; }
+
+  @GetMapping("/plain/{id}")
+  public String plain(@PathVariable("id") Long id) { return null; }
+}
+`,
+    },
+  ];
+  const res = analyze(sources, { title: "t" });
+
+  // 正则段被剥离,paths key 是合法模板
+  assert.ok(res.spec.paths["/users/{id}"], "digit 路径应清洗为 /users/{id}");
+  assert.ok(res.spec.paths["/users/names/{name}"], "alpha 路径应清洗为 /users/names/{name}");
+  assert.ok(res.spec.paths["/users/files/{name}/{version}"], "含量词大括号的正则也应完整剥离");
+  assert.equal(res.spec.paths["/users/{id:\\d+}"], undefined, "原始正则模板不应残留在 paths key");
+  assert.ok(res.spec.paths["/users/plain/{id}"], "普通模板不受影响");
+
+  // path 参数仍按变量名正常关联
+  const digit = (res.spec.paths["/users/{id}"].get as any).parameters[0];
+  assert.equal(digit.name, "id");
+  assert.equal(digit.in, "path");
+  assert.equal(digit.required, true);
+  const multi = (res.spec.paths["/users/files/{name}/{version}"].get as any).parameters;
+  assert.deepEqual(multi.map((p: any) => p.name).sort(), ["name", "version"]);
+
+  // endpoint 元数据与 spec paths key 一致
+  const ep = res.endpoints.find((e) => e.methodName === "digit");
+  assert.equal(ep?.path, "/users/{id}");
+});
+
 test("import 接口:multipart 文件上传", () => {
   const op = spec.paths["/api/v1/users/import"].post as Record<string, any>;
   const schema = op.requestBody.content["multipart/form-data"].schema;

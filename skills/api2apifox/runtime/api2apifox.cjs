@@ -28538,7 +28538,8 @@ function pathArgsOf(mapping) {
 }
 function joinPath2(base, sub) {
   const p = "/" + [base, sub].filter((s) => s && s !== "/").map((s) => s.replace(/^\/+|\/+$/g, "")).join("/");
-  return p.replace(/\/{2,}/g, "/") || "/";
+  const collapsed = p.replace(/\/{2,}/g, "/") || "/";
+  return collapsed.replace(/\{([^}:]+):((?:[^{}]|\{[^{}]*\})*)\}/g, "{$1}");
 }
 function isPrimitiveJavaType(typeText) {
   return /^(boolean|byte|short|int|long|char|float|double)$/.test(typeText.trim());

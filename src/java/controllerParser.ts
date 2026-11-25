@@ -1425,7 +1425,10 @@ function joinPath(base: string, sub: string): string {
       .filter((s) => s && s !== "/")
       .map((s) => s.replace(/^\/+|\/+$/g, ""))
       .join("/");
-  return p.replace(/\/{2,}/g, "/") || "/";
+  const collapsed = p.replace(/\/{2,}/g, "/") || "/";
+  // Spring 路径变量正则 {id:\d+} 不是合法 OpenAPI 路径模板,剥离 :regex 段仅保留变量名
+  // 正则本身可能含量词大括号(如 \d{1,3}),允许一层嵌套
+  return collapsed.replace(/\{([^}:]+):((?:[^{}]|\{[^{}]*\})*)\}/g, "{$1}");
 }
 
 /** Java 原生类型(不含包装类与数组):query 参数缺失时无法绑定 null,按必填处理 */
