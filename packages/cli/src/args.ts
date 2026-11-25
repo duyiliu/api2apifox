@@ -18,6 +18,10 @@ export interface CliOptions {
   output?: string;
   stdout: boolean;
   force: boolean;
+  /** 基线 OpenAPI 文件；与 --check 一起使用 */
+  baseline?: string;
+  /** export 基线比对模式（CI 破坏性变更检测） */
+  check: boolean;
   projectId?: number;
   token?: string;
   dryRun: boolean;
@@ -53,6 +57,8 @@ const argumentOptions = {
   output: { type: "string", short: "o" },
   stdout: { type: "boolean", default: false },
   force: { type: "boolean", default: false },
+  baseline: { type: "string" },
+  check: { type: "boolean", default: false },
   "project-id": { type: "string" },
   token: { type: "string" },
   "dry-run": { type: "boolean", default: false },
@@ -96,6 +102,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   if (format !== "text" && format !== "json") {
     throw new CliError("INVALID_ARGUMENT", "--format 只支持 text 或 json", 2);
   }
+  if (command !== "export" && (parsed.values.check || parsed.values.baseline !== undefined)) {
+    throw new CliError("INVALID_ARGUMENT", "--baseline / --check 仅用于 export 命令", 2);
+  }
   const projectId = parsed.values["project-id"] === undefined ? undefined : parsePositiveInteger(parsed.values["project-id"], "--project-id");
   return {
     command: command as CommandName | undefined,
@@ -111,6 +120,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     output: parsed.values.output,
     stdout: parsed.values.stdout ?? false,
     force: parsed.values.force ?? false,
+    baseline: parsed.values.baseline,
+    check: parsed.values.check ?? false,
     projectId,
     token: parsed.values.token,
     dryRun: parsed.values["dry-run"] ?? false,

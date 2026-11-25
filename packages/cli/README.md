@@ -21,6 +21,7 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 ```bash
 api2apifox scan --project . --format json
 api2apifox export --project . --output openapi.gen.json --force
+api2apifox export --project . --baseline openapi.old.json --check --format json
 api2apifox sync --project . --project-id 123456 --dry-run --format json
 API2APIFOX_TOKEN=APS_xxx api2apifox sync --project . --project-id 123456 --yes --format json
 api2apifox config --project . --format json
@@ -61,6 +62,28 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
 
 1. `--include` / `--exclude` **不是追加，而是整体替换**默认列表。只想额外加一条时要把默认值写全：默认 include 为 `**/src/main/java/**/*.java`，默认 exclude 为 `**/target/**`、`**/build/**`、`**/src/test/**`、`**/sample/**`、`**/.*/**`。
 2. `--file` / `--endpoint` 是**解析后过滤**，不会减少扫描量；文件多、想加快速度请用 `--include` / `--exclude` 收敛扫描范围。
+
+## 基线比对（CI 破坏性变更检测）
+
+`export --check --baseline <file>` 把当前生成的 OpenAPI 与基线文件按「操作 + schema」比对，
+不写任何输出文件。适合在 PR 阶段拦截意外破坏接口契约的改动：
+
+```bash
+# 1. 在主干导出基线（或直接使用上一次 export 的产物）
+api2apifox export --project . --output openapi.old.json --force
+
+# 2. 在 CI 中比对当前分支
+api2apifox export --project . --baseline openapi.old.json --check --format json
+```
+
+- 破坏性：删除路径/操作、删除必有响应字段、新增必填请求参数或请求字段、必填字段变为可选（响应侧）、类型收窄、删除响应体
+- 兼容：新增路径/操作、新增可选字段或可选参数、删除可选请求字段、删除请求体、描述变化、类型放宽
+- `$ref` 与 `allOf` 会先展开后比较；自递归 schema 有深度与访问集保护
+- 退出码：有破坏性变更时 `6`（`BREAKING_CHANGES_DETECTED`），变更清单在 JSON 信封 `error.details`；无破坏性变更时 `0`，清单在 `result`
+- 基线缺失/非法 JSON/不是 OpenAPI 文档时快速失败（`BASELINE_NOT_FOUND` / `BASELINE_INVALID`，退出码 2），不会静默通过
+- 基线路径相对项目根；`--file` / `--endpoint` 只比对所选范围，但 `--file` 无法检测「文件里最后一个接口被删」
+- `--endpoint` 选中的接口已被删除时，退出码为 `6`（`BREAKING_CHANGES_DETECTED`），而不是 `3` `NO_ENDPOINT_MATCHED`
+- 与 `--stdout` / `--output` 互斥，`--check` 不产生文件
 
 ## 配置文件
 
@@ -143,6 +166,6 @@ field.type=groovy: ((it.name() == "id" || it.name().endsWith("Id")) && (it.type(
 - `3`：没有 Java 文件或目标接口
 - `4`：Apifox 鉴权或权限错误
 - `5`：网络、超时或服务错误
-- `6`：导入完成但包含失败项
+- `6`：导入完成但包含失败项，或 `export --check` 检测到破坏性 API 变更
 - `7`：本地 I/O 或内部错误
 - `130`：取消
