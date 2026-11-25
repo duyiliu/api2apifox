@@ -1,0 +1,57 @@
+name: Skill Runtime Auto-Rebuild
+
+# 功能 PR 不再提交 runtime 产物（ci.yml 会拦截）,产物新鲜度由本 workflow 保证:
+# 每次 main 推进后重建 skills/api2apifox/runtime,有差异则由 bot 提交回 main。
+# GITHUB_TOKEN 的推送不会再触发 workflow,不会自循环;
+# release.yml 发版时另有严格门禁,tag 产物必然是最新。
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: skill-runtime-main
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    name: Rebuild runtime and commit if stale
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild skill runtime
+        run: npm run build:skill
+
+      - name: Commit rebuilt runtime if changed
+        run: |
+          if git diff --quiet -- skills/api2apifox/runtime; then
+            echo "runtime 已是最新,无需提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add skills/api2apifox/runtime
+          git commit -m "chore(skill): 自动重建运行时产物"
+          # 并发合并场景:main 可能已推进,rebase 后需以最新源码重建再修正提交
+          if ! git pull --rebase origin main; then
+            echo "::warning::rebase 失败,本次产物提交放弃;后续 main 推送会再触发重建"
+            exit 0
+          fi
+          npm run build:skill
+          git add skills/api2apifox/runtime
+          git commit --amend --no-edit
+          git push origin HEAD:main
