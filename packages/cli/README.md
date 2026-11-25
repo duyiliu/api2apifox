@@ -79,6 +79,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "folderNameSource": "tag",
   "rootFolderName": "",
   "updateFolderOfChangedEndpoint": true,
+  "openapiInfoVersion": "2.1.0",
   "helperProperties": {
     "enabled": true,
     "enumFieldDoc": false
@@ -90,6 +91,8 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
 > `updateFolderOfChangedEndpoint` 默认 `true`：覆盖已存在接口时同步更新其目录；设为 `false` 则只更新接口内容、不迁移目录。
 
 > `$schema` 只用于编辑器补全与校验，可删掉这一行，不影响 CLI 运行。
+
+> `openapiInfoVersion` 可选：显式指定 OpenAPI `info.version`（也可用 `--openapi-version` 覆盖）。不显式配置时自动读取项目根 `pom.xml` 的 `<version>`（剔除 `-SNAPSHOT` 后缀），取不到则为 `1.0.0`。
 
 Token 不允许写入配置文件。推荐使用环境变量：
 

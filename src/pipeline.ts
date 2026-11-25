@@ -28,6 +28,8 @@ export function dedupeEndpoints(endpoints: EndpointInfo[]): EndpointInfo[] {
 
 export interface AnalyzeOptions {
   title: string;
+  /** OpenAPI info.version;未指定时保持历史默认 "1.0.0" */
+  openapiInfoVersion?: string;
   /** 简单名为 Page 的分页包装展开风格 */
   pageStyle?: "spring-data" | "mybatis-plus";
   /** .apifox-helper.properties 规则 */
@@ -117,6 +119,7 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
   const filtered = { ...parseResult, endpoints: kept };
   const { spec } = buildOpenApi(filtered, index, {
     title: options.title,
+    openapiInfoVersion: options.openapiInfoVersion,
     pageStyle: options.pageStyle,
     rules: options.rules,
     enumFieldDoc: options.enumFieldDoc,
@@ -141,6 +144,7 @@ export function analyzeSubset(files: SourceFile[], options: AnalyzeOptions, endp
 function optionsCacheKey(opts: AnalyzeOptions): string {
   return JSON.stringify([
     opts.title,
+    opts.openapiInfoVersion ?? "",
     opts.pageStyle ?? "",
     opts.enumFieldDoc ?? false,
     opts.cacheKey ?? "",
@@ -240,6 +244,7 @@ export class AnalyzeCache {
     const deduped = { ...parseResult, endpoints: kept };
     const { spec } = buildOpenApi(deduped, index, {
       title: opts.title,
+      openapiInfoVersion: opts.openapiInfoVersion,
       pageStyle: opts.pageStyle,
       rules: opts.rules,
       enumFieldDoc: opts.enumFieldDoc,

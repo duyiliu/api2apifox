@@ -231,6 +231,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.updateFolderOfChangedEndpoint` | `true` | 覆盖已存在接口时同步更新其目录(对应 Apifox 导入的「更新接口所在目录」);关闭后改 `@Tag`/`rootFolderName` 不会迁移已同步接口 |
 | `apifoxHelper.schemaFolderId` | `0` | 可选,数据模型导入到该目录(填 Apifox 目录的数字 ID;目录查询接口已被 Apifox 下线,无法按名查找) |
 | `apifoxHelper.baseUrl` | `http://localhost:8080` | 「复制为 cURL」生成命令时使用的基础 URL(协议 + 主机 + 端口,不含路径) |
+| `apifoxHelper.openapiInfoVersion` | 空 | OpenAPI `info.version` 显式值(如 `2.1.0`);留空时自动读取工作区根 `pom.xml` 的 `<version>`(剔除 `-SNAPSHOT` 后缀),取不到则为 `1.0.0` |
 
 > 设置中心保存的项目绑定(`projectId`/`projectName`/`teamName`/`apiBaseUrl` 等)写入**工作区** `.vscode/settings.json`,会随仓库提交共享给团队(便于成员共用同一目标项目);访问令牌始终存在系统 SecretStorage,不落任何文件。
 

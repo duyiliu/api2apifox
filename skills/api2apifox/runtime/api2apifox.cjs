@@ -8715,6 +8715,27 @@ function unescapeProp(s) {
   });
 }
 
+// ../../src/config/projectVersion.ts
+function parsePomProjectVersion(text) {
+  const uncommented = text.replace(/<!--[\s\S]*?-->/g, "");
+  const projectMatch = /<project(?:\s[^>]*)?>([\s\S]*?)<\/project>/i.exec(uncommented);
+  if (!projectMatch) {
+    return void 0;
+  }
+  const body = projectMatch[1];
+  const withoutParent = body.replace(/<parent(?:\s[^>]*)?>[\s\S]*?<\/parent>/i, "");
+  const versionMatch = /<version>\s*([^<]+?)\s*<\/version>/i.exec(withoutParent);
+  if (!versionMatch) {
+    return void 0;
+  }
+  const raw = versionMatch[1].trim();
+  if (!raw || raw.includes("${")) {
+    return void 0;
+  }
+  const stripped = raw.replace(/-SNAPSHOT$/i, "");
+  return stripped || void 0;
+}
+
 // ../../src/java/jarIndex.ts
 var fs = __toESM(require("fs"));
 var path = __toESM(require("path"));
@@ -28855,7 +28876,7 @@ function buildOpenApi(parse2, index, options) {
     info: {
       title: options.title,
       description: options.description,
-      version: "1.0.0"
+      version: options.openapiInfoVersion ?? "1.0.0"
     },
     tags: [...tags.keys()].map((name) => ({ name })),
     paths
@@ -29068,6 +29089,7 @@ function run(files, options, endpointFilter) {
   const filtered = { ...parseResult, endpoints: kept };
   const { spec } = buildOpenApi(filtered, index, {
     title: options.title,
+    openapiInfoVersion: options.openapiInfoVersion,
     pageStyle: options.pageStyle,
     rules: options.rules,
     enumFieldDoc: options.enumFieldDoc,
@@ -29243,7 +29265,7 @@ async function analyzeProject(request) {
       scannedFiles: 0,
       skippedFiles: scanned.skippedFiles,
       diagnostics: scanned.diagnostics,
-      spec: emptySpec(config.title),
+      spec: emptySpec(config.title, resolveOpenapiInfoVersion(config)),
       endpoints: [],
       warnings: diagnosticWarnings
     };
@@ -29260,6 +29282,7 @@ async function analyzeProject(request) {
   };
   const options = {
     title: config.title,
+    openapiInfoVersion: resolveOpenapiInfoVersion(config),
     pageStyle: config.pageTypeStyle,
     rules: helperProperties,
     enumFieldDoc: config.enumFieldDoc,
@@ -29367,8 +29390,22 @@ function normalizeEndpointPath(endpointPath) {
 function pathDepth(file) {
   return file.split("/").length;
 }
-function emptySpec(title) {
-  return { openapi: "3.0.3", info: { title, version: "1.0.0" }, paths: {} };
+function resolveOpenapiInfoVersion(config) {
+  if (config.openapiInfoVersion) {
+    return config.openapiInfoVersion;
+  }
+  try {
+    const pomText = fs3.readFileSync(path4.join(config.projectRoot, "pom.xml"), "utf8");
+    const version = parsePomProjectVersion(pomText);
+    if (version) {
+      return version;
+    }
+  } catch {
+  }
+  return "1.0.0";
+}
+function emptySpec(title, version = "1.0.0") {
+  return { openapi: "3.0.3", info: { title, version }, paths: {} };
 }
 function diagnosticMessagesOf(diagnostics) {
   return diagnostics.filter((item) => item.level === "warning").map((item) => `${item.code}: ${item.message}`);
@@ -29406,6 +29443,9 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   const defaults2 = {
     projectRoot: root2,
     title: path5.basename(root2) || "API",
+    // 显式置空:派生 sources 键集合需要这个键存在;语义上 undefined 表示未显式配置,
+    // 由分析层回退 pom.xml <version> / 兜底 1.0.0
+    openapiInfoVersion: void 0,
     projectId: 0,
     apiBaseUrl: "https://api.apifox.com",
     endpointConflictBehavior: "OVERWRITE_EXISTING",
@@ -29453,6 +29493,7 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
+  applyFile(config, sources, "openapiInfoVersion", openapiInfoVersionValue(fileConfig.openapiInfoVersion, diagnostics), fileSource);
   if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
     config.title = fileConfig.title.trim();
     sources.title = fileSource;
@@ -29464,7 +29505,7 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   applyEnv(config, sources, "endpointConflictBehavior", env.API2APIFOX_ENDPOINT_CONFLICT, "API2APIFOX_ENDPOINT_CONFLICT", parseEnvConflict, diagnostics);
   applyEnv(config, sources, "schemaConflictBehavior", env.API2APIFOX_SCHEMA_CONFLICT, "API2APIFOX_SCHEMA_CONFLICT", parseEnvConflict, diagnostics);
   for (const [key, value] of Object.entries(overrides)) {
-    if (key === "configFile" || key === "token" || value === void 0 || key === "title") {
+    if (key === "configFile" || key === "token" || value === void 0 || key === "title" || key === "openapiInfoVersion") {
       continue;
     }
     config[key] = value;
@@ -29473,6 +29514,10 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   if (overrides.title?.trim()) {
     config.title = overrides.title.trim();
     sources.title = "cli";
+  }
+  if (overrides.openapiInfoVersion !== void 0 && overrides.openapiInfoVersion.trim()) {
+    config.openapiInfoVersion = overrides.openapiInfoVersion.trim();
+    sources.openapiInfoVersion = "cli";
   }
   validateResolvedConfig(config, diagnostics);
   if (diagnostics.some((item) => item.level === "error")) {
@@ -29493,6 +29538,7 @@ function validateKnownKeys(config, configPath, diagnostics) {
   const known = /* @__PURE__ */ new Set([
     "$schema",
     "title",
+    "openapiInfoVersion",
     "projectId",
     "apiBaseUrl",
     "endpointConflictBehavior",
@@ -29601,6 +29647,16 @@ function validateResolvedConfig(config, diagnostics) {
   if (!config.include.length) {
     invalid("include \u81F3\u5C11\u9700\u8981\u4E00\u4E2A glob", diagnostics);
   }
+}
+function openapiInfoVersionValue(value, diagnostics) {
+  if (value === void 0) {
+    return void 0;
+  }
+  if (typeof value === "string") {
+    return value.trim() ? value.trim() : void 0;
+  }
+  invalid("openapiInfoVersion \u5FC5\u987B\u662F\u5B57\u7B26\u4E32", diagnostics);
+  return void 0;
 }
 function invalid(message, diagnostics, file) {
   diagnostics.push({ level: "error", code: "CONFIG_INVALID", message, file });
@@ -30019,6 +30075,7 @@ var argumentOptions = {
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
   "timeout-ms": { type: "string" },
+  "openapi-version": { type: "string" },
   "update-folder": { type: "boolean" },
   "no-update-folder": { type: "boolean" }
 };
@@ -30072,8 +30129,18 @@ function parseCliArgs(argv) {
     dependencyJars: parsed.values["dependency-jar"] ?? [],
     dependencyMaxJars: parsed.values["dependency-max-jars"] === void 0 ? void 0 : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
     timeoutMs: parsed.values["timeout-ms"] === void 0 ? void 0 : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
+    openapiInfoVersion: parseOpenapiVersion(parsed.values["openapi-version"]),
     updateFolderOfChangedEndpoint: parsed.values["no-update-folder"] ? false : parsed.values["update-folder"] ? true : void 0
   };
+}
+function parseOpenapiVersion(raw) {
+  if (raw === void 0) {
+    return void 0;
+  }
+  if (!raw.trim()) {
+    throw new CliError("INVALID_ARGUMENT", "--openapi-version \u4E0D\u80FD\u4E3A\u7A7A", 2);
+  }
+  return raw.trim();
 }
 function hasOption(args, name) {
   return args.some((arg) => arg === name || arg.startsWith(`${name}=`));
@@ -30923,7 +30990,8 @@ function configOverrides(options) {
     maxDependencyJars: options.dependencyMaxJars,
     exportPath: options.output,
     timeoutMs: options.timeoutMs,
-    updateFolderOfChangedEndpoint: options.updateFolderOfChangedEndpoint
+    updateFolderOfChangedEndpoint: options.updateFolderOfChangedEndpoint,
+    openapiInfoVersion: options.openapiInfoVersion
   };
 }
 function outputSuccess(options, result, warnings, durationMs) {
@@ -31041,6 +31109,7 @@ ${FILTER_HELP}
   --dependency-jar <path>   \u663E\u5F0F\u4F9D\u8D56 jar \u7684\u7EDD\u5BF9\u8DEF\u5F84\uFF0C\u53EF\u91CD\u590D\uFF08\u4F20\u5165\u5373\u66FF\u6362\u914D\u7F6E\u503C\uFF09
   --dependency-max-jars <n> \u4F9D\u8D56 jar \u89E3\u6790\u603B\u6570\u4E0A\u9650\uFF0C\u9ED8\u8BA4 120\uFF1B0 \u8868\u793A\u4E0D\u505A\u4F9D\u8D56\u89E3\u6790
   --timeout-ms <ms>         Apifox \u8BF7\u6C42\u7B49\u5F85\u4E0A\u9650\uFF0C\u9ED8\u8BA4 300000
+  --openapi-version <ver>   OpenAPI info.version \u663E\u5F0F\u503C\uFF1B\u7F3A\u7701\u81EA\u52A8\u8BFB\u53D6\u9879\u76EE\u6839 pom.xml \u7684 <version>\uFF0C\u53D6\u4E0D\u5230\u65F6\u4E3A 1.0.0
 ${HELP_FLAG}
   -v, --version             \u663E\u793A\u7248\u672C
 

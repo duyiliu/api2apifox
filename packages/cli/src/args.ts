@@ -35,6 +35,8 @@ export interface CliOptions {
   timeoutMs?: number;
   /** 覆盖已存在接口时是否同步更新其目录；undefined 表示沿用配置文件/默认值 */
   updateFolderOfChangedEndpoint?: boolean;
+  /** OpenAPI info.version 显式覆盖；undefined 表示沿用配置文件/pom.xml/默认值 */
+  openapiInfoVersion?: string;
 }
 
 const conflictBehaviors: ConflictBehavior[] = ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"];
@@ -64,6 +66,7 @@ const argumentOptions = {
   "dependency-jar": { type: "string", multiple: true, default: [] },
   "dependency-max-jars": { type: "string" },
   "timeout-ms": { type: "string" },
+  "openapi-version": { type: "string" },
   "update-folder": { type: "boolean" },
   "no-update-folder": { type: "boolean" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
@@ -124,8 +127,19 @@ export function parseCliArgs(argv: string[]): CliOptions {
         ? undefined
         : parseNonNegativeInteger(parsed.values["dependency-max-jars"], "--dependency-max-jars"),
     timeoutMs: parsed.values["timeout-ms"] === undefined ? undefined : parsePositiveInteger(parsed.values["timeout-ms"], "--timeout-ms"),
+    openapiInfoVersion: parseOpenapiVersion(parsed.values["openapi-version"]),
     updateFolderOfChangedEndpoint: parsed.values["no-update-folder"] ? false : parsed.values["update-folder"] ? true : undefined,
   };
+}
+
+function parseOpenapiVersion(raw: string | undefined): string | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!raw.trim()) {
+    throw new CliError("INVALID_ARGUMENT", "--openapi-version 不能为空", 2);
+  }
+  return raw.trim();
 }
 
 function hasOption(args: string[], name: string): boolean {

@@ -14,6 +14,12 @@ export interface Diagnostic {
 export interface ResolvedConfig {
   projectRoot: string;
   title: string;
+  /**
+   * OpenAPI info.version 显式配置值;undefined 表示未显式配置,
+   * 此时由分析层回退读取项目根 pom.xml 的 <version>(剔除 -SNAPSHOT),
+   * 再取不到则兜底 "1.0.0"。
+   */
+  openapiInfoVersion?: string;
   projectId: number;
   apiBaseUrl: string;
   endpointConflictBehavior: ConflictBehavior;

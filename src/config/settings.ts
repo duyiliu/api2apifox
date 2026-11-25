@@ -36,6 +36,8 @@ export interface ApifoxSettings {
   enableCodeLens: boolean;
   /** 「复制为 cURL」生成命令时使用的基础 URL(缺省 http://localhost:8080) */
   baseUrl: string;
+  /** OpenAPI info.version 显式值;空串表示未配置(回退 pom.xml <version> / 默认 1.0.0) */
+  openapiInfoVersion: string;
 }
 
 export function getSettings(): ApifoxSettings {
@@ -63,6 +65,7 @@ export function getSettings(): ApifoxSettings {
     maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),
     enableCodeLens: cfg.get<boolean>("enableCodeLens", true),
     baseUrl: cfg.get<string>("baseUrl", "http://localhost:8080"),
+    openapiInfoVersion: cfg.get<string>("openapiInfoVersion", ""),
   };
 }
 

@@ -7,6 +7,7 @@ import { setToken } from "./config/secret";
 import { getSettings } from "./config/settings";
 import { HelperProperties, loadPropertiesFiles } from "./config/helperProperties";
 import { fileSetFingerprint } from "./config/fileFingerprint";
+import { parsePomProjectVersion } from "./config/projectVersion";
 import { EndpointInfo, SourceFile } from "./java/model";
 import { ApiTreeNode, ApiTreeProvider } from "./providers/ApiTreeProvider";
 import { buildCurlCommand, CURL_BODY_TRUNCATE_BYTES, OperationLike } from "./providers/curlBuilder";
@@ -48,6 +49,26 @@ async function cachedMavenRepos(configured: string[]): Promise<string[]> {
   const repos = await discoverMavenRepos(configured);
   mavenReposCache = { key, repos };
   return repos;
+}
+
+/**
+ * 扩展侧 OpenAPI info.version 解析:显式设置优先,否则读工作区根 pom.xml 的 <version>,
+ * 都取不到返回 undefined(由 builder 兜底 "1.0.0")。pom 缺失/畸形静默回退,不产生告警(Issue #53)。
+ */
+async function resolveOpenapiInfoVersion(explicit: string): Promise<string | undefined> {
+  const trimmed = explicit.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) {
+    return undefined;
+  }
+  try {
+    return parsePomProjectVersion(await fs.promises.readFile(path.join(root, "pom.xml"), "utf8"));
+  } catch {
+    return undefined;
+  }
 }
 
 async function cachedPomFiles(): Promise<vscode.Uri[]> {
@@ -331,13 +352,16 @@ export function activate(context: vscode.ExtensionContext): void {
     const settings = getSettings();
     const rootFolder = settings.rootFolderName.trim();
     const jarIndex = await buildJarClassIndex();
+    // OpenAPI info.version:显式设置 > 工作区根 pom.xml <version>(剔除 -SNAPSHOT) > 默认 1.0.0
+    const openapiInfoVersion = await resolveOpenapiInfoVersion(settings.openapiInfoVersion);
     return {
       title: vscode.workspace.name ?? "API",
+      openapiInfoVersion,
       pageStyle: settings.pageTypeStyle,
       rules: await loadHelperProperties(),
       enumFieldDoc: settings.enumFieldDoc,
       // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
-      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey].join("\u0000"),
+      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey, openapiInfoVersion].join("\u0000"),
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
       folderOf: (ep: { tag: string; controller: string }) => {
         const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
@@ -472,6 +496,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "apifoxHelper.helperProperties.enumFieldDoc",
     "apifoxHelper.dependencyRepos",
     "apifoxHelper.dependencyJars",
+    "apifoxHelper.openapiInfoVersion",
   ];
   let configRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleConfigRefresh = () => {

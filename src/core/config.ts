@@ -8,6 +8,7 @@ const CONFLICT_BEHAVIORS: ConflictBehavior[] = ["OVERWRITE_EXISTING", "AUTO_MERG
 
 interface FileConfig {
   token?: unknown;
+  openapiInfoVersion?: unknown;
   projectId?: unknown;
   apiBaseUrl?: unknown;
   endpointConflictBehavior?: unknown;
@@ -32,6 +33,7 @@ interface FileConfig {
 export interface ConfigOverrides {
   configFile?: string;
   token?: string;
+  openapiInfoVersion?: string;
   projectId?: number;
   apiBaseUrl?: string;
   endpointConflictBehavior?: ConflictBehavior;
@@ -87,6 +89,9 @@ export function resolveConfig(
   const defaults: ResolvedConfig = {
     projectRoot: root,
     title: path.basename(root) || "API",
+    // 显式置空:派生 sources 键集合需要这个键存在;语义上 undefined 表示未显式配置,
+    // 由分析层回退 pom.xml <version> / 兜底 1.0.0
+    openapiInfoVersion: undefined,
     projectId: 0,
     apiBaseUrl: "https://api.apifox.com",
     endpointConflictBehavior: "OVERWRITE_EXISTING",
@@ -139,6 +144,7 @@ export function resolveConfig(
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "timeoutMs", numberValue(fileConfig.timeoutMs, "timeoutMs", diagnostics), fileSource);
+  applyFile(config, sources, "openapiInfoVersion", openapiInfoVersionValue(fileConfig.openapiInfoVersion, diagnostics), fileSource);
   if (typeof fileConfig.title === "string" && fileConfig.title.trim()) {
     config.title = fileConfig.title.trim();
     sources.title = fileSource;
@@ -152,7 +158,7 @@ export function resolveConfig(
   applyEnv(config, sources, "schemaConflictBehavior", env.API2APIFOX_SCHEMA_CONFLICT, "API2APIFOX_SCHEMA_CONFLICT", parseEnvConflict, diagnostics);
 
   for (const [key, value] of Object.entries(overrides) as [keyof ConfigOverrides, ConfigOverrides[keyof ConfigOverrides]][]) {
-    if (key === "configFile" || key === "token" || value === undefined || key === "title") {
+    if (key === "configFile" || key === "token" || value === undefined || key === "title" || key === "openapiInfoVersion") {
       continue;
     }
     (config as unknown as Record<string, unknown>)[key] = value;
@@ -161,6 +167,12 @@ export function resolveConfig(
   if (overrides.title?.trim()) {
     config.title = overrides.title.trim();
     sources.title = "cli";
+  }
+  // CLI --openapi-version 只接受非空值(空串视为未指定,交由 pom/默认回退);
+  // 空白入参在 parseCliArgs 处拒绝,这里再兜底 trim 一致性
+  if (overrides.openapiInfoVersion !== undefined && overrides.openapiInfoVersion.trim()) {
+    config.openapiInfoVersion = overrides.openapiInfoVersion.trim();
+    sources.openapiInfoVersion = "cli";
   }
 
   validateResolvedConfig(config, diagnostics);
@@ -184,6 +196,7 @@ function validateKnownKeys(config: FileConfig, configPath: string, diagnostics: 
   const known = new Set([
     "$schema",
     "title",
+    "openapiInfoVersion",
     "projectId",
     "apiBaseUrl",
     "endpointConflictBehavior",
@@ -312,6 +325,19 @@ function validateResolvedConfig(config: ResolvedConfig, diagnostics: Diagnostic[
   if (!config.include.length) {
     invalid("include 至少需要一个 glob", diagnostics);
   }
+}
+
+function openapiInfoVersionValue(value: unknown, diagnostics: Diagnostic[]): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  // 空串语义等同未配置(回退 pom.xml / 默认值),不视为非法;
+  // 非空时必须是非空字符串,否则静默丢弃会掩盖配置笔误
+  if (typeof value === "string") {
+    return value.trim() ? value.trim() : undefined;
+  }
+  invalid("openapiInfoVersion 必须是字符串", diagnostics);
+  return undefined;
 }
 
 function invalid(message: string, diagnostics: Diagnostic[], file?: string): void {

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { HelperProperties, loadPropertiesFiles } from "../config/helperProperties";
+import { parsePomProjectVersion } from "../config/projectVersion";
 import { discoverMavenRepos, JarClassIndex, parsePomDependencies, resolveDependencyJars } from "../java/jarIndex";
 import { EndpointInfo } from "../java/model";
 import { analyze, analyzeSubset } from "../pipeline";
@@ -27,7 +28,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
       scannedFiles: 0,
       skippedFiles: scanned.skippedFiles,
       diagnostics: scanned.diagnostics,
-      spec: emptySpec(config.title),
+      spec: emptySpec(config.title, resolveOpenapiInfoVersion(config)),
       endpoints: [],
       warnings: diagnosticWarnings,
     };
@@ -45,6 +46,7 @@ export async function analyzeProject(request: AnalyzeProjectRequest): Promise<Pr
   };
   const options = {
     title: config.title,
+    openapiInfoVersion: resolveOpenapiInfoVersion(config),
     pageStyle: config.pageTypeStyle,
     rules: helperProperties,
     enumFieldDoc: config.enumFieldDoc,
@@ -173,8 +175,30 @@ function pathDepth(file: string): number {
   return file.split("/").length;
 }
 
-function emptySpec(title: string): ProjectAnalysisResult["spec"] {
-  return { openapi: "3.0.3", info: { title, version: "1.0.0" }, paths: {} };
+/**
+ * info.version 读取顺序(Issue #53):
+ *  显式配置(.api2apifox.json openapiInfoVersion / CLI --openapi-version / 扩展设置)
+ *  → 项目根 pom.xml 的 <version>(剔除 -SNAPSHOT)→ 兜底 "1.0.0"。
+ * pom 缺失/畸形/占位符版本时静默回退,不产生新的 warning 噪声。
+ */
+function resolveOpenapiInfoVersion(config: ResolvedConfig): string {
+  if (config.openapiInfoVersion) {
+    return config.openapiInfoVersion;
+  }
+  try {
+    const pomText = fs.readFileSync(path.join(config.projectRoot, "pom.xml"), "utf8");
+    const version = parsePomProjectVersion(pomText);
+    if (version) {
+      return version;
+    }
+  } catch {
+    // pom.xml 不存在或不可读:静默回退默认值
+  }
+  return "1.0.0";
+}
+
+function emptySpec(title: string, version = "1.0.0"): ProjectAnalysisResult["spec"] {
+  return { openapi: "3.0.3", info: { title, version }, paths: {} };
 }
 
 /** warning 级扫描诊断转成告警文案(与 CLI diagnosticMessages 同口径:`CODE: message`) */

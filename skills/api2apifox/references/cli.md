@@ -35,6 +35,7 @@ node "<本 Skill 目录>/scripts/api2apifox.mjs" <command> [options]
 | `--dependency-jar <path>` | 显式依赖 jar 的绝对路径，可重复（传入即替换配置值） |
 | `--dependency-max-jars <n>` | 依赖 jar 解析总数上限，默认 120；`0` 表示不做依赖解析 |
 | `--timeout-ms <ms>` | Apifox 请求等待上限，默认 300000 |
+| `--openapi-version <ver>` | OpenAPI `info.version` 显式值；缺省自动读取项目根 `pom.xml` 的 `<version>`（剔除 `-SNAPSHOT`），取不到则为 `1.0.0` |
 | `-h, --help` | 显示帮助 |
 | `-v, --version` | 显示版本 |
 
@@ -107,6 +108,7 @@ api2apifox config --project . --format json
   "folderNameSource": "tag",
   "rootFolderName": "",
   "updateFolderOfChangedEndpoint": true,
+  "openapiInfoVersion": "2.1.0",
   "helperProperties": {
     "enabled": true,
     "enumFieldDoc": false

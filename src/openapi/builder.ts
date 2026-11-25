@@ -15,6 +15,8 @@ export interface BuildOptions {
   /** OpenAPI info.title,一般用工作区名 */
   title: string;
   description?: string;
+  /** OpenAPI info.version;未指定时保持历史默认 "1.0.0" */
+  openapiInfoVersion?: string;
   /** 简单名为 Page 的分页包装展开风格(默认 mybatis-plus) */
   pageStyle?: "spring-data" | "mybatis-plus";
   /** .apifox-helper.properties 字段规则 */
@@ -78,7 +80,7 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
     info: {
       title: options.title,
       description: options.description,
-      version: "1.0.0",
+      version: options.openapiInfoVersion ?? "1.0.0",
     },
     tags: [...tags.keys()].map((name) => ({ name })),
     paths,
