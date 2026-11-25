@@ -8,7 +8,7 @@ import { normalizeStatus } from "./httpStatus";
 import { adviceMatchesController, collectExceptionAdvices, ExceptionAdvice } from "./exceptionAdvice";
 import {
   annArray, annBool, annStr, AnnotationInfo, ClassInfo, EndpointFlavor, EndpointInfo, findAnn,
-  ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, TypeIndex,
+  ParseResult, ParameterInfo, RequestBodyInfo, ResponseInfo, SecurityRequirement, TypeIndex,
 } from "./model";
 import { schemaExample, schemaDescription } from "./schemaResolver";
 import { ParsedFile, resolveScopedType, typeScopeOf } from "./typeIndex";
@@ -201,6 +201,10 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
       // 收集方法:本类声明的 + 继承链上未被覆写的父类/接口方法(具体类型优先)
       const methodHits = collectMethodHits(site, chain);
 
+      // 类级鉴权要求:继承链上所有类型的类级鉴权注解(具体类在前),
+      // 与 Spring Security 的类级注解继承口径一致;无鉴权注解时为空数组
+      const classSecurity = collectSecurityRequirements(hierarchy.flatMap((s) => s.typeAnnotations), "class");
+
       const settledSignatures = new Set<string>();
       for (const hit of methodHits) {
         const { method, wrapper, modifierKey } = hit;
@@ -376,6 +380,7 @@ export function parseControllers(files: ParsedFile[], rules?: HelperProperties, 
                 ownerPath: pf.fsPath,
                 methodName,
                 methodAnnotations,
+                security: [...classSecurity, ...collectSecurityRequirements(methodAnnotations, "method")],
                 method,
                 wrapper,
                 classJavadoc,
@@ -926,6 +931,8 @@ interface EndpointArgs {
   ownerPath?: string;
   methodName: string;
   methodAnnotations: AnnotationInfo[];
+  /** 类级 + 方法级鉴权要求(原文透传,方法级不覆盖类级) */
+  security: SecurityRequirement[];
   method: CstNode;
   wrapper: CstNode;
   classJavadoc: ReturnType<typeof parseJavadoc>;
@@ -1198,7 +1205,42 @@ function buildEndpoint(pf: ParsedFile, warnings: string[], a: EndpointArgs): End
     produces: a.produces.length ? a.produces : undefined,
     methodRange: methodRangeOf(a.method),
     deprecated: !!findAnn(a.methodAnnotations, "Deprecated"),
+    ...(a.security.length ? { security: a.security } : {}),
   };
+}
+
+/** 支持的鉴权注解(简单名)。表达式/权限串一律原文透传,不做语义规范化 */
+const SECURITY_ANNOTATIONS = [
+  "PreAuthorize",
+  "PostAuthorize",
+  "Secured",
+  "SaCheckPermission",
+  "SaCheckRole",
+  "RequiresPermissions",
+  "RequiresRoles",
+] as const;
+
+/**
+ * 从注解列表提取鉴权要求:单值/数组逐条展开,字符串去引号,其余(如复杂 SpEL)原样保留。
+ * 数组元素按声明顺序展开,注解间按注解在源码中的出现顺序保留。
+ */
+export function collectSecurityRequirements(annotations: AnnotationInfo[], source: SecurityRequirement["source"]): SecurityRequirement[] {
+  const out: SecurityRequirement[] = [];
+  for (const ann of annotations) {
+    if (!(SECURITY_ANNOTATIONS as readonly string[]).includes(ann.name)) {
+      continue;
+    }
+    const raw = annArray(ann.args, "value");
+    if (!raw.length) {
+      continue;
+    }
+    for (const value of raw) {
+      if (value) {
+        out.push({ source, annotation: ann.name, value });
+      }
+    }
+  }
+  return out;
 }
 
 function methodRangeOf(method: CstNode): { startOffset: number; endOffset: number; startLine: number } | undefined {

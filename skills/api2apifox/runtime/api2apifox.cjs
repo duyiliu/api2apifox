@@ -27762,6 +27762,7 @@ function parseControllers(files, rules, index) {
       }
       const classMedia = classMediaTypesOf(hierarchy);
       const methodHits = collectMethodHits(site, chain);
+      const classSecurity = collectSecurityRequirements(hierarchy.flatMap((s) => s.typeAnnotations), "class");
       const settledSignatures = /* @__PURE__ */ new Set();
       for (const hit of methodHits) {
         const { method, wrapper, modifierKey } = hit;
@@ -27919,6 +27920,7 @@ function parseControllers(files, rules, index) {
                 ownerPath: pf.fsPath,
                 methodName,
                 methodAnnotations,
+                security: [...classSecurity, ...collectSecurityRequirements(methodAnnotations, "method")],
                 method,
                 wrapper,
                 classJavadoc,
@@ -28570,8 +28572,36 @@ ${a.ruleDescAppend}` : a.ruleDescAppend;
     consumes: a.consumes.length ? a.consumes : void 0,
     produces: a.produces.length ? a.produces : void 0,
     methodRange: methodRangeOf(a.method),
-    deprecated: !!findAnn(a.methodAnnotations, "Deprecated")
+    deprecated: !!findAnn(a.methodAnnotations, "Deprecated"),
+    ...a.security.length ? { security: a.security } : {}
   };
+}
+var SECURITY_ANNOTATIONS = [
+  "PreAuthorize",
+  "PostAuthorize",
+  "Secured",
+  "SaCheckPermission",
+  "SaCheckRole",
+  "RequiresPermissions",
+  "RequiresRoles"
+];
+function collectSecurityRequirements(annotations, source) {
+  const out = [];
+  for (const ann of annotations) {
+    if (!SECURITY_ANNOTATIONS.includes(ann.name)) {
+      continue;
+    }
+    const raw = annArray(ann.args, "value");
+    if (!raw.length) {
+      continue;
+    }
+    for (const value of raw) {
+      if (value) {
+        out.push({ source, annotation: ann.name, value });
+      }
+    }
+  }
+  return out;
 }
 function methodRangeOf(method) {
   const loc = method.location;
@@ -28869,7 +28899,7 @@ function buildOpenApi(parse2, index, options) {
     const count = usedOperationIds.get(ep.operationId) ?? 0;
     usedOperationIds.set(ep.operationId, count + 1);
     opFlavors.set(`${ep.path} ${verbKey}`, ep.flavor);
-    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId, options.folderOf);
+    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId, options.folderOf, options.securityDocMode);
   }
   const spec = {
     openapi: "3.0.3",
@@ -28892,7 +28922,44 @@ function buildOpenApi(parse2, index, options) {
   }
   return { spec, warnings: parse2.warnings };
 }
-function buildOperation(ep, ctx, operationId, folderOf) {
+var ROLE_ANNOTATIONS = /* @__PURE__ */ new Set(["SaCheckRole", "RequiresRoles", "Secured"]);
+var PERMISSION_ANNOTATIONS = /* @__PURE__ */ new Set(["SaCheckPermission", "RequiresPermissions"]);
+function applySecurityRequirements(op, requirements, mode) {
+  if (!requirements?.length) {
+    return;
+  }
+  if (mode === "extension") {
+    const permissions = [];
+    const roles = [];
+    const push = (target, value) => {
+      if (!target.includes(value)) {
+        target.push(value);
+      }
+    };
+    for (const req of requirements) {
+      if (ROLE_ANNOTATIONS.has(req.annotation)) {
+        push(roles, req.value);
+      } else {
+        push(permissions, req.value);
+      }
+    }
+    if (permissions.length) {
+      op["x-permission"] = permissions;
+    }
+    if (roles.length) {
+      op["x-roles"] = roles;
+    }
+    return;
+  }
+  const labelOf = (req) => ROLE_ANNOTATIONS.has(req.annotation) ? "\u89D2\u8272" : PERMISSION_ANNOTATIONS.has(req.annotation) ? "\u6743\u9650" : "\u9274\u6743";
+  const lines = requirements.map((req) => `- ${labelOf(req)}\uFF1A\`${req.value}\`(${req.source === "class" ? "\u7C7B\u7EA7" : "\u65B9\u6CD5\u7EA7"} @${req.annotation})`);
+  const block2 = ["**\u9274\u6743\u8981\u6C42**", ...lines].join("\n");
+  const existing = typeof op.description === "string" && op.description ? op.description : "";
+  op.description = existing ? `${existing}
+
+${block2}` : block2;
+}
+function buildOperation(ep, ctx, operationId, folderOf, securityDocMode = "description") {
   const epScope = typeScopeOf(ctx.index.types.get(ep.declaringType ?? ep.controller));
   const opCtx = epScope ? { ...ctx, scope: epScope } : ctx;
   const op = {
@@ -28901,6 +28968,7 @@ function buildOperation(ep, ctx, operationId, folderOf) {
     description: ep.description,
     operationId
   };
+  applySecurityRequirements(op, ep.security, securityDocMode);
   if (ep.deprecated) {
     op.deprecated = true;
   }
@@ -29093,6 +29161,7 @@ function run(files, options, endpointFilter) {
     pageStyle: options.pageStyle,
     rules: options.rules,
     enumFieldDoc: options.enumFieldDoc,
+    securityDocMode: options.securityDocMode,
     folderOf: options.folderOf
   });
   const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
@@ -29286,6 +29355,7 @@ async function analyzeProject(request) {
     pageStyle: config.pageTypeStyle,
     rules: helperProperties,
     enumFieldDoc: config.enumFieldDoc,
+    securityDocMode: config.securityDocMode,
     folderOf,
     jarLookup: dependency.index ? (name) => dependency.index.lookup(name) : void 0
   };
@@ -29462,6 +29532,7 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
+    securityDocMode: "description",
     dependencyRepos: [],
     dependencyJars: [],
     // 依赖解析的资源预算:默认 120 已覆盖常见项目;超出时告警列出被丢弃的 jar
@@ -29489,6 +29560,7 @@ function resolveConfig(projectRoot, overrides = {}, env = process.env) {
   applyFile(config, sources, "schemaFolderId", numberValue(fileConfig.schemaFolderId, "schemaFolderId", diagnostics), fileSource);
   applyFile(config, sources, "helperPropertiesEnabled", booleanValue(helper.enabled, "helperProperties.enabled", diagnostics), fileSource);
   applyFile(config, sources, "enumFieldDoc", booleanValue(helper.enumFieldDoc, "helperProperties.enumFieldDoc", diagnostics), fileSource);
+  applyFile(config, sources, "securityDocMode", enumValue(fileConfig.securityDocMode, "securityDocMode", ["description", "extension"], diagnostics), fileSource);
   applyFile(config, sources, "dependencyRepos", stringArrayValue(fileConfig.dependencyRepos, "dependencyRepos", diagnostics), fileSource);
   applyFile(config, sources, "dependencyJars", stringArrayValue(fileConfig.dependencyJars, "dependencyJars", diagnostics), fileSource);
   applyFile(config, sources, "maxDependencyJars", numberValue(fileConfig.maxDependencyJars, "maxDependencyJars", diagnostics), fileSource);
@@ -29552,6 +29624,7 @@ function validateKnownKeys(config, configPath, diagnostics) {
     "updateFolderOfChangedEndpoint",
     "schemaFolderId",
     "helperProperties",
+    "securityDocMode",
     "dependencyRepos",
     "dependencyJars",
     "maxDependencyJars",

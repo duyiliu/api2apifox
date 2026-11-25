@@ -26,6 +26,8 @@ export interface ApifoxSettings {
   helperProperties: boolean;
   /** 枚举字段自动追加「(枚举类:X)」(默认 false,对应团队 groovy 规则意图) */
   enumFieldDoc: boolean;
+  /** 鉴权注解输出方式:description(默认) 写进接口描述尾部;extension 写入 x-permission/x-roles */
+  securityDocMode: "description" | "extension";
   /** 额外的本地 Maven 仓库目录(自动发现 ~/.m2 之外再补充,如 D:/repository) */
   dependencyRepos: string[];
   /** 显式依赖 jar 路径(优先于仓库发现) */
@@ -60,6 +62,7 @@ export function getSettings(): ApifoxSettings {
     schemaFolderName: cfg.get<string>("schemaFolderName", ""),
     helperProperties: cfg.get<boolean>("helperProperties.enabled", true),
     enumFieldDoc: cfg.get<boolean>("helperProperties.enumFieldDoc", false),
+    securityDocMode: cfg.get<"description" | "extension">("securityDocMode", "description"),
     dependencyRepos: cfg.get<string[]>("dependencyRepos", []),
     dependencyJars: cfg.get<string[]>("dependencyJars", []),
     maxDependencyJars: cfg.get<number>("maxDependencyJars", 120),

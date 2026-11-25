@@ -1,4 +1,4 @@
-import { AnnotationInfo, EndpointInfo, ParseResult, TypeIndex } from "../java/model";
+import { AnnotationInfo, EndpointInfo, ParseResult, SecurityRequirement, TypeIndex } from "../java/model";
 import {
   applyConstraints,
   JsonSchema,
@@ -25,6 +25,13 @@ export interface BuildOptions {
   enumFieldDoc?: boolean;
   /** 为每个 operation 计算 x-apifox-folder 目录(与 folderNameSource/rootFolderName 对应) */
   folderOf?: (ep: EndpointInfo) => string;
+  /**
+   * 鉴权注解的输出方式:
+   * "description"(默认)在 operation description 尾部追加「权限:`xxx`」行;
+   * "extension" 写入 x-permission / x-roles 扩展字段。
+   * 不改动 security/securitySchemes(避免生成错误的全局鉴权声明)。
+   */
+  securityDocMode?: "description" | "extension";
 }
 
 export interface OpenApiSpec {
@@ -72,7 +79,7 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
     const count = usedOperationIds.get(ep.operationId) ?? 0;
     usedOperationIds.set(ep.operationId, count + 1);
     opFlavors.set(`${ep.path} ${verbKey}`, ep.flavor);
-    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId, options.folderOf);
+    pathItem[verbKey] = buildOperation(ep, ctx, count > 0 ? `${ep.operationId}_${count + 1}` : ep.operationId, options.folderOf, options.securityDocMode);
   }
 
   const spec: OpenApiSpec = {
@@ -97,7 +104,64 @@ export function buildOpenApi(parse: ParseResult, index: TypeIndex, options: Buil
   return { spec, warnings: parse.warnings };
 }
 
-function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: string, folderOf?: (ep: EndpointInfo) => string): Record<string, unknown> {
+/** 角色类鉴权注解(值是角色串);Secured 语义上就是角色检查 */
+const ROLE_ANNOTATIONS = new Set(["SaCheckRole", "RequiresRoles", "Secured"]);
+/** 权限类鉴权注解(值是权限串) */
+const PERMISSION_ANNOTATIONS = new Set(["SaCheckPermission", "RequiresPermissions"]);
+
+/**
+ * 把接口的鉴权要求写入 operation。
+ * description 模式:在 description 尾部追加「**鉴权要求**」小节,类级/方法级分行列出;
+ * extension 模式:权限/表达式写入 x-permission、角色写入 x-roles(原文透传,类级与方法级合并去重)。
+ * 两种模式都不触碰 security/securitySchemes,避免生成错误的全局鉴权声明。
+ */
+function applySecurityRequirements(
+  op: Record<string, unknown>,
+  requirements: SecurityRequirement[] | undefined,
+  mode: "description" | "extension"
+): void {
+  if (!requirements?.length) {
+    return;
+  }
+  if (mode === "extension") {
+    const permissions: string[] = [];
+    const roles: string[] = [];
+    const push = (target: string[], value: string) => {
+      if (!target.includes(value)) {
+        target.push(value);
+      }
+    };
+    for (const req of requirements) {
+      if (ROLE_ANNOTATIONS.has(req.annotation)) {
+        push(roles, req.value);
+      } else {
+        // 权限串与 PreAuthorize/PostAuthorize 的 SpEL 表达式统一入 x-permission(原文透传)
+        push(permissions, req.value);
+      }
+    }
+    if (permissions.length) {
+      op["x-permission"] = permissions;
+    }
+    if (roles.length) {
+      op["x-roles"] = roles;
+    }
+    return;
+  }
+  const labelOf = (req: SecurityRequirement): string =>
+    ROLE_ANNOTATIONS.has(req.annotation) ? "角色" : PERMISSION_ANNOTATIONS.has(req.annotation) ? "权限" : "鉴权";
+  const lines = requirements.map((req) => `- ${labelOf(req)}：\`${req.value}\`(${req.source === "class" ? "类级" : "方法级"} @${req.annotation})`);
+  const block = ["**鉴权要求**", ...lines].join("\n");
+  const existing = typeof op.description === "string" && op.description ? op.description : "";
+  op.description = existing ? `${existing}\n\n${block}` : block;
+}
+
+function buildOperation(
+  ep: EndpointInfo,
+  ctx: ResolveContext,
+  operationId: string,
+  folderOf?: (ep: EndpointInfo) => string,
+  securityDocMode: "description" | "extension" = "description"
+): Record<string, unknown> {
   // 控制器自身的类作用域:接口签名中的简单名同样要优先命中 Controller 的成员类型
   // (继承自父类/接口的方法按方法声明处类型的作用域解析)
   const epScope = typeScopeOf(ctx.index.types.get(ep.declaringType ?? ep.controller));
@@ -108,6 +172,7 @@ function buildOperation(ep: EndpointInfo, ctx: ResolveContext, operationId: stri
     description: ep.description,
     operationId,
   };
+  applySecurityRequirements(op, ep.security, securityDocMode);
   if (ep.deprecated) {
     op.deprecated = true;
   }

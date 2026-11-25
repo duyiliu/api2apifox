@@ -36,6 +36,8 @@ export interface AnalyzeOptions {
   rules?: HelperProperties;
   /** 枚举字段自动追加「(枚举类:X)」(默认关) */
   enumFieldDoc?: boolean;
+  /** 鉴权注解的输出方式:description(默认) 追加到接口描述尾部;extension 写入 x-permission/x-roles */
+  securityDocMode?: "description" | "extension";
   /** 接口目录:x-apifox-folder(优先于 tags 用于 Apifox 建目录) */
   folderOf?: (ep: EndpointInfo) => string;
   /** 源码未覆盖的类型,从依赖 jar 的 .class 按需解析(框架类识别) */
@@ -123,6 +125,7 @@ function run(files: SourceFile[], options: AnalyzeOptions, endpointFilter?: (ep:
     pageStyle: options.pageStyle,
     rules: options.rules,
     enumFieldDoc: options.enumFieldDoc,
+    securityDocMode: options.securityDocMode,
     folderOf: options.folderOf,
   });
   const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
@@ -147,6 +150,7 @@ function optionsCacheKey(opts: AnalyzeOptions): string {
     opts.openapiInfoVersion ?? "",
     opts.pageStyle ?? "",
     opts.enumFieldDoc ?? false,
+    opts.securityDocMode ?? "",
     opts.cacheKey ?? "",
     opts.rules
       ? {
@@ -248,6 +252,7 @@ export class AnalyzeCache {
       pageStyle: opts.pageStyle,
       rules: opts.rules,
       enumFieldDoc: opts.enumFieldDoc,
+      securityDocMode: opts.securityDocMode,
       folderOf: opts.folderOf,
     });
     const warnings = collectWarnings(parsed, parseResult.warnings, kept, endpointFilter);
