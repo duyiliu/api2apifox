@@ -14,3 +14,7 @@ coverage/
 reports/
 .stryker-tmp/
 stryker-output-*.json
+
+# Skill 运行时二进制不入库（按 release.json 内容寻址从 Releases 下载，或本地 build:skill 生成）
+skills/api2apifox/runtime/*.cjs
+skills/api2apifox/runtime/*.download-*

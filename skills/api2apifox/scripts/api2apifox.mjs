@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-// Skill 入口：把参数透传给自带的 CLI 运行时，避免依赖 npm 全局安装。
+// Skill 入口：确保自带 CLI 运行时就绪（缺失时按 release.json 内容寻址下载），再把参数透传给它。
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { ensureRuntime } from "./ensure-runtime.mjs";
 
-const runtime = fileURLToPath(new URL("../runtime/api2apifox.cjs", import.meta.url));
 const major = Number(process.versions.node.split(".")[0]);
 if (major < 20) {
   console.error(`api2apifox 需要 Node.js >= 20，当前为 ${process.versions.node}。`);
+  process.exit(7);
+}
+
+let runtime;
+try {
+  runtime = await ensureRuntime();
+} catch (error) {
+  console.error(`api2apifox 运行时不可用：${error.message}`);
   process.exit(7);
 }
 

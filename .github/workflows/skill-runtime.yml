@@ -1,9 +1,11 @@
 name: Skill Runtime Auto-Rebuild
 
-# 功能 PR 不再提交 runtime 产物（ci.yml 会拦截）,产物新鲜度由本 workflow 保证:
-# 每次 main 推进后重建 skills/api2apifox/runtime,有差异则由 bot 提交回 main。
-# GITHUB_TOKEN 的推送不会再触发 workflow,不会自循环;
-# release.yml 发版时另有严格门禁,tag 产物必然是最新。
+# 运行时二进制不入库。main 每次推进后:
+# 1. 重建产物,按内容寻址(api2apifox-runtime-<sha256>.cjs)上传到滚动 prerelease `runtime`
+# 2. release.json(版本+sha256 pin)有变化才由 bot 回提——它只是几百字节文本,无仓库膨胀
+# 3. 滚动资产 GC 只留最近 50 份;tag 正式 release 里另有永久资产兜底(release.yml 上传)
+# 上传先于 release.json 提交,保证任何 commit 的 pin 都指向已存在的资产。
+# GITHUB_TOKEN 的推送不会再触发 workflow,不会自循环。
 on:
   push:
     branches:
@@ -18,8 +20,10 @@ concurrency:
 
 jobs:
   rebuild:
-    name: Rebuild runtime and commit if stale
+    name: Rebuild runtime, upload asset, pin release.json
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -36,22 +40,48 @@ jobs:
       - name: Rebuild skill runtime
         run: npm run build:skill
 
-      - name: Commit rebuilt runtime if changed
+      - name: Upload runtime asset to rolling prerelease
         run: |
-          if git diff --quiet -- skills/api2apifox/runtime; then
-            echo "runtime 已是最新,无需提交"
+          SHA=$(node -p "require('./skills/api2apifox/runtime/release.json').sha256['api2apifox.cjs']")
+          ASSET="api2apifox-runtime-${SHA}.cjs"
+          cp skills/api2apifox/runtime/api2apifox.cjs "$ASSET"
+          if ! gh release view runtime >/dev/null 2>&1; then
+            gh release create runtime --prerelease --title "api2apifox runtime assets" --notes "内容寻址的 CLI 运行时资产滚动仓库,由 skill-runtime.yml 自动维护,请勿手动编辑。" || true
+          fi
+          if gh release view runtime --json assets --jq '.assets[].name' | grep -qx "$ASSET"; then
+            echo "资产 $ASSET 已存在(内容寻址去重),跳过上传"
+          else
+            gh release upload runtime "$ASSET"
+            echo "已上传 $ASSET"
+          fi
+          echo "ASSET_SHA=${SHA}" >> "$GITHUB_ENV"
+
+      - name: Commit release.json pin if changed
+        run: |
+          if git diff --quiet -- skills/api2apifox/runtime/release.json; then
+            echo "release.json 无变化,无需提交"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add skills/api2apifox/runtime
-          git commit -m "chore(skill): 自动重建运行时产物"
-          # 并发合并场景:main 可能已推进,rebase 后需以最新源码重建再修正提交
+          git add skills/api2apifox/runtime/release.json
+          git commit -m "chore(skill): 更新运行时 pin(sha256 ${ASSET_SHA:0:12})"
           if ! git pull --rebase origin main; then
-            echo "::warning::rebase 失败,本次产物提交放弃;后续 main 推送会再触发重建"
+            echo "::warning::rebase 失败,本次 pin 提交放弃;后续 main 推送会再触发"
             exit 0
           fi
-          npm run build:skill
-          git add skills/api2apifox/runtime
-          git commit --amend --no-edit
           git push origin HEAD:main
+
+      - name: GC old rolling assets (keep latest 50)
+        run: |
+          KEEP=50
+          TOTAL=$(gh release view runtime --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+          if [ "$TOTAL" -le "$KEEP" ]; then
+            echo "资产数 $TOTAL <= $KEEP,无需 GC"
+            exit 0
+          fi
+          # assets 按创建时间倒序,删掉尾部最旧的
+          gh api "repos/{owner}/{repo}/releases/tags/runtime" --jq '.assets | sort_by(.created_at) | reverse | .['"$KEEP"':] | .[].id' | while read -r id; do
+            echo "删除旧资产 $id"
+            gh api -X DELETE "repos/{owner}/{repo}/releases/assets/$id" || true
+          done

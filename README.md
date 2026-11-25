@@ -26,11 +26,11 @@
 - **依赖 jar 类型还原**:自动发现本地 Maven 仓库,按需解析 `.class` 字节码,把源码之外的类型(如自定义 `ResponseDto<T>`、MyBatis-Plus 的 `Page`)还原为完整模型——字段、泛型、`@ApiModelProperty` 描述均可带出,与 IDEA 插件的 classpath 能力等效
 - **规则引擎兼容**:识别 `.apifox-helper.properties` 声明式规则(与 IDEA 版 Apifox Helper / easyyapi 兼容的子集),团队既有规则可直接复用
 - **细粒度同步**:整个项目 / 单个文件 / 单个接口,随取随传
-- **Agent Skill 一等公民**:自带 CLI 运行时,装 Skill 即用,无需 npm 全局安装;与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
+- **Agent Skill 一等公民**:CLI 运行时按内容寻址自动下载(离线 zip 内含),无需 npm 全局安装;与扩展共用同一套解析与同步管线,`--format json` 输出稳定信封 + 语义化退出码,AI Agent / CI 开箱即用
 
 ## 📟 Agent Skill（AI Agent / CI / 脚本）
 
-不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0 并同步到 Apifox。Skill **自带完整 CLI 运行时**，安装 Skill 即完成安装，不再需要 `npm install -g`；与扩展共用同一套解析与同步管线，能力完全等价。要求 Node.js ≥ 20。
+不依赖 VS Code，直接扫描 Java 项目、生成 OpenAPI 3.0 并同步到 Apifox。Skill 的 CLI 运行时**首次使用时按内容寻址从 GitHub Releases 自动下载并校验缓存**（`release.json` 记录版本+sha256 pin；离线 zip 内含完整运行时、无需下载），不再需要 `npm install -g`；与扩展共用同一套解析与同步管线，能力完全等价。要求 Node.js ≥ 20。
 
 ### 安装
 
@@ -41,7 +41,7 @@ npx skills add duyiliu/api2apifox --skill api2apifox -g
 - `-g` 安装到用户级 Skill 目录（通常 `~/.agents/skills/api2apifox`），其他 Agent 客户端按各自规则同步/链接。
 - 固定版本：`npx skills add duyiliu/api2apifox#v0.5.0 --skill api2apifox -g`（扩展与 Skill 共用同一个 `vX.Y.Z` tag）。
 - 国内网络：`npx skills-cn@latest add duyiliu/api2apifox --skill api2apifox -g -y`。
-- 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`；校验失败说明 Skill 副本损坏，应重新安装，不要改用其它工具顶替。
+- 安装后自检：`node "<skill-dir>/scripts/check-runtime.mjs"`（会自动完成首次下载并校验）；失败按报错提示处理（网络代理 / 离线 zip 覆盖 / `API2APIFOX_RUNTIME_URL` 镜像直链），不要改用其它工具顶替。
 - 升级：`npx skills update api2apifox -g`（装指定版本重新执行带 `#vX.Y.Z` 的 add 命令）；卸载：`npx skills remove api2apifox -g`。
 - 离线/内网：从 [GitHub Releases](https://github.com/duyiliu/api2apifox/releases) 下载 `api2apifox-skill-<版本>.zip`，解压为 `~/.agents/skills/api2apifox/`（目录内含 `SKILL.md`、`scripts/`、`runtime/`），再执行自检命令。
 

@@ -5,7 +5,7 @@ description: 使用 api2apifox 扫描 Java 项目 REST 接口、导出 OpenAPI�
 
 # api2apifox
 
-本 Skill 自带完整 CLI 运行时，**安装本 Skill 即完成安装，不需要 `npm install -g`**。源码只在本地解析，只有生成的 OpenAPI 文档数据会发送到 Apifox 开放 API。
+本 Skill 的 CLI 运行时按 `release.json` 的版本+哈希 pin 管理：**首次使用时自动从 GitHub Releases 按内容寻址下载并校验缓存**（zip 发行版内含完整运行时，解压即无需下载），不需要 `npm install -g`。源码只在本地解析，只有生成的 OpenAPI 文档数据会发送到 Apifox 开放 API。
 
 ## 入口与前提
 
@@ -17,7 +17,7 @@ node "<本 Skill 目录>/scripts/api2apifox.mjs" <command> [options]
 
 - 要求 Node.js ≥ 20，先 `node --version` 确认。
 - 本 Skill 目录通常是 `~/.agents/skills/api2apifox`（Windows：`%USERPROFILE%\.agents\skills\api2apifox`）。以 Agent 实际加载的 Skill 路径为准，不要假设固定路径。
-- 首次使用或怀疑安装不完整时，先运行 `node "<本 Skill 目录>/scripts/check-runtime.mjs"` 校验运行时；校验失败说明 Skill 副本损坏，应重新安装 Skill，不要改用其它工具顶替同步动作。
+- 首次使用或怀疑安装不完整时，先运行 `node "<本 Skill 目录>/scripts/check-runtime.mjs"`：运行时会自动下载/校验；失败时按报错提示处理（网络代理、离线 zip 覆盖安装、或 `API2APIFOX_RUNTIME_URL` 镜像直链），不要改用其它工具顶替同步动作。
 - 下文用 `<skill-dir>` 表示本 Skill 的实际安装目录；命令示例都写成可执行的完整形式，不要直接照抄 `api2apifox` 这类不存在的全局命令。
 
 ## 命令

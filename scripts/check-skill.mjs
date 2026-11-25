@@ -25,9 +25,15 @@ try {
   if (!Object.keys(release.sha256 ?? {}).length) {
     throw new Error("release.json 缺少 sha256");
   }
+  // 运行时二进制不入库（按 release.json 内容寻址从 Releases 下载）；本地/CI 经 build:skill
+  // 生成后才存在,存在即严格校验哈希,缺失仅提示——发版 zip 打包前 build:skill 必然重建
   for (const [name, expected] of Object.entries(release.sha256)) {
     const file = path.join(runtimeDir, name);
-    if (!fs.existsSync(file)) throw new Error(`缺少运行时文件：${name}`);
+    if (!fs.existsSync(file)) {
+      console.log(`提示：${name} 未构建（运行时二进制不入库，首次使用自动下载；本地可 npm run build:skill 生成）`);
+      console.log(`Skill 运行时校验通过：${release.package}@${release.version}（仅 release.json 一致性）`);
+      process.exit(0);
+    }
     const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
     if (actual !== expected) throw new Error(`文件校验失败：${name}，请运行 npm run build:skill`);
   }

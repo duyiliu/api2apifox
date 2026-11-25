@@ -69,10 +69,11 @@ jobs:
       - name: Bundle extension (esbuild)
         run: npm run compile
 
+      # 运行时二进制不入库,无需再校验 committed 产物新鲜度;
+      # build + check 保证版本/哈希自洽,zip 打包因此带上可用运行时
       - name: Verify Skill runtime is current
         run: |
           npm run build:skill
-          git diff --exit-code -- skills/api2apifox/runtime
           npm run check:skill
 
       - name: Package VSIX
@@ -104,7 +105,12 @@ jobs:
         if: env.OVSX_PAT != ''
         run: npx --yes ovsx@latest publish --packagePath "$VSIX_NAME" -p "$OVSX_PAT" --skip-duplicate
 
+      # 运行时资产按内容寻址一并上传 tag release:永久保留,滚动 prerelease 资产被 GC 后的兜底
       - name: Create GitHub Release with VSIX and Skill assets
-        run: gh release create "$RELEASE_TAG" "$VSIX_NAME" "api2apifox-skill-${VERSION}.zip" --generate-notes
+        run: |
+          SHA=$(node -p "require('./skills/api2apifox/runtime/release.json').sha256['api2apifox.cjs']")
+          RUNTIME_ASSET="api2apifox-runtime-${SHA}.cjs"
+          cp skills/api2apifox/runtime/api2apifox.cjs "$RUNTIME_ASSET"
+          gh release create "$RELEASE_TAG" "$VSIX_NAME" "api2apifox-skill-${VERSION}.zip" "$RUNTIME_ASSET" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
