@@ -223,6 +223,7 @@ api2apifox scan --include "**/src/main/java/**/*.java" --exclude "**/target/**"
 | `apifoxHelper.folderNameSource` | `tag` | 接口目录命名来源:`tag`(@Tag 注解,缺省类名)或 `controller`(类名) |
 | `apifoxHelper.helperProperties.enabled` | `true` | 是否识别工作区 `.apifox-helper.properties` 规则 |
 | `apifoxHelper.helperProperties.enumFieldDoc` | `false` | 枚举字段自动在描述后追加「(枚举类:类名)」 |
+| `apifoxHelper.securityDocMode` | `description` | 接口鉴权注解(`@PreAuthorize`/`@SaCheckPermission`/`@Secured` 等)的输出方式:`description` 在接口描述尾部追加「鉴权要求」小节;`extension` 写入 OpenAPI 扩展字段 `x-permission`/`x-roles`。表达式/权限串原文透传,不生成 `security`/`securitySchemes` 全局声明 |
 | `apifoxHelper.dependencyRepos` | `[]` | 可选兜底:额外本地 Maven 仓库目录(默认已自动发现 JetBrains MAVEN_REPOSITORY/IDEA 索引/`~/.m2`) |
 | `apifoxHelper.enableCodeLens` | `true` | 是否在 Java Controller 方法上方显示「同步此接口」快捷按钮 |
 | `apifoxHelper.dependencyJars` | `[]` | 显式依赖 jar 绝对路径(优先于仓库发现) |

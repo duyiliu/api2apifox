@@ -35,6 +35,8 @@ export interface ResolvedConfig {
   schemaFolderId: number;
   helperPropertiesEnabled: boolean;
   enumFieldDoc: boolean;
+  /** 鉴权注解输出方式:description(默认) 写进接口描述尾部;extension 写入 x-permission/x-roles */
+  securityDocMode: "description" | "extension";
   dependencyRepos: string[];
   dependencyJars: string[];
   /** 依赖 jar 解析总数上限(直接 + 传递依赖);0 表示不做依赖解析 */

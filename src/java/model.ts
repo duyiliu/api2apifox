@@ -101,6 +101,16 @@ export interface ResponseInfo {
   schemaText?: string;
 }
 
+/** 接口的鉴权要求(类级或方法级鉴权注解的原文透传;不解析 SpEL/权限串语义) */
+export interface SecurityRequirement {
+  /** 声明位置:类级注解归入 class,方法级归入 method */
+  source: "class" | "method";
+  /** 注解简单名,如 PreAuthorize / SaCheckPermission / Secured */
+  annotation: string;
+  /** 表达式/权限串原文(字符串字面量去引号、数组逐条、复杂 SpEL 原样保留) */
+  value: string;
+}
+
 /** 接口来源风格 */
 export type EndpointFlavor = "spring-mvc" | "jaxrs" | "feign" | "actuator";
 
@@ -144,6 +154,8 @@ export interface EndpointInfo {
   methodRange?: { startOffset: number; endOffset: number; startLine: number };
   /** 方法已 @Deprecated */
   deprecated?: boolean;
+  /** 类级 + 方法级鉴权要求(原文透传,方法级不覆盖类级);无鉴权注解时为 undefined */
+  security?: SecurityRequirement[];
 }
 
 export interface ParseResult {

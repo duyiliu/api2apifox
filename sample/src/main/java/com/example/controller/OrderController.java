@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 订单接口
  */
 @Api(tags = "订单管理")
+@cn.dev33.satoken.annotation.SaCheckPermission("order:view")
+@org.springframework.security.access.prepost.PreAuthorize("hasAuthority('order:view')")
 @RestController
 @RequestMapping("/api/v1/orders")
 public class OrderController {
@@ -67,6 +69,8 @@ public class OrderController {
      * 创建订单(旧接口,含隐式参数与额外响应声明)
      */
     @Deprecated
+    @cn.dev33.satoken.annotation.SaCheckPermission({"order:edit", "order:create"})
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('order:edit')")
     @ApiImplicitParams({
             @ApiImplicitParam(name = "channel", value = "下单渠道", paramType = "query", dataType = "String", defaultValue = "app"),
             @ApiImplicitParam(name = "X-Trace-Id", value = "链路 ID", paramType = "header", dataType = "String")
@@ -102,6 +106,8 @@ public class OrderController {
      * @param id 订单 ID
      */
     @DeleteMapping("/{id}")
+    @org.springframework.security.access.annotation.Secured({"ROLE_ADMIN", "ROLE_ORDER_MANAGER"})
+    @cn.dev33.satoken.annotation.SaCheckRole("admin")
     @ResponseStatus(value = HttpStatus.FORBIDDEN, reason = "订单不允许删除")
     public ApiResult<Void> deleteOrder(@org.springframework.web.bind.annotation.PathVariable("id") Long id) {
         return ApiResult.ok(null);

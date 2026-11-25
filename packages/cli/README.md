@@ -77,6 +77,7 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
+  "securityDocMode": "description",
   "rootFolderName": "",
   "updateFolderOfChangedEndpoint": true,
   "openapiInfoVersion": "2.1.0",
@@ -89,6 +90,8 @@ api2apifox scan --include "**/cli-smoke/**/*.java" --exclude "**/target/**"
 
 > `rootFolderName` 与 tag 值都可以含 `/`，导入后按多级目录创建（如 `专案工作站/营养性疾病专案`）。
 > `updateFolderOfChangedEndpoint` 默认 `true`：覆盖已存在接口时同步更新其目录；设为 `false` 则只更新接口内容、不迁移目录。
+>
+> `securityDocMode` 默认 `description`：接口鉴权注解（`@PreAuthorize`/`@SaCheckPermission`/`@Secured` 等，类级与方法级都列出、原文透传）追加到接口描述尾部；设为 `extension` 则改写为 OpenAPI 扩展字段 `x-permission`/`x-roles`。两种模式都不生成 `security`/`securitySchemes` 全局声明。
 
 > `$schema` 只用于编辑器补全与校验，可删掉这一行，不影响 CLI 运行。
 

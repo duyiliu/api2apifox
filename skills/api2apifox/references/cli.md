@@ -106,6 +106,7 @@ api2apifox config --project . --format json
   "schemaConflictBehavior": "OVERWRITE_EXISTING",
   "pageTypeStyle": "mybatis-plus",
   "folderNameSource": "tag",
+  "securityDocMode": "description",
   "rootFolderName": "",
   "updateFolderOfChangedEndpoint": true,
   "openapiInfoVersion": "2.1.0",
@@ -120,6 +121,7 @@ api2apifox config --project . --format json
 - 优先级：**CLI 参数 > `API2APIFOX_*` 环境变量 > `.api2apifox.json` > 默认值**。
 - Token **不允许**写入配置文件；出现 `token` 字段直接报错 `CONFIG_TOKEN_FORBIDDEN`。
 - 本配置只作用于 CLI/Skill，与 VS Code 扩展的 `apifoxHelper.*` 设置（及扩展 SecretStorage 中的令牌）相互独立。
+- `securityDocMode`：`description`（默认）把接口鉴权注解（`@PreAuthorize`/`@SaCheckPermission`/`@Secured` 等）追加到接口描述尾部；`extension` 写入 `x-permission`/`x-roles` 扩展字段。均不生成 `security`/`securitySchemes`。
 
 ## 环境变量
 

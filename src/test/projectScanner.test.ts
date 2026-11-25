@@ -32,6 +32,7 @@ function config(root: string, overrides: Partial<ResolvedConfig> = {}): Resolved
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
+    securityDocMode: "description",
     dependencyRepos: [],
     dependencyJars: [],
     maxDependencyJars: 120,

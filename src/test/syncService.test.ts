@@ -83,6 +83,7 @@ function config(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     schemaFolderId: 0,
     helperPropertiesEnabled: true,
     enumFieldDoc: false,
+    securityDocMode: "description",
     dependencyRepos: [],
     dependencyJars: [],
     maxDependencyJars: 120,

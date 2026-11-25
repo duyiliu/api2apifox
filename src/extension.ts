@@ -360,8 +360,9 @@ export function activate(context: vscode.ExtensionContext): void {
       pageStyle: settings.pageTypeStyle,
       rules: await loadHelperProperties(),
       enumFieldDoc: settings.enumFieldDoc,
+      securityDocMode: settings.securityDocMode,
       // 目录命名与依赖 jar 索引无法从源码派生,纳入结果缓存键,避免设置变化后复用旧结果
-      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, activeJarIndexKey, openapiInfoVersion].join("\u0000"),
+      cacheKey: [settings.folderNameSource, rootFolder, settings.enumFieldDoc, settings.securityDocMode, activeJarIndexKey, openapiInfoVersion].join("\u0000"),
       // 接口目录(x-apifox-folder):folderNameSource=controller 用类名,否则 tag;rootFolderName 作前缀
       folderOf: (ep: { tag: string; controller: string }) => {
         const key = settings.folderNameSource === "controller" ? ep.controller : ep.tag;
@@ -494,6 +495,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "apifoxHelper.rootFolderName",
     "apifoxHelper.helperProperties.enabled",
     "apifoxHelper.helperProperties.enumFieldDoc",
+    "apifoxHelper.securityDocMode",
     "apifoxHelper.dependencyRepos",
     "apifoxHelper.dependencyJars",
     "apifoxHelper.openapiInfoVersion",

@@ -17,6 +17,7 @@
     "schemaConflictBehavior": { "$ref": "#/$defs/conflictBehavior" },
     "pageTypeStyle": { "enum": ["mybatis-plus", "spring-data"] },
     "folderNameSource": { "enum": ["tag", "controller"] },
+    "securityDocMode": { "enum": ["description", "extension"], "default": "description" },
     "rootFolderName": { "type": "string" },
     "updateFolderOfChangedEndpoint": { "type": "boolean", "default": true },
     "schemaFolderId": { "type": "integer", "minimum": 0 },
